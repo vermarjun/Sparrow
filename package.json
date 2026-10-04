@@ -1,0 +1,24 @@
+{
+  "name": "sparrow",
+  "version": "0.1.0",
+  "description": "A personal, harness-agnostic agent factory: a captain hires named Claude/Codex/OpenCode agents into tmux windows; they talk through a local server.",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "sparrow": "bin/sparrow"
+  },
+  "scripts": {
+    "sparrow": "bun bin/sparrow",
+    "test": "bun test test/",
+    "typecheck": "tsc --noEmit -p .",
+    "web:dev": "cd web && bun run dev",
+    "web:build": "cd web && bun run build"
+  },
+  "dependencies": {
+    "hono": "^4.13.13"
+  },
+  "devDependencies": {
+    "bun-types": "^1.4.3",
+    "typescript": "^7.0.2"
+  }
+}
