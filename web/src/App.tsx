@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Bird, KanbanSquare, MessagesSquare, Network } from 'lucide-react'
+import { Bird, FileText, KanbanSquare, MessagesSquare, Network, Stethoscope } from 'lucide-react'
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -11,19 +11,30 @@ import { Empty } from '@/components/sparrow/bits'
 import { BoardPage } from '@/pages/Board'
 import { ChatPage } from '@/pages/Chat'
 import { AgentsPage } from '@/pages/Agents'
+import { DoctorPage } from '@/pages/Doctor'
+import { ResumesPage } from '@/pages/Resumes'
+import { StartCaptainButton } from '@/components/sparrow/StartCaptain'
 
 const TABS: { id: Tab; label: string; icon: typeof Bird }[] = [
   { id: 'board', label: 'Board', icon: KanbanSquare },
   { id: 'chat', label: 'Chat', icon: MessagesSquare },
   { id: 'agents', label: 'Agents', icon: Network },
 ]
+// Global pages: render outside the project gate (work with zero projects).
+const GLOBAL_TABS: { id: Tab; label: string; icon: typeof Bird }[] = [
+  { id: 'resumes', label: 'Resumes', icon: FileText },
+  { id: 'doctor', label: 'Doctor', icon: Stethoscope },
+]
+const isGlobal = (t: Tab) => t === 'doctor' || t === 'resumes'
 
-// Hash route: #/<tab>  (project is remembered in localStorage and in ?p= for sharing)
-function readHash(): { tab: Tab; project: string | null } {
-  const [path, query] = location.hash.replace(/^#\/?/, '').split('?')
-  const tab = (TABS.find((t) => t.id === path)?.id ?? 'board') as Tab
+// Hash route: #/<tab>[/<slug>]  (project is remembered in localStorage and in ?p= for sharing)
+function readHash(hash = location.hash): { tab: Tab; project: string | null; slug: string | null } {
+  const [path, query] = hash.replace(/^#\/?/, '').split('?')
+  const [head, ...rest] = path.split('/')
+  const tab = ([...TABS, ...GLOBAL_TABS].find((t) => t.id === head)?.id ?? 'board') as Tab
   const project = new URLSearchParams(query ?? '').get('p')
-  return { tab, project }
+  const slug = tab === 'resumes' && rest[0] ? decodeURIComponent(rest[0]) : null
+  return { tab, project, slug }
 }
 
 function useRoute() {
@@ -40,7 +51,7 @@ function useRoute() {
 }
 
 export default function App() {
-  const { tab, project: hashProject, go } = useRoute()
+  const { tab, project: hashProject, slug, go } = useRoute()
   const projects = useStore((s) => s.projects)
   const project = useStore((s) => s.project)
   const conn = useStore((s) => s.conn)
@@ -49,7 +60,7 @@ export default function App() {
 
   useEffect(() => {
     const st = useStore.getState()
-    void st.loadResumes()
+    void st.loadGlobals()
     st.loadProjects()
       .then((list) => {
         setBoot('ok')
@@ -58,7 +69,7 @@ export default function App() {
         if (pick) {
           useStore.getState().selectProject(pick.id)
           // unknown ?p= → rewrite the hash to the project actually shown
-          if (hashProject && hashProject !== pick.id) history.replaceState(null, '', `#/${readHash().tab}?p=${encodeURIComponent(pick.id)}`)
+          if (hashProject && hashProject !== pick.id) history.replaceState(null, '', `${location.hash.split('?')[0] || '#/board'}?p=${encodeURIComponent(pick.id)}`)
         }
       })
       .catch(() => setBoot('error'))
@@ -97,10 +108,11 @@ export default function App() {
             </SelectContent>
           </Select>
           <nav className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5">
-            {TABS.map((t) => (
+            {[...TABS, null, ...GLOBAL_TABS].map((t, i) => t === null ? <span key={`sep${i}`} className="mx-0.5 h-4 w-px bg-zinc-300" /> : (
               <button
                 key={t.id}
                 onClick={() => go(t.id, project)}
+                data-tab={t.id}
                 className={cn(
                   'flex h-7 items-center gap-1.5 rounded-md px-3 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground',
                   tab === t.id && 'bg-background text-foreground shadow-sm',
@@ -112,7 +124,8 @@ export default function App() {
             ))}
           </nav>
           <div className="ml-auto flex items-center gap-4 text-xs text-muted-foreground">
-            {project && <span>{working} working · {plural(Object.values(agents).filter((a) => a.kind !== 'human' && a.state !== 'retired').length, 'agent')}</span>}
+            <StartCaptainButton />
+            {project && !isGlobal(tab) && <span>{working} working · {plural(Object.values(agents).filter((a) => a.kind !== 'human' && a.state !== 'retired').length, 'agent')}</span>}
             <span className="flex items-center gap-1.5" title={`Live updates: ${connLabel}`}>
               <span className={cn('size-2 rounded-full', conn === 'live' ? 'bg-emerald-500' : conn === 'connecting' ? 'bg-amber-400' : 'bg-red-500')} />
               {connLabel}
@@ -120,13 +133,17 @@ export default function App() {
           </div>
         </header>
         <main className="min-h-0 flex-1">
-          {boot === 'error' ? (
+          {tab === 'doctor' ? (
+            <DoctorPage />
+          ) : tab === 'resumes' ? (
+            <ResumesPage slug={slug} />
+          ) : boot === 'error' ? (
             <Empty title="Can't reach the Sparrow server" className="h-full">
               Start it with <code className="rounded bg-muted px-1">sparrow up</code>, then reload. This page reads <code className="rounded bg-muted px-1">/api</code> on the same origin.
             </Empty>
           ) : boot === 'ok' && !projects.length ? (
             <Empty title="No projects yet" className="h-full">
-              A project appears when a captain first runs the <code className="rounded bg-muted px-1">sparrow</code> CLI in a repo, e.g. <code className="rounded bg-muted px-1">sparrow hire builder "…"</code>.
+              A project appears when a captain first runs the <code className="rounded bg-muted px-1">sparrow</code> CLI in a repo, e.g. <code className="rounded bg-muted px-1">sparrow hire builder "…"</code>. Use <b>Start captain</b> above to open one, or check your setup on the <a className="underline" href="#/doctor">Doctor</a> page.
             </Empty>
           ) : !project ? null : tab === 'board' ? (
             <BoardPage />

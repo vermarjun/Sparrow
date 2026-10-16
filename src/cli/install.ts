@@ -1,5 +1,5 @@
 // `sparrow install [--force]` — idempotent setup of everything outside the repo.
-//   1. SPARROW_HOME + resumes seeded from assets/resumes (user edits kept unless --force)
+//   1. SPARROW_HOME + resumes seeded from assets/resumes (user edits always kept)
 //   2. ~/.local/bin/sparrow → <repo>/bin/sparrow
 //   3. skills sparrow-captain + sparrow-worker copied into the harnesses' user skill dirs
 //   4. harness assets (T2's installHarnessAssets: OpenCode plugin, …)
@@ -106,25 +106,23 @@ export async function runInstall(opts: { force?: boolean } = {}): Promise<Instal
   for (const d of [SPARROW_HOME, RESUMES_DIR, AGENTS_DIR]) mkdirSync(d, { recursive: true });
   const src = join(ASSETS, 'resumes');
   const seeded: string[] = [];
-  const updated: string[] = [];
   const kept: string[] = [];
   let same = 0;
   for (const f of existsSync(src) ? readdirSync(src).filter((f) => f.endsWith('.md')).sort() : []) {
+    if (existsSync(join(RESUMES_DIR, '.deleted', f.slice(0, -3)))) continue;
     const from = join(src, f);
     const to = join(RESUMES_DIR, f);
     const body = readFileSync(from);
     if (!existsSync(to)) { writeFileSync(to, body); seeded.push(f.slice(0, -3)); }
     else if (readFileSync(to).equals(body)) same++;
-    else if (opts.force) { writeFileSync(to, body); updated.push(f.slice(0, -3)); }
     else kept.push(f.slice(0, -3));
   }
   ok.push(`home ${t(SPARROW_HOME)}`);
   ok.push(`resumes in ${t(RESUMES_DIR)}: ${[
     seeded.length && `seeded ${seeded.join(', ')}`,
-    updated.length && `overwritten ${updated.join(', ')}`,
     same && `${same} up to date`,
   ].filter(Boolean).join('; ') || 'none found in assets/resumes'}`);
-  if (kept.length) warnings.push(`kept your edited resumes: ${kept.join(', ')} (sparrow install --force overwrites them)`);
+  if (kept.length) warnings.push(`kept your edited resumes: ${kept.join(', ')} (never overwritten by install)`);
 
   // 2. ~/.local/bin/sparrow symlink
   try { chmodSync(BIN, 0o755); } catch {}
@@ -201,7 +199,7 @@ export async function runInstall(opts: { force?: boolean } = {}): Promise<Instal
     ...ok.map((l) => `  ✓ ${l}`),
     ...warnings.map((l) => `  ! ${l}`),
     '',
-    'Next: sparrow up --tmux   (then, in your Claude Code session: sparrow resumes, sparrow hire …)',
+    'Next: sparrow   (opens the UI; click Run doctor, then Start captain)',
   ].join('\n');
   return { ok, warnings, text };
 }

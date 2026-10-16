@@ -1,20 +1,22 @@
 # Sparrow
 
-A local agent factory. Your own Claude Code session is the **captain**: it hires named agents from role cards ("resumes"), and a small server (`sparrow up`) opens each one as a real interactive Claude Code, Codex or OpenCode TUI in its own tmux window. Agents report back through the `sparrow` CLI; results land in the captain's inbox.
+A local agent factory. Your own Claude Code session is the **captain**: it hires named agents from role cards ("resumes"), and a small server (`sparrow`) opens each one as a real interactive Claude Code, Codex or OpenCode TUI in its own tmux window. Agents report back through the `sparrow` CLI; results land in the captain's inbox.
 
 ## Install
 
 ```bash
 bun install
 bun run sparrow install      # seeds ~/.sparrow/resumes, links ~/.local/bin/sparrow, installs skills + harness assets
-sparrow up --tmux            # server in tmux session 'sparrow', window 'server' → http://127.0.0.1:4040
+sparrow                      # starts detached, opens the UI, prints its URL, and returns
 ```
 
-`sparrow install` is idempotent; `--force` overwrites resumes you edited and rebuilds the UI. The web UI (`web/dist`, git-ignored) is built by `sparrow install` when missing (`bun install` + `bun run build` in `web/`); `sparrow up` warns if it is not built. Skills go to `~/.claude/skills` (Claude Code; OpenCode reads it too) and `~/.codex/skills` (Codex).
+`sparrow install` is idempotent and always keeps edited resumes and deletion tombstones; `--force` rebuilds the UI and can replace the PATH link. For a guided install, paste the prompt in [INSTALL.md](INSTALL.md) into a fresh Claude Code session. The web UI (`web/dist`, git-ignored) is built by `sparrow install` when missing (`bun install` + `bun run build` in `web/`); `sparrow up` warns if it is not built. In the UI, click **Run doctor** to verify your harnesses, then **Start captain** in your project folder. Doctor runs only when requested. `sparrow` builds the UI if missing and reuses an already running server. `sparrow status` prints health, PID, port, log path, version, and worker attach commands; `sparrow stop` stops the server. Detached logs are at `$SPARROW_HOME/server.log` (default `~/.sparrow/server.log`). `sparrow up` stays in the foreground; `sparrow up --tmux` remains available. Skills go to `~/.claude/skills` (Claude Code; OpenCode reads it too) and `~/.codex/skills` (Codex).
 
 ## Captain flow
 
-In your own Claude Code session (the `sparrow-captain` skill teaches this):
+Use **Start captain** in the UI, or `sparrow captain --cwd /path/to/project [--model haiku] [--effort low]`. Captains run your normal Claude Code configuration in the `sparrow-captains` tmux session (`<SPARROW_TMUX_PREFIX>captains` with a custom prefix), one window per launch; the command prints the exact attach command. Worker sessions use isolated user settings plus Sparrow’s private skills plugin.
+
+In your captain session (the `sparrow-captain` skill teaches this):
 
 ```bash
 sparrow status                                   # is the server up? who is working?
@@ -27,13 +29,16 @@ sparrow send @maya "use Redis"                   # answer a question / more work
 sparrow release @maya                            # done for good
 ```
 
-Watch agents: `tmux attach -t sparrow-<project>` (one window per agent) or the web UI at http://127.0.0.1:4040 (board, chat, agents with live screen peek).
+Watch agents: `tmux attach -t sparrow-<project>` (one window per agent) or the web UI at the URL printed by `sparrow status` (board, chat, agents with live screen peek).
 
 Agents (the `sparrow-worker` skill + the protocol in their system prompt) post `sparrow update`, finish with `sparrow done - <<'EOF' … EOF` (Result / Evidence / Files / Next), `sparrow ask` when blocked, `sparrow wait` after delegating. After `done` the window closes; the next message resumes the same harness session with full memory.
 
 ## CLI
 
 ```
+sparrow                                         # start detached + open browser
+sparrow stop
+sparrow captain [--cwd dir] [--model m] [--effort e]
 sparrow up [--port N] [--max-running N] [--tmux]
 sparrow install [--force]
 sparrow status

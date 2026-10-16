@@ -1,6 +1,6 @@
 ---
 name: sparrow-captain
-description: Run a team of AI agents with Sparrow from your own session (you are the captain). Use when the user asks to hire, delegate to, or coordinate agents / builders / verifiers / researchers, mentions "sparrow", "sparrow hire", "the factory", or wants work split across Claude Code, Codex and OpenCode agents in tmux. Not for sessions where SPARROW_AGENT_ID is set (those are workers: use sparrow-worker).
+description: Run a team of AI agents with Sparrow from your own session (you are the captain). Use when the user asks to hire, delegate to, or coordinate agents / builders / verifiers / researchers, or explicitly names Sparrow. Not for sessions where SPARROW_AGENT_ID is set (those are workers: use sparrow-worker).
 ---
 
 # Sparrow captain
@@ -10,16 +10,15 @@ Sparrow is a local server that spawns named agents (Claude Code, Codex, OpenCode
 ## 1. Make sure the server runs
 ```bash
 sparrow status            # "Sparrow server: up …" or "not running"
-sparrow up --tmux         # starts it in tmux session 'sparrow', window 'server' (idempotent)
 ```
-First time on this machine: `sparrow install`.
+If the server is down, tell the user and stop. Never start it unprompted. The user starts Sparrow explicitly by running `sparrow`.
 
 ## 2. Pick the right resume
 ```bash
-sparrow resumes           # slug, title, harness/model, who can hire, description
+sparrow resumes           # slug, title, harness/model/effort, status, can_hire, description
 sparrow roster            # who is already on the team, their state and last update
 ```
-Default picks: `builder` (Claude) or `builder-codex` (Codex) to implement; `verifier` to check work adversarially; `researcher` for web + code research; `presenter` for an HTML explainer/deck; `sub-captain` to own a whole slice and hire its own builders.
+Never hire a resume marked UNUSABLE. Fix the reported problem and run doctor again. Default picks: `builder` (Claude) or `builder-codex` (Codex) to implement; `verifier` to check work adversarially; `researcher` for web + code research; `presenter` for an HTML explainer/deck; `sub-captain` to own a whole slice and hire its own builders.
 
 ## 3. Hire with a real brief
 ```bash
@@ -75,7 +74,7 @@ sparrow release @maya               # closes its window for good; it never wakes
 
 ## Watch
 - Agent windows: `tmux attach -t sparrow-<project>` (each agent is a window named after its handle). `sparrow status` prints exact attach lines.
-- Web UI (board, chat, agents, live screen peek): http://127.0.0.1:4040
+- Web UI (board, chat, agents, live screen peek): use the URL printed by `sparrow status`.
 
 ## Rules of thumb
 - Delegate whole, checkable tasks; keep integration and final judgment yourself.

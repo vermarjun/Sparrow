@@ -1,5 +1,5 @@
 // Plain-text renderers for the sparrow CLI. Models read this output, so keep it compact and stable.
-import type { Agent, Card, CardState, MessageView, Resume } from '../shared/types';
+import type { Agent, Card, CardState, MessageView, Resume, ResumeView } from '../shared/types';
 import { TMUX_SOCKET } from '../shared/config';
 
 export function age(at: number | null | undefined, now = Date.now()): string {
@@ -128,14 +128,19 @@ export function agentSummary(a: Agent): string {
 
 // ---------- resumes
 
-export function resumesDirectory(resumes: Resume[]): string {
+export function resumesDirectory(resumes: (Resume | ResumeView)[]): string {
   if (!resumes.length) return 'No resumes. Run: sparrow install';
   const sorted = [...resumes].sort((a, b) => a.slug.localeCompare(b.slug));
   return sorted
     .map((r) => {
-      const h = [r.harness, [r.model, r.effort].filter(Boolean).join('/')].filter(Boolean).join(' · ');
+      const view = r as Partial<ResumeView>;
+      const model = r.model ? `${r.model}${view.resolved_model && view.resolved_model !== r.model ? ` → ${view.resolved_model}` : ''}` : 'default';
+      const h = `${r.harness} · ${model} · effort ${r.effort ?? 'default'}`;
+      const status = view.status ?? 'unchecked';
+      const unusable = !['ok', 'unchecked'].includes(status);
       const lines = [`${r.slug} — ${r.title} [${h}]`, `  ${oneLine(r.description, 160)}`];
-      if (r.can_hire.length) lines.push(`  can hire: ${r.can_hire.join(', ')}`);
+      lines.push(`  status: ${status}${unusable ? ' — UNUSABLE: do not hire' : ''}${view.status_detail ? ` · ${view.status_detail}` : ''}`);
+      lines.push(`  can hire: ${r.can_hire.length ? r.can_hire.join(', ') : 'nobody'}`);
       return lines.join('\n');
     })
     .join('\n');

@@ -6,6 +6,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { api, type AgentDetail, type Screen } from '@/lib/api'
 import { ago, agoLabel, buildTree, clock, duration, flattenTree, quietMinutes, tmuxAttach } from '@/lib/format'
 import { useStore } from '@/lib/store'
+import { isOlderResume, resumeHref, runLabel } from '@/lib/catalog'
+import { OlderResumeBadge } from '@/pages/Resumes'
 import { cn } from '@/lib/utils'
 import { CopyButton, Empty, HarnessLabel, PathText, StateBadge, TmuxCopyMenu, useNow } from '@/components/sparrow/bits'
 
@@ -24,6 +26,7 @@ export function AgentsPage() {
   const [open, setOpen] = useState<string | null>(null)
   const now = useNow(15000)
   const quietLimit = useQuietLimit()
+  const resumes = useStore((s) => s.resumes)
 
   const all = Object.values(agents)
   const retired = all.filter((a) => a.state === 'retired').length
@@ -85,6 +88,10 @@ export function AgentsPage() {
                     <TableCell className="py-2">
                       <HarnessLabel harness={a.harness} />
                       {a.kind !== 'human' && <div className="text-xs text-muted-foreground">{a.model ?? 'default'}{a.effort ? ` · ${a.effort}` : ''}</div>}
+                      {a.last_run && a.kind !== 'human' && (
+                        <div className="text-[11px] text-muted-foreground/80" title="What the latest call actually launched with" data-last-run>last run: {runLabel(a.last_run)}</div>
+                      )}
+                      {isOlderResume(a, resumes[a.resume]) && <div className="mt-0.5"><OlderResumeBadge /></div>}
                     </TableCell>
                     <TableCell className="py-2">
                       <div className="flex flex-col items-start gap-1">
@@ -168,10 +175,14 @@ function AgentSheet({ agentId, onClose }: { agentId: string | null; onClose: () 
                 {agent.kind === 'human' ? 'Captain — your own session; never spawned by Sparrow.' : `${agent.title}${resume?.description ? ` — ${resume.description}` : ''}`}
               </SheetDescription>
               <dl className="mt-3 grid grid-cols-[88px_minmax(0,1fr)_88px_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-xs">
-                <Field k="resume">{agent.resume}</Field>
+                <Field k="resume">
+                  <a className="underline decoration-zinc-300 underline-offset-2 hover:decoration-zinc-500" href={resumeHref(agent.resume)}>{agent.resume}</a>
+                  {isOlderResume(agent, resume) && <span className="ml-1.5"><OlderResumeBadge /></span>}
+                </Field>
                 <Field k="parent">{parent ? `@${parent.handle}` : '—'}</Field>
                 <Field k="model">{agent.model ?? 'harness default'}</Field>
                 <Field k="effort">{agent.effort ?? 'default'}</Field>
+                <Field k="last run" wide>{runLabel(agent.last_run) ?? '—'}{agent.last_run && <span className="ml-1.5 text-muted-foreground">· {agoLabel(agent.last_run.at, now)}</span>}</Field>
                 <Field k="cwd" wide mono>{agent.cwd}</Field>
                 {agent.kind !== 'human' && (
                   <Field k="tmux" wide mono>
@@ -212,6 +223,7 @@ function AgentSheet({ agentId, onClose }: { agentId: string | null; onClose: () 
                         <TableHead className="h-7">End</TableHead>
                         <TableHead className="h-7">Exit</TableHead>
                         <TableHead className="h-7">Session</TableHead>
+                        <TableHead className="h-7">Ran with</TableHead>
                         <TableHead className="h-7 text-right">Nudges · restarts</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -225,6 +237,7 @@ function AgentSheet({ agentId, onClose }: { agentId: string | null; onClose: () 
                           </TableCell>
                           <TableCell className="py-1.5 tabular-nums">{c.exit_code ?? '—'}</TableCell>
                           <TableCell className="py-1.5">{c.resumed ? 'resumed' : 'fresh'}</TableCell>
+                          <TableCell className="py-1.5 text-muted-foreground">{c.harness ? [c.model ?? 'default', c.effort].filter(Boolean).join(' · ') : '—'}</TableCell>
                           <TableCell className="py-1.5 text-right tabular-nums">{c.nudges} · {c.restarts}</TableCell>
                         </TableRow>
                       ))}

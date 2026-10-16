@@ -1,5 +1,6 @@
-// Pure event reducer: applies one ServerEvent to the project's local data.
-import type { Agent, Call, Card, MessageView, ServerEvent } from '@shared/types'
+// Pure event reducers: `reduce` applies one ServerEvent to the project's local data,
+// `reduceGlobal` applies the global (project_id '*') events: catalog, doctor, resumes.
+import type { Agent, Call, Card, DoctorRun, HarnessCatalog, MessageView, ResumeView, ServerEvent } from '@shared/types'
 import type { ThreadRow } from './api'
 
 export interface Data {
@@ -38,7 +39,7 @@ function membersOf(m: MessageView): string[] {
 }
 
 export function reduce(d: Data, ev: ServerEvent): Data {
-  if (d.project && ev.project_id !== d.project) return d
+  if (!d.project || ev.project_id === '*' || ev.project_id !== d.project) return d
   switch (ev.type) {
     case 'agent.updated':
       return { ...d, agents: { ...d.agents, [ev.agent.id]: ev.agent } }
@@ -67,5 +68,32 @@ export function reduce(d: Data, ev: ServerEvent): Data {
     }
     default:
       return d
+  }
+}
+
+export interface GlobalData {
+  catalogs: HarnessCatalog[]
+  doctorRun: DoctorRun | null
+  resumes: Record<string, ResumeView>
+}
+
+export function reduceGlobal(g: GlobalData, ev: ServerEvent): GlobalData {
+  switch (ev.type) {
+    case 'catalog.updated':
+      return { ...g, catalogs: ev.catalogs }
+    case 'doctor.updated':
+      // An older run's late update must not replace the newer run.
+      if (g.doctorRun && g.doctorRun.id !== ev.run.id && g.doctorRun.started_at > ev.run.started_at) return g
+      return { ...g, doctorRun: ev.run }
+    case 'resume.updated':
+      return { ...g, resumes: { ...g.resumes, [ev.resume.slug]: ev.resume } }
+    case 'resume.deleted': {
+      if (!(ev.slug in g.resumes)) return g
+      const resumes = { ...g.resumes }
+      delete resumes[ev.slug]
+      return { ...g, resumes }
+    }
+    default:
+      return g
   }
 }
