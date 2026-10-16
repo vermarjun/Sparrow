@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { gitRoot } from '../../src/server/core';
 import { agentOf, flush, hire, setup } from './helpers';
 
@@ -27,7 +27,7 @@ describe('register captain', () => {
 
   test('gitRoot finds the repo toplevel (real git)', () => {
     const repo = join(import.meta.dir, '..', '..');
-    expect(gitRoot(join(repo, 'src', 'server')).endsWith('/sparrow')).toBe(true);
+    expect(gitRoot(join(repo, 'src', 'server'))).toBe(resolve(repo));
     const plain = mkdtempSync(join(tmpdir(), 'sp-nogit-'));
     expect(gitRoot(plain)).toBe(plain);
   });

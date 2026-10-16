@@ -4,6 +4,7 @@
 //  - Reports which harness binaries are present.
 // Nothing else is global: Claude's Stop hook is a per-spawn --settings file, Codex's notify is a per-spawn -c
 // override (the user's ~/.codex/config.toml is untouched), Claude folder trust is pre-accepted per cwd at start.
+import { claudePluginDir, ensureClaudePlugin } from './claude-plugin';
 import { existsSync } from 'node:fs';
 import { CLAUDE_BIN, CODEX_BIN, OPENCODE_BIN } from './env';
 import { ensurePlugin, pluginTarget } from './drivers/opencode';
@@ -25,6 +26,8 @@ async function version(bin: string): Promise<string | null> {
 
 export async function installHarnessAssets(): Promise<string[]> {
   const lines: string[] = [];
+  const claude = ensureClaudePlugin();
+  lines.push(`Claude plugin: ${claudePluginDir()} ${claude ? '(installed)' : '(up to date)'}`);
   const wrote = ensurePlugin();
   lines.push(`OpenCode plugin: ${pluginTarget()} ${wrote ? '(installed)' : '(up to date)'}`);
   for (const [name, bin] of [['claude', CLAUDE_BIN()], ['codex', CODEX_BIN()], ['opencode', OPENCODE_BIN()]] as const) {

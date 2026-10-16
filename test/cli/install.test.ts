@@ -15,7 +15,19 @@ function env(home: string, extraPath = true) {
 }
 
 describe('sparrow install', () => {
-  test('lands files, is idempotent, keeps edits unless --force', async () => {
+  test('never resurrects a tombstoned built-in, including with --force', async () => {
+    const home = tempDir();
+    const deleted = join(home, '.sparrow/resumes/.deleted');
+    mkdirSync(deleted, { recursive: true });
+    writeFileSync(join(deleted, 'builder'), 'deleted');
+    for (const args of [['install'], ['install', '--force']]) {
+      const r = await run(args, { env: env(home) });
+      expect(r.code).toBe(0);
+      expect(existsSync(join(home, '.sparrow/resumes/builder.md'))).toBe(false);
+      expect(existsSync(join(deleted, 'builder'))).toBe(true);
+    }
+  }, 120_000);
+  test('lands files, is idempotent, never overwrites edits, even with --force', async () => {
     const home = tempDir('sparrow-t3-home-');
     const r1 = await run(['install'], { env: env(home), cwd: home });
     expect(r1.code).toBe(0);
@@ -39,6 +51,9 @@ describe('sparrow install', () => {
       }
     }
     expect(r1.stdout).not.toContain('is not on your PATH');
+    const plugin = join(home, '.sparrow', 'claude-plugin');
+    expect(JSON.parse(readFileSync(join(plugin, '.claude-plugin', 'plugin.json'), 'utf8')).name).toBe('sparrow');
+    expect(readFileSync(join(plugin, 'skills/sparrow-worker/SKILL.md'), 'utf8')).toContain('Sparrow worker');
 
     // second run: nothing changes
     const r2 = await run(['install'], { env: env(home), cwd: home });
@@ -55,8 +70,8 @@ describe('sparrow install', () => {
     expect(r3.stdout).toContain('kept your edited resumes: builder');
     const r4 = await run(['install', '--force'], { env: env(home), cwd: home });
     expect(r4.code).toBe(0);
-    expect(readFileSync(builder, 'utf8')).toBe(readFileSync(join(REPO, 'assets', 'resumes', 'builder.md'), 'utf8'));
-    expect(r4.stdout).toContain('overwritten builder');
+    expect(readFileSync(builder, 'utf8')).toBe('my edit');
+    expect(r4.stdout).toContain('kept your edited resumes: builder');
   }, 120_000);
 
   test('warns when ~/.local/bin is not on PATH and leaves a foreign file alone', async () => {
