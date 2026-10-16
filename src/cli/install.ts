@@ -106,7 +106,6 @@ export async function runInstall(opts: { force?: boolean } = {}): Promise<Instal
   for (const d of [SPARROW_HOME, RESUMES_DIR, AGENTS_DIR]) mkdirSync(d, { recursive: true });
   const src = join(ASSETS, 'resumes');
   const seeded: string[] = [];
-  const updated: string[] = [];
   const kept: string[] = [];
   let same = 0;
   for (const f of existsSync(src) ? readdirSync(src).filter((f) => f.endsWith('.md')).sort() : []) {
@@ -121,7 +120,6 @@ export async function runInstall(opts: { force?: boolean } = {}): Promise<Instal
   ok.push(`home ${t(SPARROW_HOME)}`);
   ok.push(`resumes in ${t(RESUMES_DIR)}: ${[
     seeded.length && `seeded ${seeded.join(', ')}`,
-    updated.length && `overwritten ${updated.join(', ')}`,
     same && `${same} up to date`,
   ].filter(Boolean).join('; ') || 'none found in assets/resumes'}`);
   if (kept.length) warnings.push(`kept your edited resumes: ${kept.join(', ')} (never overwritten by install)`);

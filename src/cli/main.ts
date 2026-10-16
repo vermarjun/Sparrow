@@ -8,7 +8,7 @@ import { BIN, LOG_FILE, PORT, REPO_ROOT, SERVER_URL, SPARROW_HOME, TMUX_SOCKET }
 import { CARD_STATES } from '../shared/types';
 import type {
   Agent, Card, CardState, DoneStatus, EndCallRes, HireRes, MessageRes, MessageView, Project,
-  RegisterCaptainRes, Resume,
+  RegisterCaptainRes, ResumeView,
 } from '../shared/types';
 import {
   age, agentSummary, cardBoard, cardDetail, hhmm, inboxBlock, logLines, oneLine, resumesDirectory,
@@ -243,7 +243,7 @@ const commands: Record<string, Handler> = {
 
   async resumes(ctx, args) {
     parse('resumes', args);
-    const list = await call<Resume[]>(ctx, 'GET', '/api/resumes');
+    const list = await call<ResumeView[]>(ctx, 'GET', '/api/resumes');
     return { raw: list, text: resumesDirectory(list) + '\n\nHire: sparrow hire <slug> "<task>"' };
   },
 
