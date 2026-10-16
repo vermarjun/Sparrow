@@ -6,6 +6,12 @@ import type {
 export const HARNESSES = ['claude', 'codex', 'opencode'] as const satisfies readonly HarnessName[]
 export type RealHarness = (typeof HARNESSES)[number]
 
+/** Route of the resume editor; `NEW_SLUG` (not a valid slug) is the create form. */
+export const NEW_SLUG = '_new'
+export function resumeHref(slug: string | null) {
+  return slug ? `#/resumes/${encodeURIComponent(slug)}` : '#/resumes'
+}
+
 export const SLUG_RE = /^[a-z][a-z0-9-]{0,31}$/
 
 export function slugError(slug: string): string | null {
@@ -69,7 +75,7 @@ export interface ModelOption { value: string; label: string; hint: string | null
 export function costLabel(cost: CatalogModel['cost']): string | null {
   if (!cost) return null
   if (cost.input === 0 && cost.output === 0) return 'free'
-  const f = (n: number) => `$${n < 1 ? n.toFixed(2).replace(/0$/, '') : Number.isInteger(n) ? n : n.toFixed(2)}`
+  const f = (n: number) => `$${Number.isInteger(n) ? n : n.toFixed(2)}`
   return `${f(cost.input)} / ${f(cost.output)} per 1M`
 }
 
@@ -155,6 +161,11 @@ export function summarizeChecks(checks: DoctorCheck[]): string {
   const n = countByStatus(checks)
   const order: CheckStatus[] = ['running', 'pending', 'pass', 'warn', 'fail', 'skipped']
   return order.filter((s) => n[s]).map((s) => `${n[s]} ${s}`).join(' · ')
+}
+
+/** "effort: xhigh is not…" → "xhigh is not…" (the field is already named by where the message is shown). */
+export function stripField(msg: string, field: string): string {
+  return msg.replace(new RegExp(`^${field}(?:\\.[a-z_]+)?\\s*:\\s*`, 'i'), '')
 }
 
 /** Error text from the server, mapped to the editor field it names (400s name the field), else null. */
