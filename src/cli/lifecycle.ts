@@ -86,8 +86,32 @@ export async function startDetached(): Promise<Health> {
   } finally { try { unlinkSync(lock); } catch {} }
 }
 
-export async function openUi() {
+/**
+ * Wait until GET /api/catalog has an entry (ok or failed) for every harness, so the UI opens with full model lists.
+ * The server fetches them in the background after listening; claude/opencode take a few seconds. Never fails:
+ * after timeoutMs the browser opens anyway and the UI fills in on catalog.updated.
+ */
+export async function waitForCatalogs(opts: { url?: string; timeoutMs?: number; harnesses?: string[]; say?: (line: string) => void; pollMs?: number } = {}): Promise<{ complete: boolean; have: string[] }> {
+  const url = opts.url ?? SERVER_URL;
+  const want = opts.harnesses ?? ['claude', 'codex', 'opencode'];
+  const end = Date.now() + (opts.timeoutMs ?? 20_000);
+  let said = false;
+  let have: string[] = [];
+  for (;;) {
+    try {
+      const r = await fetch(`${url}/api/catalog`, { signal: AbortSignal.timeout(2000) });
+      if (r.ok) have = ((await r.json()) as { harness: string }[]).map((c) => c.harness);
+    } catch { /* not answering yet */ }
+    if (want.every((h) => have.includes(h))) return { complete: true, have };
+    if (Date.now() >= end) return { complete: false, have };
+    if (!said) { opts.say?.('Loading model lists…'); said = true; }
+    await Bun.sleep(opts.pollMs ?? 250);
+  }
+}
+
+export async function openUi(opts: { say?: (line: string) => void } = {}) {
   const h = await startDetached();
+  await waitForCatalogs({ say: opts.say });
   const p = Bun.spawn(['open', SERVER_URL], { stdout: 'ignore', stderr: 'pipe' });
   const err = await new Response(p.stderr).text();
   if (await p.exited) console.error(`Could not open the browser: ${err.trim()}`);

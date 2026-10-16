@@ -114,3 +114,38 @@ test('attach command shell escaping preserves the tmux command separator', async
   expect(await p.exited).toBe(0);
   expect(out).toContain('<;>\n<select-window>');
 });
+
+describe('waitForCatalogs (the browser opens with every harness listed)', () => {
+  test('waits until claude, codex and opencode all have an entry (ok or failed); says "Loading model lists…" once', async () => {
+    const { waitForCatalogs } = await import('../../src/cli/lifecycle');
+    const t0 = Date.now();
+    const at = (ms: number, h: string, ok = true) => (Date.now() - t0 >= ms ? [{ harness: h, ok }] : []);
+    const srv = Bun.serve({
+      port: 0, hostname: '127.0.0.1',
+      fetch: () => Response.json([...at(0, 'codex'), ...at(300, 'claude'), ...at(600, 'opencode', false)]),
+    });
+    const lines: string[] = [];
+    try {
+      const r = await waitForCatalogs({ url: `http://127.0.0.1:${srv.port}`, timeoutMs: 5000, pollMs: 50, say: (l) => lines.push(l) });
+      expect(r.complete).toBe(true);
+      expect(r.have.sort()).toEqual(['claude', 'codex', 'opencode']);
+      expect(Date.now() - t0).toBeGreaterThanOrEqual(600);
+      expect(lines).toEqual(['Loading model lists…']);
+    } finally { srv.stop(true); }
+  });
+
+  test('gives up after the timeout without failing; silent when already complete', async () => {
+    const { waitForCatalogs } = await import('../../src/cli/lifecycle');
+    const partial = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: () => Response.json([{ harness: 'codex', ok: true }]) });
+    const full = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: () => Response.json(['claude', 'codex', 'opencode'].map((harness) => ({ harness, ok: true }))) });
+    try {
+      const t0 = Date.now();
+      const r = await waitForCatalogs({ url: `http://127.0.0.1:${partial.port}`, timeoutMs: 300, pollMs: 50 });
+      expect(r).toEqual({ complete: false, have: ['codex'] });
+      expect(Date.now() - t0).toBeLessThan(2000);
+      const lines: string[] = [];
+      expect((await waitForCatalogs({ url: `http://127.0.0.1:${full.port}`, say: (l) => lines.push(l) })).complete).toBe(true);
+      expect(lines).toEqual([]);
+    } finally { partial.stop(true); full.stop(true); }
+  });
+});

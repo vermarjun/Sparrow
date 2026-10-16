@@ -652,7 +652,7 @@ export async function main(argv: string[]): Promise<number> {
   if (!cmd) {
     try {
       const { openUi } = await import('./lifecycle');
-      const r = await openUi();
+      const r = await openUi({ say: json ? undefined : (l) => console.log(l) });
       console.log(json ? JSON.stringify(r, null, 2) : `Sparrow: ${r.url} (pid ${r.health.pid})\nLog: ${r.log}`);
       return 0;
     } catch (e) { console.error(`sparrow: ${(e as Error).message}`); return 1; }
