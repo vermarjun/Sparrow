@@ -1,23 +1,28 @@
 #!/usr/bin/env bun
 // Mock Sparrow server for UI development and screenshots.
-//   bun mock/server.ts [--port 4140] [--quiet] [--no-live]
+//   bun mock/server.ts [--port 4140] [--quiet] [--no-live] [--doctor-done] [--no-projects]
 // Implements the GET endpoints the UI reads, SSE /api/events, POST/PATCH /api/cards,
+// and the U1 endpoints (catalog, doctor, resumes, captain; see mock/u1.ts),
 // and serves web/dist (SPA fallback) when it exists. Every request is logged to stdout
 // and kept in memory: GET /__log returns it, POST /__log/reset clears it.
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import type {
-  Agent, Call, Card, CardCreateReq, CardPatchReq, CardState, MessageKind, MessageView, Project, Resume, ServerEvent,
+  Agent, Call, Card, CardCreateReq, CardPatchReq, CardState, MessageKind, MessageView, Project, ServerEvent,
 } from '../../src/shared/types'
+import { createU1 } from './u1'
 
 const { values: argv } = parseArgs({
   args: Bun.argv.slice(2),
-  options: { port: { type: 'string' }, quiet: { type: 'boolean' }, 'no-live': { type: 'boolean' }, dist: { type: 'string' } },
+  options: {
+    port: { type: 'string' }, quiet: { type: 'boolean' }, 'no-live': { type: 'boolean' }, dist: { type: 'string' },
+    'doctor-done': { type: 'boolean' }, 'no-projects': { type: 'boolean' },
+  },
 })
 const PORT = Number(argv.port ?? process.env.MOCK_PORT ?? 4140)
 const DIST = resolve(argv.dist ?? join(import.meta.dir, '..', 'dist'))
-const LIVE = !argv['no-live']
+const LIVE = !argv['no-live'] && !argv['no-projects']
 
 // ---------------------------------------------------------------- seed
 // A wide (~170 col) Codex-style screen, like a real crash snapshot.
@@ -48,17 +53,19 @@ export function seed(now = Date.now()) {
   const base = {
     project_id: 'plutus', model: null, effort: null, can_hire: [], last_end_reason: null, last_update: null,
     last_update_at: null, tmux_window_id: null, session_id: null, call_id: null, tmux_session: 'sparrow-plutus',
+    resume_hash: null, last_run: null,
   }
   const A = (a: Partial<Agent> & Pick<Agent, 'id' | 'handle' | 'resume' | 'title' | 'harness' | 'state' | 'depth'>): Agent => ({
     ...base, kind: 'agent', parent_id: null, cwd: '/Users/vermarjun/Desktop/plutus', tmux_window: a.handle,
-    last_seen_at: null, resume_hash: null, last_run: null, created_at: t(120), updated_at: t(1), ...a,
+    last_seen_at: null, created_at: t(120), updated_at: t(1),
+    last_run: a.kind === 'human' || a.state === 'queued' ? null : { harness: a.harness, model: a.model ?? null, effort: a.effort ?? null, at: t(30) }, ...a,
   } as Agent)
   const agents: Agent[] = [
     A({ id: 'ag_cap', handle: 'captain', kind: 'human', resume: 'captain', title: 'Captain', harness: 'human', state: 'idle', depth: 0, can_hire: ['*'], tmux_session: '', tmux_window: '', last_seen_at: t(2), created_at: t(180) }),
     A({ id: 'ag_maya', handle: 'maya', resume: 'sub-captain', title: 'Sub-captain', harness: 'claude', model: 'opus', effort: 'high', state: 'waiting', depth: 1, parent_id: 'ag_cap', can_hire: ['builder', 'builder-codex', 'verifier', 'researcher', 'presenter'], session_id: '3f9c2e1a-7b44-4c1e-9a0d-5e2c8b7d1f60', last_end_reason: 'wait', last_update: 'waiting: @james on the export endpoint, @iris on review', last_update_at: t(31), last_seen_at: t(31), created_at: t(170) }),
-    A({ id: 'ag_james', handle: 'james', resume: 'builder', title: 'Builder', harness: 'claude', model: 'opus', effort: 'high', state: 'working', depth: 2, parent_id: 'ag_maya', session_id: '9b1d07c2-2a8e-4f5b-b3c1-1e6a2d9f4c88', call_id: 'call_j3', tmux_window_id: '@17', cwd: '/Users/vermarjun/Desktop/plutus-wt/export-csv', last_update: 'CSV writer done; 14/14 tests pass. Next: wire /api/export and stream large files', last_update_at: t(4), last_seen_at: t(1), created_at: t(150) }),
+    A({ id: 'ag_james', handle: 'james', resume: 'builder', title: 'Builder', harness: 'claude', model: 'opus', effort: 'high', state: 'working', depth: 2, parent_id: 'ag_maya', session_id: '9b1d07c2-2a8e-4f5b-b3c1-1e6a2d9f4c88', call_id: 'call_j3', tmux_window_id: '@17', last_run: { harness: 'claude', model: 'claude-opus-5-5', effort: 'high', at: t(63) }, cwd: '/Users/vermarjun/Desktop/plutus-wt/export-csv', last_update: 'CSV writer done; 14/14 tests pass. Next: wire /api/export and stream large files', last_update_at: t(4), last_seen_at: t(1), created_at: t(150) }),
     A({ id: 'ag_leo', handle: 'leo', resume: 'builder', title: 'Builder', harness: 'claude', model: 'sonnet', effort: 'medium', state: 'queued', depth: 2, parent_id: 'ag_maya', created_at: t(12) }),
-    A({ id: 'ag_iris', handle: 'iris', resume: 'verifier', title: 'Verifier', harness: 'codex', model: 'gpt-5.5', effort: 'medium', state: 'crashed', depth: 2, parent_id: 'ag_maya', session_id: '0199a3c4-5d6e-7f80-9a1b-2c3d4e5f6a7b', last_end_reason: 'crashed', last_update: 'running the integration suite against PR #41', last_update_at: t(22), last_seen_at: t(19), created_at: t(60) }),
+    A({ id: 'ag_iris', handle: 'iris', resume: 'verifier', title: 'Verifier', harness: 'codex', model: 'gpt-6.1-sol', effort: 'medium', state: 'crashed', depth: 2, parent_id: 'ag_maya', session_id: '0199a3c4-5d6e-7f80-9a1b-2c3d4e5f6a7b', last_end_reason: 'crashed', last_update: 'running the integration suite against PR #41', last_update_at: t(22), last_seen_at: t(19), created_at: t(60) }),
     A({ id: 'ag_omar', handle: 'omar', resume: 'researcher', title: 'Researcher', harness: 'opencode', model: 'opencode/glm-5.1', effort: null, state: 'idle', depth: 1, parent_id: 'ag_cap', session_id: 'ses_6a1f9c03e2ffeX8kq', last_end_reason: 'done', last_update: 'Compared 3 CSV libs; papaparse wins on streaming', last_update_at: t(95), last_seen_at: t(88), created_at: t(140) }),
     A({ id: 'ag_nina', handle: 'nina', resume: 'presenter', title: 'Presenter', harness: 'opencode', state: 'retired', depth: 1, parent_id: 'ag_cap', last_end_reason: 'released', created_at: t(300), last_update: 'deck v1 shipped', last_update_at: t(240) }),
     // second project
@@ -67,14 +74,14 @@ export function seed(now = Date.now()) {
   ]
 
   const calls: Call[] = [
-    { id: 'call_m1', agent_id: 'ag_maya', started_at: t(168), ended_at: t(150), end_reason: 'wait', exit_code: null, resumed: false, nudges: 0, restarts: 0, prompt: '', harness: null, model: null, effort: null },
-    { id: 'call_m2', agent_id: 'ag_maya', started_at: t(96), ended_at: t(31), end_reason: 'wait', exit_code: null, resumed: true, nudges: 0, restarts: 0, prompt: '', harness: null, model: null, effort: null },
-    { id: 'call_j1', agent_id: 'ag_james', started_at: t(149), ended_at: t(118), end_reason: 'ask', exit_code: null, resumed: false, nudges: 0, restarts: 0, prompt: '', harness: null, model: null, effort: null },
-    { id: 'call_j2', agent_id: 'ag_james', started_at: t(112), ended_at: t(64), end_reason: 'crashed', exit_code: 137, resumed: true, nudges: 1, restarts: 0, prompt: '', harness: null, model: null, effort: null },
-    { id: 'call_j3', agent_id: 'ag_james', started_at: t(63), ended_at: null, end_reason: null, exit_code: null, resumed: true, nudges: 0, restarts: 1, prompt: '', harness: null, model: null, effort: null },
-    { id: 'call_i1', agent_id: 'ag_iris', started_at: t(58), ended_at: t(40), end_reason: 'crashed', exit_code: 1, resumed: false, nudges: 0, restarts: 0, prompt: '', harness: null, model: null, effort: null },
-    { id: 'call_i2', agent_id: 'ag_iris', started_at: t(39), ended_at: t(19), end_reason: 'crashed', exit_code: -1, resumed: true, nudges: 0, restarts: 1, prompt: '', harness: null, model: null, effort: null },
-    { id: 'call_o1', agent_id: 'ag_omar', started_at: t(139), ended_at: t(88), end_reason: 'done', exit_code: null, resumed: false, nudges: 2, restarts: 0, prompt: '', harness: null, model: null, effort: null },
+    { id: 'call_m1', agent_id: 'ag_maya', started_at: t(168), ended_at: t(150), end_reason: 'wait', exit_code: null, resumed: false, nudges: 0, restarts: 0, prompt: '', harness: 'claude', model: 'opus', effort: 'high' },
+    { id: 'call_m2', agent_id: 'ag_maya', started_at: t(96), ended_at: t(31), end_reason: 'wait', exit_code: null, resumed: true, nudges: 0, restarts: 0, prompt: '', harness: 'claude', model: 'opus', effort: 'high' },
+    { id: 'call_j1', agent_id: 'ag_james', started_at: t(149), ended_at: t(118), end_reason: 'ask', exit_code: null, resumed: false, nudges: 0, restarts: 0, prompt: '', harness: 'claude', model: 'opus', effort: 'high' },
+    { id: 'call_j2', agent_id: 'ag_james', started_at: t(112), ended_at: t(64), end_reason: 'crashed', exit_code: 137, resumed: true, nudges: 1, restarts: 0, prompt: '', harness: 'claude', model: 'opus', effort: 'high' },
+    { id: 'call_j3', agent_id: 'ag_james', started_at: t(63), ended_at: null, end_reason: null, exit_code: null, resumed: true, nudges: 0, restarts: 1, prompt: '', harness: 'claude', model: 'opus', effort: 'high' },
+    { id: 'call_i1', agent_id: 'ag_iris', started_at: t(58), ended_at: t(40), end_reason: 'crashed', exit_code: 1, resumed: false, nudges: 0, restarts: 0, prompt: '', harness: 'codex', model: 'gpt-6.1-sol', effort: 'medium' },
+    { id: 'call_i2', agent_id: 'ag_iris', started_at: t(39), ended_at: t(19), end_reason: 'crashed', exit_code: -1, resumed: true, nudges: 0, restarts: 1, prompt: '', harness: 'codex', model: 'gpt-6.1-sol', effort: 'medium' },
+    { id: 'call_o1', agent_id: 'ag_omar', started_at: t(139), ended_at: t(88), end_reason: 'done', exit_code: null, resumed: false, nudges: 2, restarts: 0, prompt: '', harness: 'opencode', model: 'opencode/glm-5.1', effort: null },
   ]
 
   const byId = new Map(agents.map((a) => [a.id, a]))
@@ -148,18 +155,8 @@ export function seed(now = Date.now()) {
     { ...C(12, 'todo', 1, 'README quickstart', { assignee_id: 'ag_ada' }), project_id: 'sparrow' },
   ]
 
-  const resumes: Resume[] = [
-    ['sub-captain', 'Sub-captain', 'claude', 'opus', 'high', ['builder', 'builder-codex', 'verifier', 'researcher', 'presenter'], 'Owns one slice: plans, hires, reviews, reports.'],
-    ['builder', 'Builder', 'claude', 'opus', 'high', [], 'Implements one task end to end in the given folder, runs it, reports evidence.'],
-    ['builder-codex', 'Builder (Codex)', 'codex', 'gpt-5.5', 'medium', [], 'Same as builder, on Codex.'],
-    ['verifier', 'Verifier', 'codex', 'gpt-5.5', 'medium', [], 'Read-only checker: runs tests, tries edge cases, reports pass/fail with evidence.'],
-    ['researcher', 'Researcher', 'opencode', 'opencode/glm-5.1', null, [], 'Reads widely, cites sources, writes a short digest.'],
-    ['presenter', 'Presenter', 'opencode', null, null, [], 'Turns findings into a short HTML deck.'],
-  ].map(([slug, title, harness, model, effort, can_hire, description]) => ({
-    slug, title, harness, model, effort, can_hire, description, limits: { quiet_minutes: 15, max_call_minutes: 90 }, body: `You are a ${title}.`, path: `~/.sparrow/resumes/${slug}.md`,
-  }) as Resume)
 
-  return { projects, agents, calls, messages, cards, resumes, nextSeq: () => ++seq }
+  return { projects, agents, calls, messages, cards, nextSeq: () => ++seq }
 }
 
 const JAMES_SCREEN = `╭────────────────────────────────────────────────────────────╮
@@ -188,6 +185,7 @@ const JAMES_SCREEN = `╭──────────────────�
 
 // ---------------------------------------------------------------- state + server
 const db = seed()
+if (argv['no-projects']) { db.projects.length = 0; db.agents.length = 0; db.messages.length = 0; db.cards.length = 0 }
 const screens = new Map<string, { text: string; at: number }>([
   ['ag_james', { text: JAMES_SCREEN, at: Date.now() }],
   ['ag_iris', { text: IRIS_SCREEN, at: Date.now() - 19 * 60_000 }],
@@ -197,8 +195,9 @@ const subs = new Set<Sub>()
 const log: { at: number; method: string; path: string; body?: unknown }[] = []
 
 function emit(ev: ServerEvent) {
-  for (const s of subs) if (!s.project || s.project === ev.project_id) s.send(ev)
+  for (const s of subs) if (!s.project || ev.project_id === '*' || s.project === ev.project_id) s.send(ev)
 }
+const u1 = createU1({ agents: db.agents, emit }, { doctorMs: Number(process.env.MOCK_DOCTOR_MS ?? 8000), doctorDone: !!argv['doctor-done'] })
 const json = (data: unknown, status = 200) => Response.json(data, { status })
 const err = (status: number, error: string) => json({ error }, status)
 
@@ -238,7 +237,8 @@ async function handle(req: Request): Promise<Response> {
       cards: db.cards.filter((c) => c.project_id === pr.id).length,
     })))
   }
-  if (p === '/api/resumes') return json(db.resumes)
+  const u1res = await u1.handle(req, p, body)
+  if (u1res) return u1res
   if (p === '/api/agents') return json(db.agents.filter((a) => !project || a.project_id === project).sort((a, b) => b.created_at - a.created_at))
   let m: RegExpMatchArray | null
   if ((m = p.match(/^\/api\/agents\/([^/]+)$/))) {

@@ -1,20 +1,25 @@
 import { create } from 'zustand'
-import type { Resume, ServerEvent } from '@shared/types'
+import type { HarnessHealth, ServerEvent } from '@shared/types'
 import { api, type ProjectRow } from './api'
-import { emptyData, reduce, sortThreads, type Data } from './reduce'
+import { emptyData, reduce, reduceGlobal, sortThreads, type Data, type GlobalData } from './reduce'
 
 export type Conn = 'connecting' | 'live' | 'down'
-export type Tab = 'board' | 'chat' | 'agents'
+export type Tab = 'board' | 'chat' | 'agents' | 'doctor' | 'resumes'
 
-interface Store extends Data {
+interface Store extends Data, GlobalData {
   projects: ProjectRow[]
-  resumes: Record<string, Resume>
+  health: HarnessHealth[]
+  catalogLoaded: boolean
+  doctorLoaded: boolean
   conn: Conn
   loading: boolean
   error: string | null
   setConn: (c: Conn) => void
   loadProjects: () => Promise<ProjectRow[]>
   loadResumes: () => Promise<void>
+  loadCatalog: () => Promise<void>
+  loadDoctor: () => Promise<void>
+  loadGlobals: () => Promise<void>
   selectProject: (id: string) => void
   loadProject: () => Promise<void>
   loadThread: (thread: string) => Promise<void>
@@ -27,6 +32,11 @@ export const useStore = create<Store>((set, get) => ({
   ...emptyData(),
   projects: [],
   resumes: {},
+  catalogs: [],
+  doctorRun: null,
+  health: [],
+  catalogLoaded: false,
+  doctorLoaded: false,
   conn: 'connecting',
   loading: false,
   error: null,
@@ -41,6 +51,21 @@ export const useStore = create<Store>((set, get) => ({
       const list = await api.resumes()
       set({ resumes: Object.fromEntries(list.map((r) => [r.slug, r])) })
     } catch { /* optional */ }
+  },
+  async loadCatalog() {
+    try {
+      set({ catalogs: await api.catalog(), catalogLoaded: true })
+    } catch { /* server without U1: pages show their empty state */ }
+  },
+  async loadDoctor() {
+    try {
+      const { run, health } = await api.doctor()
+      set({ doctorRun: run, health, doctorLoaded: true })
+    } catch { /* idem */ }
+  },
+  async loadGlobals() {
+    const s = get()
+    await Promise.all([s.loadResumes(), s.loadCatalog(), s.loadDoctor()])
   },
   selectProject(id) {
     if (get().project === id) return
@@ -78,6 +103,17 @@ export const useStore = create<Store>((set, get) => ({
   },
   apply(ev) {
     const s = get()
+    if (ev.project_id === '*') {
+      const next = reduceGlobal(s, ev)
+      if (next !== s) set(next)
+      // A finished run changes health and resume statuses; neither travels on the event.
+      if (ev.type === 'doctor.updated' && ev.run.ended_at && s.doctorRun?.ended_at !== ev.run.ended_at) {
+        void get().loadDoctor()
+        void get().loadResumes()
+      }
+      if (ev.type === 'catalog.updated') void get().loadResumes()
+      return
+    }
     const next = reduce(s, ev)
     if (next !== s) set(next)
   },
