@@ -51,7 +51,7 @@ export function seed(now = Date.now()) {
   }
   const A = (a: Partial<Agent> & Pick<Agent, 'id' | 'handle' | 'resume' | 'title' | 'harness' | 'state' | 'depth'>): Agent => ({
     ...base, kind: 'agent', parent_id: null, cwd: '/Users/vermarjun/Desktop/plutus', tmux_window: a.handle,
-    last_seen_at: null, created_at: t(120), updated_at: t(1), ...a,
+    last_seen_at: null, resume_hash: null, last_run: null, created_at: t(120), updated_at: t(1), ...a,
   } as Agent)
   const agents: Agent[] = [
     A({ id: 'ag_cap', handle: 'captain', kind: 'human', resume: 'captain', title: 'Captain', harness: 'human', state: 'idle', depth: 0, can_hire: ['*'], tmux_session: '', tmux_window: '', last_seen_at: t(2), created_at: t(180) }),
@@ -67,14 +67,14 @@ export function seed(now = Date.now()) {
   ]
 
   const calls: Call[] = [
-    { id: 'call_m1', agent_id: 'ag_maya', started_at: t(168), ended_at: t(150), end_reason: 'wait', exit_code: null, resumed: false, nudges: 0, restarts: 0, prompt: '' },
-    { id: 'call_m2', agent_id: 'ag_maya', started_at: t(96), ended_at: t(31), end_reason: 'wait', exit_code: null, resumed: true, nudges: 0, restarts: 0, prompt: '' },
-    { id: 'call_j1', agent_id: 'ag_james', started_at: t(149), ended_at: t(118), end_reason: 'ask', exit_code: null, resumed: false, nudges: 0, restarts: 0, prompt: '' },
-    { id: 'call_j2', agent_id: 'ag_james', started_at: t(112), ended_at: t(64), end_reason: 'crashed', exit_code: 137, resumed: true, nudges: 1, restarts: 0, prompt: '' },
-    { id: 'call_j3', agent_id: 'ag_james', started_at: t(63), ended_at: null, end_reason: null, exit_code: null, resumed: true, nudges: 0, restarts: 1, prompt: '' },
-    { id: 'call_i1', agent_id: 'ag_iris', started_at: t(58), ended_at: t(40), end_reason: 'crashed', exit_code: 1, resumed: false, nudges: 0, restarts: 0, prompt: '' },
-    { id: 'call_i2', agent_id: 'ag_iris', started_at: t(39), ended_at: t(19), end_reason: 'crashed', exit_code: -1, resumed: true, nudges: 0, restarts: 1, prompt: '' },
-    { id: 'call_o1', agent_id: 'ag_omar', started_at: t(139), ended_at: t(88), end_reason: 'done', exit_code: null, resumed: false, nudges: 2, restarts: 0, prompt: '' },
+    { id: 'call_m1', agent_id: 'ag_maya', started_at: t(168), ended_at: t(150), end_reason: 'wait', exit_code: null, resumed: false, nudges: 0, restarts: 0, prompt: '', harness: null, model: null, effort: null },
+    { id: 'call_m2', agent_id: 'ag_maya', started_at: t(96), ended_at: t(31), end_reason: 'wait', exit_code: null, resumed: true, nudges: 0, restarts: 0, prompt: '', harness: null, model: null, effort: null },
+    { id: 'call_j1', agent_id: 'ag_james', started_at: t(149), ended_at: t(118), end_reason: 'ask', exit_code: null, resumed: false, nudges: 0, restarts: 0, prompt: '', harness: null, model: null, effort: null },
+    { id: 'call_j2', agent_id: 'ag_james', started_at: t(112), ended_at: t(64), end_reason: 'crashed', exit_code: 137, resumed: true, nudges: 1, restarts: 0, prompt: '', harness: null, model: null, effort: null },
+    { id: 'call_j3', agent_id: 'ag_james', started_at: t(63), ended_at: null, end_reason: null, exit_code: null, resumed: true, nudges: 0, restarts: 1, prompt: '', harness: null, model: null, effort: null },
+    { id: 'call_i1', agent_id: 'ag_iris', started_at: t(58), ended_at: t(40), end_reason: 'crashed', exit_code: 1, resumed: false, nudges: 0, restarts: 0, prompt: '', harness: null, model: null, effort: null },
+    { id: 'call_i2', agent_id: 'ag_iris', started_at: t(39), ended_at: t(19), end_reason: 'crashed', exit_code: -1, resumed: true, nudges: 0, restarts: 1, prompt: '', harness: null, model: null, effort: null },
+    { id: 'call_o1', agent_id: 'ag_omar', started_at: t(139), ended_at: t(88), end_reason: 'done', exit_code: null, resumed: false, nudges: 2, restarts: 0, prompt: '', harness: null, model: null, effort: null },
   ]
 
   const byId = new Map(agents.map((a) => [a.id, a]))
