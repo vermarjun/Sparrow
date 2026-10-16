@@ -65,8 +65,8 @@ export function writeCallTexts(agentId: string, callId: string, systemPrompt: st
 export const UNSET_VARS = ['CLAUDECODE', 'CLAUDE_CODE_SESSION_ID', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_MESSAGING_SOCKET',
   'CLAUDE_CODE_MESSAGING_TOKEN', 'CLAUDE_PID', 'CLAUDE_EFFORT', 'CLAUDE_CODE_SSE_PORT', 'TMUX_PANE_SPARROW'];
 // Prefix families unset too — except configuration homes, which hold auth.
-const UNSET_PREFIX_RE = '^(CODEX_|OPENCODE_)';
-const KEEP_RE = '^(CODEX_HOME|OPENCODE_CONFIG|OPENCODE_CONFIG_DIR|OPENCODE_CONFIG_CONTENT)$';
+export const UNSET_PREFIX_RE = '^(CODEX_|OPENCODE_)';
+export const KEEP_RE = '^(CODEX_HOME|OPENCODE_CONFIG|OPENCODE_CONFIG_DIR|OPENCODE_CONFIG_CONTENT)$';
 
 export function hookCommand(kind: string, extra = ''): string {
   return `${sq(bunPath())} ${sq(hookEntry())} ${kind}${extra ? ' ' + extra : ''}`;
