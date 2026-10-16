@@ -22,7 +22,7 @@ const { values: argv } = parseArgs({
 })
 const PORT = Number(argv.port ?? process.env.MOCK_PORT ?? 4140)
 const DIST = resolve(argv.dist ?? join(import.meta.dir, '..', 'dist'))
-const LIVE = !argv['no-live']
+const LIVE = !argv['no-live'] && !argv['no-projects']
 
 // ---------------------------------------------------------------- seed
 // A wide (~170 col) Codex-style screen, like a real crash snapshot.

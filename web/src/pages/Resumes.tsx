@@ -295,7 +295,7 @@ function ResumeEditor({ slug }: { slug: string | null }) {
                   </SelectContent>
                 </Select>
                 {effort.note && <p className="text-[11px] text-muted-foreground" data-testid="effort-note">{effort.note}</p>}
-                {effort.invalid && <p className="text-[11px] text-amber-800">{form.effort} is not accepted by this model</p>}
+                {effort.invalid && err?.field !== 'effort' && <p className="text-[11px] text-amber-800">{form.effort} is not accepted by this model</p>}
               </Field>
               <Field id="limits" label="Limits (minutes)" err={err}>
                 <div className="grid grid-cols-2 gap-1.5">
