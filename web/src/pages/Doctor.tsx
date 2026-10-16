@@ -181,7 +181,7 @@ function CatalogPanel() {
                 {c && <span className={cn('ml-auto inline-flex h-5 items-center rounded-full border px-2 text-[11px] font-medium', c.ok ? TONE.ok : TONE.bad)}>{c.ok ? 'ok' : 'failed'}</span>}
               </div>
               {!c ? (
-                <p className="mt-1 text-xs text-muted-foreground">{loaded ? 'Not fetched.' : 'Loading…'}</p>
+                <p className="mt-1 text-xs text-muted-foreground" data-testid={`catalog-loading-${h}`}>{loaded ? 'loading models…' : 'Loading…'}</p>
               ) : (
                 <>
                   <p className="mt-1 text-xs text-zinc-700">

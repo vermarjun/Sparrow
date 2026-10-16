@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { Agent, DoctorCheck, DoctorRun, HarnessCatalog, HarnessHealth, ResumeView } from '../../src/shared/types'
 import {
-  costLabel, effortAfterModelChange, effortChoice, errorField, findModel, groupChecks, harnessAvailability, healthVerdict, isOlderResume,
+  costLabel, effortAfterModelChange, effortChoice, errorField, findModel, groupChecks, harnessAvailability, healthVerdict, isOlderResume, modelsLoading,
   modelGone, modelOptions, runLabel, slugError, stripField, summarizeChecks,
 } from '../src/lib/catalog'
 import { reduce, reduceGlobal, emptyData, type GlobalData } from '../src/lib/reduce'
@@ -79,6 +79,14 @@ describe('harness availability + health', () => {
     const failed = cats.map((c) => (c.harness === 'claude' ? { ...c, ok: false, error: 'claude --help failed' } : c))
     expect(harnessAvailability('claude', failed, [])).toEqual({ disabled: true, reason: 'model list failed — claude --help failed' })
     expect(harnessAvailability('claude', cats, [])).toEqual({ disabled: false, reason: null })
+  })
+  test('a harness without a catalog entry yet is loading, not failed (fills in on catalog.updated)', () => {
+    const onlyCodex = cats.filter((c) => c.harness === 'codex')
+    expect(modelsLoading('claude', onlyCodex)).toBe(true)
+    expect(modelsLoading('codex', onlyCodex)).toBe(false)
+    expect(harnessAvailability('claude', onlyCodex, [])).toEqual({ disabled: false, reason: null })
+    const later = reduceGlobal({ catalogs: onlyCodex, doctorRun: null, resumes: {} }, { type: 'catalog.updated', project_id: '*', catalogs: cats })
+    expect(modelsLoading('claude', later.catalogs)).toBe(false)
   })
   test('verdicts', () => {
     expect(healthVerdict(undefined).label).toBe('not checked')

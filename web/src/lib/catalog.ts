@@ -58,6 +58,11 @@ export function harnessAvailability(h: HarnessName, catalogs: HarnessCatalog[], 
   return { disabled: false, reason: null }
 }
 
+/** No catalog entry yet: the server is still fetching it (fills in on catalog.updated). Not a failure. */
+export function modelsLoading(h: HarnessName, catalogs: HarnessCatalog[]): boolean {
+  return !catalogs.some((c) => c.harness === h)
+}
+
 /** One-word health verdict for a harness card. */
 export function healthVerdict(h: HarnessHealth | undefined): { label: string; tone: 'ok' | 'bad' | 'warn' | 'none' } {
   if (!h || h.checked_at == null) return { label: 'not checked', tone: 'none' }

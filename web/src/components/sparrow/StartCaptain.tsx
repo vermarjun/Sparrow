@@ -120,6 +120,7 @@ export function StartCaptainDialog({ open, onOpenChange }: { open: boolean; onOp
                 </Select>
               </div>
             </div>
+            {!catalog && <p className="text-xs text-muted-foreground">loading models…</p>}
             {catalog && !catalog.ok && <p className="text-xs text-amber-800">Claude's model list failed to load ({catalog.error}); the captain starts with Claude's default model.</p>}
             {err && <p className="rounded-md bg-red-50 px-2 py-1.5 text-xs text-red-800 ring-1 ring-red-200" data-testid="captain-error">{err}</p>}
             <DialogFooter>

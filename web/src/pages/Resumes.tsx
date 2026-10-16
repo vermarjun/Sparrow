@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Textarea } from '@/components/ui/textarea'
 import { api, HttpError } from '@/lib/api'
 import {
-  CHECK_DOT, HARNESSES, NEW_SLUG, STATUS_CHIP, resumeHref, stripField, effortAfterModelChange, effortChoice, errorField, harnessAvailability, modelGone, modelOptions, slugError,
+  CHECK_DOT, HARNESSES, NEW_SLUG, STATUS_CHIP, resumeHref, stripField, effortAfterModelChange, effortChoice, errorField, harnessAvailability, modelGone, modelOptions, modelsLoading, slugError,
   type ResumeField,
 } from '@/lib/catalog'
 import { agoLabel, duration, plural } from '@/lib/format'
@@ -256,11 +256,12 @@ function ResumeEditor({ slug }: { slug: string | null }) {
               </div>
               {HARNESSES.map((h) => {
                 const av = harnessAvailability(h, catalogs, health)
+                if (!av.disabled && form.harness === h && modelsLoading(h, catalogs)) return <p key={h} className="text-[11px] text-muted-foreground" data-harness-loading={h}><b>{HARNESS_NAME[h]}</b>: loading models…</p>
                 return av.disabled ? <p key={h} className={cn('text-[11px]', form.harness === h ? 'text-red-700' : 'text-muted-foreground')} data-harness-reason={h}><b>{HARNESS_NAME[h]}</b>: {av.reason}</p> : null
               })}
             </Field>
 
-            <Field id="model" label="Model" err={err} hint={catalog && !catalog.ok ? 'model list unavailable' : undefined}>
+            <Field id="model" label="Model" err={err} hint={!catalog ? 'loading models…' : !catalog.ok ? 'model list unavailable' : undefined}>
               <Select value={form.model ?? DEFAULT} onValueChange={(v) => { const model = v === DEFAULT ? null : v; setForm((f) => ({ ...f, model, effort: effortAfterModelChange(catalog, model, f.effort) })); if (err?.field === 'model' || err?.field === 'effort') setErr(null) }}>
                 <SelectTrigger id="model" className="w-full font-mono text-[13px]" aria-invalid={err?.field === 'model' || gone} data-testid="model-select"><SelectValue /></SelectTrigger>
                 <SelectContent className="max-h-80">
