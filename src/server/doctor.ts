@@ -236,17 +236,21 @@ export class Doctor {
     let reportKind = '';
     let ok = false;
     let failure: { detail: string; fix: string } | null = null;
+    // Events give exact times (a fast probe can open and close its window between two polls).
+    const unsub = core.events.subscribe((e) => {
+      if (e.type === 'agent.updated' && e.agent.id === id && e.agent.tmux_window_id && spawnAt == null) {
+        spawnAt = Date.now();
+        const a = e.agent;
+        o.onSpawn?.({ status: 'pass', detail: `window ${a.tmux_session}:${a.tmux_window} (${a.tmux_window_id}) opened in ${fmt(spawnAt - t0)} · ${what}`, fix: null, duration_ms: spawnAt - t0 });
+      }
+      if (e.type === 'message.created' && e.message.from_id === id && (e.message.kind === 'update' || e.message.kind === 'result') && reportAt == null) {
+        reportAt = Date.now();
+        reportKind = e.message.kind === 'result' ? 'done' : 'update';
+      }
+    });
     try {
       while (Date.now() - t0 < timeout) {
         const a = core.store.getAgent(id)!;
-        if (spawnAt == null && a.tmux_window_id) {
-          spawnAt = Date.now();
-          o.onSpawn?.({ status: 'pass', detail: `window ${a.tmux_session}:${a.tmux_window} (${a.tmux_window_id}) opened in ${fmt(spawnAt - t0)} · ${what}`, fix: null, duration_ms: spawnAt - t0 });
-        }
-        if (reportAt == null) {
-          const rep = core.probeReports(id)[0];
-          if (rep) { reportAt = Date.now(); reportKind = rep.kind === 'result' ? 'done' : 'update'; }
-        }
         const ended = a.state !== 'working' && a.state !== 'queued';
         if (ended && a.last_end_reason && a.last_end_reason !== 'done' && reportAt == null) {
           failure = { detail: `the probe's call ended "${a.last_end_reason}" without reporting`, fix: fixFor(o.harness, a.last_end_reason) };
@@ -272,6 +276,7 @@ export class Doctor {
         });
       }
     } finally {
+      unsub();
       await core.retireProbe(id).catch(() => {});
     }
     return ok;

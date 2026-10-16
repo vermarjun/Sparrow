@@ -434,11 +434,6 @@ export class Core {
     this.saveAgent(id, { state: 'retired', tmux_window_id: null, call_id: null, queued_at: null });
   }
 
-  /** Probe messages (update/result) and current row, for the doctor's wait loop. */
-  probeReports(id: string): Message[] {
-    return this.store.listMessages({ project: DOCTOR_PROJECT, fromOrTo: id, limit: 50 }).filter((m) => m.from_id === id && (m.kind === 'update' || m.kind === 'result'));
-  }
-
   lastScreenOf(id: string, n = 15): string { return tail(this.lastScreen(id), n); }
 
   // ======================================================== resumes (U1)
