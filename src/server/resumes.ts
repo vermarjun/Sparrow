@@ -1,8 +1,13 @@
 // Resume (role card) loading: RESUMES_DIR/*.md first, then assets/resumes/*.md for slugs the user doesn't have.
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+// U1: writes go to the first dir (atomic tmp + rename); deleting a slug that a later dir also ships leaves a
+// tombstone <dir0>/.deleted/<slug> so the builtin fallback stays hidden.
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import type { HarnessName as H, Resume as R } from '../shared/types';
+import type { HarnessName as H, Resume as R, ResumeWriteReq } from '../shared/types';
 import type { Settings as S } from '../shared/config';
+
+export const SLUG_RE = /^[a-z][a-z0-9-]{0,31}$/;
 
 const HARNESSES: H[] = ['claude', 'codex', 'opencode', 'fake'];
 
@@ -69,18 +74,96 @@ export function parseResume(text: string, path: string, settings: Pick<S, 'quiet
   };
 }
 
+/** sha256 of the file content, first 12 hex (ResumeView.hash). */
+export const hashText = (text: string) => createHash('sha256').update(text).digest('hex').slice(0, 12);
+
+// A YAML scalar that round-trips through Bun.YAML and the fallback parser: plain when safe, else a JSON string
+// (a JSON string is a valid YAML double-quoted scalar).
+function yamlStr(v: string): string {
+  return /^[A-Za-z0-9_][A-Za-z0-9_ .,()/+=-]*$/.test(v) && !/^(null|true|false|~)$/i.test(v) && !/^-?\d/.test(v) ? v : JSON.stringify(v);
+}
+const yamlFlowItem = (v: string) => (/^[A-Za-z0-9_*][A-Za-z0-9_*.-]*$/.test(v) ? v : JSON.stringify(v));
+
+/** The on-disk format (same frontmatter + body as the shipped resumes). */
+export function serializeResume(slug: string, r: Omit<ResumeWriteReq, 'slug'>): string {
+  return [
+    '---',
+    `name: ${slug}`,
+    `title: ${yamlStr(r.title)}`,
+    `description: ${yamlStr(r.description)}`,
+    `harness: ${r.harness}`,
+    `model: ${r.model == null ? 'null' : yamlStr(r.model)}`,
+    `effort: ${r.effort == null ? 'null' : yamlStr(r.effort)}`,
+    `can_hire: [${r.can_hire.map(yamlFlowItem).join(', ')}]`,
+    `limits: { quiet_minutes: ${r.limits.quiet_minutes}, max_call_minutes: ${r.limits.max_call_minutes} }`,
+    '---',
+    r.body.replace(/^\s+/, '').replace(/\s+$/, ''),
+    '',
+  ].join('\n');
+}
+
+/** Shape + field validation of a write request (the catalog check is separate). Returns the normalized request or the error. */
+export function validateResumeReq(b: any, opts: { create: boolean }): { value: ResumeWriteReq } | { error: string } {
+  if (!b || typeof b !== 'object') return { error: 'body must be a JSON object' };
+  if (opts.create) {
+    if (typeof b.slug !== 'string' || !SLUG_RE.test(b.slug)) return { error: `slug must match ${SLUG_RE} (lowercase letters, digits, '-', starting with a letter, max 32)` };
+  }
+  const s = (f: string) => typeof b[f] === 'string';
+  if (!s('title') || !b.title.trim()) return { error: 'title must be a non-empty string' };
+  if (b.description !== undefined && !s('description')) return { error: 'description must be a string' };
+  if (!(HARNESSES as unknown[]).includes(b.harness)) return { error: `harness must be one of ${HARNESSES.join(', ')}` };
+  for (const f of ['model', 'effort']) {
+    if (b[f] !== undefined && b[f] !== null && (typeof b[f] !== 'string' || /[\s'"]/.test(b[f]))) return { error: `${f} must be a string without spaces or quotes, or null` };
+  }
+  if (b.can_hire !== undefined && (!Array.isArray(b.can_hire) || !b.can_hire.every((x: unknown) => typeof x === 'string' && (x === '*' || SLUG_RE.test(x))))) {
+    return { error: "can_hire must be an array of resume slugs (or ['*'])" };
+  }
+  const lim = b.limits ?? {};
+  for (const f of ['quiet_minutes', 'max_call_minutes']) {
+    if (lim[f] !== undefined && !(typeof lim[f] === 'number' && Number.isFinite(lim[f]) && lim[f] > 0)) return { error: `limits.${f} must be a positive number` };
+  }
+  if (b.body !== undefined && !s('body')) return { error: 'body must be a string' };
+  if (typeof b.body === 'string' && !b.body.trim()) return { error: 'body (the system prompt) must not be empty' };
+  return {
+    value: {
+      ...(opts.create ? { slug: b.slug } : {}),
+      title: b.title.trim(), description: (b.description ?? '').trim(), harness: b.harness,
+      model: b.model || null, effort: b.effort || null, can_hire: b.can_hire ?? [],
+      limits: { quiet_minutes: lim.quiet_minutes ?? 15, max_call_minutes: lim.max_call_minutes ?? 90 },
+      body: b.body ?? '',
+    },
+  };
+}
+
 export class Resumes {
   constructor(private dirs: string[], private settings: Pick<S, 'quiet_minutes' | 'max_call_minutes'>) {}
+
+  /** Where writes go (the user's resumes dir). */
+  get writeDir(): string { return this.dirs[0]; }
+  private tombstone(slug: string) { return join(this.writeDir, '.deleted', slug); }
+  isTombstoned(slug: string) { return existsSync(this.tombstone(slug)); }
+
+  /** Path of the file that serves `slug` (first dir wins; tombstones hide later dirs), or null. */
+  pathOf(slug: string): string | null {
+    for (const [i, dir] of this.dirs.entries()) {
+      if (i > 0 && this.isTombstoned(slug)) return null;
+      const p = join(dir, `${slug}.md`);
+      if (existsSync(p)) return p;
+    }
+    return null;
+  }
+
+  isBuiltin(r: R): boolean { return !r.path.startsWith(join(this.writeDir, '/')); }
 
   /** All resumes; earlier dirs win for the same slug. Sorted by slug. */
   list(): R[] {
     const bySlug = new Map<string, R>();
-    for (const dir of this.dirs) {
+    for (const [i, dir] of this.dirs.entries()) {
       if (!existsSync(dir)) continue;
       for (const f of readdirSync(dir).sort()) {
         if (!f.endsWith('.md')) continue;
         const slug = f.slice(0, -3);
-        if (bySlug.has(slug)) continue;
+        if (bySlug.has(slug) || (i > 0 && this.isTombstoned(slug))) continue;
         const p = join(dir, f);
         try { bySlug.set(slug, parseResume(readFileSync(p, 'utf8'), p, this.settings)); } catch { /* skip unreadable */ }
       }
@@ -89,12 +172,42 @@ export class Resumes {
   }
 
   get(slug: string): R | null {
-    for (const dir of this.dirs) {
-      const p = join(dir, `${slug}.md`);
-      if (existsSync(p)) {
-        try { return parseResume(readFileSync(p, 'utf8'), p, this.settings); } catch { return null; }
-      }
-    }
-    return null;
+    const p = this.pathOf(slug);
+    if (!p) return null;
+    try { return parseResume(readFileSync(p, 'utf8'), p, this.settings); } catch { return null; }
+  }
+
+  /** Content hash of the file serving `slug` (null when there is none). */
+  hash(slug: string): string | null {
+    const p = this.pathOf(slug);
+    if (!p) return null;
+    try { return hashText(readFileSync(p, 'utf8')); } catch { return null; }
+  }
+
+  /** Atomic write of <writeDir>/<slug>.md; clears a tombstone for that slug. */
+  write(slug: string, req: Omit<ResumeWriteReq, 'slug'>): R {
+    if (!SLUG_RE.test(slug)) throw new Error(`invalid slug ${slug}`);
+    mkdirSync(this.writeDir, { recursive: true });
+    const path = join(this.writeDir, `${slug}.md`);
+    const tmp = `${path}.tmp-${process.pid}-${Math.random().toString(36).slice(2)}`;
+    writeFileSync(tmp, serializeResume(slug, req));
+    renameSync(tmp, path);
+    if (this.isTombstoned(slug)) unlinkSync(this.tombstone(slug));
+    return this.get(slug)!;
+  }
+
+  /**
+   * Delete a slug. The user's file is moved to .deleted/<slug>.md.<ts> (recoverable); when a later dir also ships
+   * the slug, a tombstone keeps that builtin hidden. Returns false when there was nothing to delete.
+   */
+  delete(slug: string): boolean {
+    const p = this.pathOf(slug);
+    if (!p) return false;
+    const del = join(this.writeDir, '.deleted');
+    mkdirSync(del, { recursive: true });
+    const own = join(this.writeDir, `${slug}.md`);
+    if (existsSync(own)) renameSync(own, join(del, `${slug}.md.${Date.now()}`));
+    if (this.dirs.slice(1).some((d) => existsSync(join(d, `${slug}.md`)))) writeFileSync(this.tombstone(slug), `deleted ${new Date().toISOString()}\n`);
+    return true;
   }
 }

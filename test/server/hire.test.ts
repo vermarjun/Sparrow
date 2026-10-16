@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gitRoot } from '../../src/server/core';
@@ -27,7 +27,7 @@ describe('register captain', () => {
 
   test('gitRoot finds the repo toplevel (real git)', () => {
     const repo = join(import.meta.dir, '..', '..');
-    expect(gitRoot(join(repo, 'src', 'server')).endsWith('/sparrow')).toBe(true);
+    expect(gitRoot(join(repo, 'src', 'server'))).toBe(realpathSync(repo)); // worktrees have other dir names
     const plain = mkdtempSync(join(tmpdir(), 'sp-nogit-'));
     expect(gitRoot(plain)).toBe(plain);
   });

@@ -3,9 +3,13 @@
 import { Hono, type Context } from 'hono';
 import { existsSync, statSync } from 'node:fs';
 import { join, normalize, resolve as resolvePath } from 'node:path';
-import type { Agent } from '../shared/types';
-import { Core, HttpError } from './core';
+import { launchCaptain as defaultLaunchCaptain } from '../harness/captain';
+import type { Agent, CaptainStartReq, ResumeWriteReq } from '../shared/types';
+import type { CatalogService } from './catalog';
+import { Core, DOCTOR_PROJECT, HttpError } from './core';
+import type { Doctor } from './doctor';
 import { sseHandler } from './events';
+import { SLUG_RE, validateResumeReq } from './resumes';
 
 type Vars = { caller: Agent | null; callHeader: string | null };
 
@@ -14,6 +18,9 @@ export interface ApiOpts {
   startedAt?: number;
   webDist?: string | null;
   pingMs?: number;
+  catalogs?: CatalogService;
+  doctor?: Doctor;
+  launchCaptain?: typeof defaultLaunchCaptain;
 }
 
 async function body<T = any>(c: Context): Promise<T> {
@@ -74,13 +81,121 @@ export function createApi(core: Core, opts: ApiOpts = {}) {
   });
 
   app.get('/api/whoami', (c) => reply(c, core.whoami(need(c))));
-  app.get('/api/resumes', (c) => c.json(core.resumes.list()));
   app.get('/api/projects', (c) => c.json(core.listProjects()));
+
+  // ---------------------------------------------------------------- U1: catalog, doctor, resumes, captain
+  const catalogs = opts.catalogs ?? null;
+  const doctor = opts.doctor ?? null;
+  const needSvc = <T>(x: T | null, what: string): T => {
+    if (!x) throw new HttpError(503, `${what} is not available in this server.`);
+    return x;
+  };
+
+  app.get('/api/catalog', (c) => c.json(catalogs?.list() ?? []));
+  app.post('/api/catalog/refresh', async (c) => {
+    const svc = needSvc(catalogs, 'The model catalog');
+    // Wait for the fetch, but answer within ~30 s with whatever is cached.
+    const done = svc.refresh();
+    const res = await Promise.race([done, Bun.sleep(30_000).then(() => svc.list())]);
+    return c.json(res);
+  });
+
+  app.get('/api/doctor', (c) => {
+    const d = needSvc(doctor, 'The doctor');
+    return c.json({ run: d.latest(), health: d.healthAll() });
+  });
+  app.post('/api/doctor/run', (c) => c.json({ run: needSvc(doctor, 'The doctor').start() }));
+
+  const resumeOr404 = (slug: string) => {
+    const r = core.resumes.get(slug);
+    if (!r) throw new HttpError(404, `No resume "${slug}". Available: ${core.resumes.list().map((x) => x.slug).join(', ') || '(none)'}`);
+    return r;
+  };
+  /** Shape validation (400 with the field) + catalog validation (400: model/effort the harness does not offer). */
+  const checkWrite = (b: unknown, create: boolean): ResumeWriteReq => {
+    const v = validateResumeReq(b, { create });
+    if ('error' in v) throw new HttpError(400, v.error);
+    const r = v.value;
+    const cat = catalogs?.get(r.harness) ?? null;
+    const p = r.harness === 'fake' ? null : (() => {
+      const refusal = core.gate(r.harness, r.model, r.effort);
+      // Install/login problems don't block editing (the UI greys those harnesses); a dead model or effort does.
+      return refusal && cat?.ok && /no longer offered|effort/.test(refusal) ? refusal : null;
+    })();
+    if (p) throw new HttpError(400, `${/effort/.test(p) && !/no longer offered/.test(p) ? 'effort' : 'model'}: ${p}`);
+    return r;
+  };
+
+  app.get('/api/resumes', (c) => c.json(core.resumeViews()));
+  app.get('/api/resumes/:slug', (c) => c.json(core.resumeView(resumeOr404(c.req.param('slug')))));
+  app.post('/api/resumes', async (c) => {
+    const r = checkWrite(await body(c), true);
+    const slug = r.slug!;
+    if (core.resumes.get(slug)) throw new HttpError(409, `Resume "${slug}" already exists; pick another slug or edit it.`);
+    const { slug: _s, ...rest } = r;
+    core.resumes.write(slug, rest);
+    core.emitResume(slug);
+    return c.json(core.resumeView(core.resumes.get(slug)!), 201);
+  });
+  app.put('/api/resumes/:slug', async (c) => {
+    const slug = c.req.param('slug');
+    resumeOr404(slug);
+    const { slug: _s, ...rest } = checkWrite(await body(c), false);
+    core.resumes.write(slug, rest);
+    core.emitResume(slug);
+    return c.json(core.resumeView(core.resumes.get(slug)!));
+  });
+  app.delete('/api/resumes/:slug', (c) => {
+    const slug = c.req.param('slug');
+    resumeOr404(slug);
+    core.resumes.delete(slug);
+    core.emitResume(slug);
+    return c.json({ ok: true });
+  });
+  app.post('/api/resumes/:slug/duplicate', async (c) => {
+    const src = resumeOr404(c.req.param('slug'));
+    const b = await body<{ slug?: unknown }>(c);
+    if (typeof b.slug !== 'string' || !SLUG_RE.test(b.slug)) throw new HttpError(400, `slug must match ${SLUG_RE}`);
+    if (core.resumes.get(b.slug)) throw new HttpError(409, `Resume "${b.slug}" already exists; pick another slug.`);
+    core.resumes.write(b.slug, {
+      title: src.title, description: src.description, harness: src.harness, model: src.model, effort: src.effort,
+      can_hire: src.can_hire, limits: src.limits, body: src.body,
+    });
+    core.emitResume(b.slug);
+    return c.json(core.resumeView(core.resumes.get(b.slug)!), 201);
+  });
+  app.post('/api/resumes/:slug/apply', (c) => c.json({ updated: core.applyResume(c.req.param('slug')) }));
+  app.post('/api/resumes/:slug/test', (c) => c.json({ check: needSvc(doctor, 'The doctor').startTest(c.req.param('slug')) }));
+  app.get('/api/resumes/:slug/test', (c) => {
+    const check = needSvc(doctor, 'The doctor').getTest(c.req.param('slug'));
+    if (!check) throw new HttpError(404, `Resume "${c.req.param('slug')}" has not been tested yet.`);
+    return c.json(check);
+  });
+
+  app.get('/api/captain/recent', (c) => c.json(core.recentRoots()));
+  app.post('/api/captain/start', async (c) => {
+    const b = await body<CaptainStartReq>(c);
+    if (typeof b.cwd !== 'string' || !b.cwd.trim()) throw new HttpError(400, 'captain start needs {cwd}');
+    const cwd = resolvePath(b.cwd.trim().replace(/^~(?=\/|$)/, process.env.HOME ?? '~'));
+    if (!existsSync(cwd) || !statSync(cwd).isDirectory()) throw new HttpError(400, `cwd ${cwd} does not exist or is not a directory.`);
+    if (b.model != null && typeof b.model !== 'string') throw new HttpError(400, 'model must be a string or null');
+    if (b.effort != null && typeof b.effort !== 'string') throw new HttpError(400, 'effort must be a string or null');
+    const refusal = core.gate('claude', b.model ?? null, b.effort ?? null);
+    if (refusal) throw new HttpError(409, refusal);
+    try {
+      return c.json(await (opts.launchCaptain ?? defaultLaunchCaptain)({ cwd, model: b.model ?? null, effort: b.effort ?? null }));
+    } catch (e) {
+      if (e instanceof HttpError) throw e;
+      throw new HttpError(500, `Could not start the captain: ${(e as Error).message}`);
+    }
+  });
 
   // ---------------------------------------------------------------- agents
   app.get('/api/agents', (c) => {
     const project = c.req.query('project') || null;
-    return c.json(core.store.listAgents(project));
+    const rows = core.store.listAgents(project);
+    // Probe agents (doctor / test resume) stay hidden unless the _doctor project is asked for.
+    return c.json(project === DOCTOR_PROJECT ? rows : rows.filter((a) => a.kind !== 'probe'));
   });
 
   const agentRef = (c: Context<{ Variables: Vars }>) => {

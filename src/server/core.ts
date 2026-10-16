@@ -1,22 +1,26 @@
 // The domain service: identity, hiring, routing + wake rules, the call lifecycle, cards, watchdog.
 // Pure logic over the Store, a Spawner and a Clock — no HTTP here (see api.ts).
-import { existsSync, statSync } from 'node:fs';
-import { basename, isAbsolute, resolve as resolvePath } from 'node:path';
+import { existsSync, mkdirSync, statSync } from 'node:fs';
+import { basename, isAbsolute, join, resolve as resolvePath, sep } from 'node:path';
 import type { Spawner } from '../harness/index';
-import { TMUX_PREFIX, type Settings } from '../shared/config';
+import { SPARROW_HOME, TMUX_PREFIX, type Settings } from '../shared/config';
 import { newId } from '../shared/ids';
 import type {
   Agent, AgentState, Call, CallEndReason, Card, CardCreateReq, CardPatchReq, CardState, DoneReq, HireReq,
-  HarnessName, Message, MessageKind, MessageView, Project, RegisterCaptainReq, RegisterCaptainRes, Resume, SendReq,
-  ServerEvent, TurnEndReq, TurnEndRes, UpdateReq,
+  HarnessHealth, HarnessName, Message, MessageKind, MessageView, Project, RegisterCaptainReq, RegisterCaptainRes, Resume,
+  ResumeView, SendReq, ServerEvent, TurnEndReq, TurnEndRes, UpdateReq,
 } from '../shared/types';
 import { CARD_STATES } from '../shared/types';
+import { type CatalogService, gateCheck, resumeStatus } from './catalog';
 import { publicCall, type CallRow, Store } from './db';
 import { EventBus } from './events';
 import {
   crashResume, freshReplay, hhmm, NUDGE_REPORT, nudgeQuiet, PROTOCOL_PATH, renderEnvelope, renderSystemPrompt,
 } from './prompts';
-import { Resumes } from './resumes';
+import { hashText, Resumes } from './resumes';
+
+/** Hidden project for doctor / "test resume" probe agents (never listed, never in chat). */
+export const DOCTOR_PROJECT = '_doctor';
 
 export class HttpError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -46,6 +50,7 @@ export interface CoreDeps {
   protocolPath?: string;
   deliverDelayMs?: number;            // delay before typing into a TUI after its turn ended (default 1000)
   detectRoot?: (cwd: string) => string; // git root of cwd (or cwd)
+  doctorRoot?: string;                  // root of the hidden _doctor project (default <SPARROW_HOME>/doctor)
 }
 
 const FRIENDLY = ['james', 'maya', 'leo', 'iris', 'omar', 'nina', 'theo', 'zara', 'ravi', 'lena', 'ivan', 'mira', 'kai', 'ada', 'ben', 'cleo'];
@@ -87,6 +92,10 @@ export class Core {
   private protocolPath: string;
   private deliverDelayMs: number;
   private detectRoot: (cwd: string) => string;
+  readonly doctorRoot: string;
+  // U1: set by createApp. The hire gate and resume status read the catalog and the latest doctor verdict.
+  catalogs: CatalogService | null = null;
+  healthOf: (h: HarnessName) => HarnessHealth | null = () => null;
 
   private closeTimers = new Map<string, unknown>();      // agentId -> grace timer
   private otherTimers = new Set<unknown>();
@@ -108,6 +117,7 @@ export class Core {
     this.protocolPath = d.protocolPath ?? PROTOCOL_PATH;
     this.deliverDelayMs = d.deliverDelayMs ?? 1000;
     this.detectRoot = d.detectRoot ?? gitRoot;
+    this.doctorRoot = d.doctorRoot ?? join(process.env.SPARROW_HOME ?? SPARROW_HOME, 'doctor');
   }
 
   now() { return this.clock.now(); }
@@ -156,7 +166,7 @@ export class Core {
 
   private emit(e: ServerEvent) { this.events.emit(e); }
 
-  private saveAgent(id: string, patch: Partial<Agent> & { queued_at?: number | null }): Agent {
+  private saveAgent(id: string, patch: Partial<Agent> & { queued_at?: number | null; resume_note?: string | null }): Agent {
     const a = this.store.patchAgent(id, patch, this.now());
     this.emit({ type: 'agent.updated', project_id: a.project_id, agent: a });
     return a;
@@ -211,7 +221,7 @@ export class Core {
   registerCaptain(req: RegisterCaptainReq): RegisterCaptainRes {
     if (!req?.cwd || typeof req.cwd !== 'string') throw new HttpError(400, 'register needs {cwd}');
     const cwd = resolvePath(req.cwd);
-    const root = this.detectRoot(cwd);
+    const root = this.projectRootFor(cwd);
     let project = this.store.getProjectByRoot(root);
     if (!project) {
       const base = slugify(basename(root));
@@ -239,6 +249,14 @@ export class Core {
       cap = this.saveAgent(cap.id, { cwd, last_seen_at: now, ...(req.session_id ? { session_id: req.session_id } : {}) });
     }
     return { agent: cap, project };
+  }
+
+  /** Project semantics: the longest registered project root containing cwd; else its git root; else cwd. */
+  projectRootFor(cwd: string): string {
+    const inside = this.store.listProjects()
+      .filter((p) => p.id !== DOCTOR_PROJECT && (cwd === p.root || cwd.startsWith(p.root.endsWith(sep) ? p.root : p.root + sep)))
+      .sort((a, b) => b.root.length - a.root.length);
+    return inside[0]?.root ?? this.detectRoot(cwd);
   }
 
   identify(id: string): Agent {
@@ -313,13 +331,22 @@ export class Core {
       card = this.store.getCard(Number(req.card_id));
       if (!card || card.project_id !== project) throw new HttpError(404, `No card #${req.card_id} in project ${project}.`);
     }
+    const model = req.model ?? resume.model;
+    const effort = req.effort ?? resume.effort;
+    // Hire gate (U1): refuse before the row exists, so no window ever opens for a broken harness or a dead model.
+    const refusal = this.gate(resume.harness, model, effort);
+    if (refusal) {
+      this.say(`hire REFUSED ${resume.slug}/${resume.harness} by @${caller.handle}: ${refusal}`);
+      throw new HttpError(409, refusal);
+    }
     const now = this.now();
     const agent: Agent = {
       id: newId('ag'), project_id: project, handle, kind: 'agent', resume: resume.slug, title: resume.title,
-      harness: resume.harness, model: req.model ?? resume.model, effort: req.effort ?? resume.effort, can_hire: resume.can_hire,
+      harness: resume.harness, model, effort, can_hire: resume.can_hire,
       parent_id: caller.id, depth, cwd, tmux_session: req.tmux_session || this.tmuxPrefix + project,
       tmux_window: req.tmux_window || handle, tmux_window_id: null, session_id: null, state: 'idle', call_id: null,
-      last_end_reason: null, last_update: null, last_update_at: null, last_seen_at: null, resume_hash: null, last_run: null, created_at: now, updated_at: now,
+      last_end_reason: null, last_update: null, last_update_at: null, last_seen_at: null, resume_hash: this.resumes.hash(resume.slug),
+      last_run: null, created_at: now, updated_at: now,
     };
     this.store.insertAgent(agent);
     this.emit({ type: 'agent.updated', project_id: project, agent });
@@ -337,6 +364,139 @@ export class Core {
     this.say(`hire @${handle} ${resume.slug}/${resume.harness} by @${caller.handle} → ${agent.tmux_session}:${agent.tmux_window}`);
     this.bg(this.wake(agent.id));
     return { agent: this.store.getAgent(agent.id)!, message: this.view(msg) };
+  }
+
+  /** Hire gate: refusal text or null. `fake` always passes; no catalog / no doctor run yet → allow. */
+  gate(harness: HarnessName, model: string | null, effort: string | null): string | null {
+    return gateCheck(this.catalogs?.get(harness) ?? null, this.healthOf(harness), harness, model, effort, this.now());
+  }
+
+  // ======================================================== probes (doctor round trips, "test resume")
+
+  private doctorProject(): { project: Project; captain: Agent } {
+    let project = this.store.getProject(DOCTOR_PROJECT);
+    if (!project) {
+      mkdirSync(this.doctorRoot, { recursive: true });
+      project = { id: DOCTOR_PROJECT, name: 'doctor', root: this.doctorRoot, created_at: this.now() };
+      this.store.insertProject(project);
+    }
+    let cap = this.store.getAgentByHandle(DOCTOR_PROJECT, 'captain');
+    if (!cap) {
+      const now = this.now();
+      cap = {
+        id: newId('ag'), project_id: DOCTOR_PROJECT, handle: 'captain', kind: 'human', resume: 'captain', title: 'Doctor',
+        harness: 'human', model: null, effort: null, can_hire: ['*'], parent_id: null, depth: 0, cwd: this.doctorRoot,
+        tmux_session: this.tmuxPrefix + 'doctor', tmux_window: '', tmux_window_id: null, session_id: null, state: 'idle',
+        call_id: null, last_end_reason: null, last_update: null, last_update_at: null, last_seen_at: now,
+        resume_hash: null, last_run: null, created_at: now, updated_at: now,
+      };
+      this.store.insertAgent(cap);
+    }
+    return { project, captain: cap };
+  }
+
+  /**
+   * Hire a throwaway probe agent (kind 'probe') in the hidden _doctor project: no hire gate (it IS the test), not
+   * counted in max_running, tmux session <prefix>doctor, cwd <doctorRoot>/<run>/<label>.
+   */
+  hireProbe(o: { harness: HarnessName; model: string | null; effort: string | null; task: string; run: string; label: string; resume?: string }): Agent {
+    const { captain } = this.doctorProject();
+    const cwd = join(this.doctorRoot, o.run, o.label);
+    mkdirSync(cwd, { recursive: true });
+    const base = `${o.label}`.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^[^a-z]+/, '').slice(0, 17) || 'probe';
+    let handle = base;
+    for (let n = 2; this.store.getAgentByHandle(DOCTOR_PROJECT, handle); n++) handle = `${base}-${n}`;
+    const r = o.resume ? this.resumes.get(o.resume) : null;
+    const now = this.now();
+    const agent: Agent = {
+      id: newId('ag'), project_id: DOCTOR_PROJECT, handle, kind: 'probe', resume: o.resume ?? 'probe', title: r?.title ?? 'Doctor probe',
+      harness: o.harness, model: o.model, effort: o.effort, can_hire: [], parent_id: captain.id, depth: 1, cwd,
+      tmux_session: this.tmuxPrefix + 'doctor', tmux_window: handle, tmux_window_id: null, session_id: null, state: 'idle',
+      call_id: null, last_end_reason: null, last_update: null, last_update_at: null, last_seen_at: null,
+      resume_hash: o.resume ? this.resumes.hash(o.resume) : null, last_run: null, created_at: now, updated_at: now,
+    };
+    this.store.insertAgent(agent);
+    this.post({ project_id: DOCTOR_PROJECT, thread: this.dmThread(captain.id, agent.id), from_id: captain.id, kind: 'task', text: o.task, to: [agent.id] });
+    this.say(`probe @${handle} ${o.harness} ${o.model ?? '(default)'}/${o.effort ?? '-'}`);
+    this.bg(this.wake(agent.id));
+    return this.store.getAgent(agent.id)!;
+  }
+
+  /** Close a probe's window (if any) and retire it. */
+  async retireProbe(id: string): Promise<void> {
+    const a = this.store.getAgent(id);
+    if (!a || a.kind !== 'probe' || a.state === 'retired') return;
+    this.cancelClose(a.id);
+    await this.stopIfOurs(a, true);
+    const cur = this.store.getAgent(id)!;
+    if (cur.call_id) this.endCall(cur, 'released', { state: 'retired', close: 'none' });
+    this.store.dropPending(id);
+    this.saveAgent(id, { state: 'retired', tmux_window_id: null, call_id: null, queued_at: null });
+  }
+
+  /** Probe messages (update/result) and current row, for the doctor's wait loop. */
+  probeReports(id: string): Message[] {
+    return this.store.listMessages({ project: DOCTOR_PROJECT, fromOrTo: id, limit: 50 }).filter((m) => m.from_id === id && (m.kind === 'update' || m.kind === 'result'));
+  }
+
+  lastScreenOf(id: string, n = 15): string { return tail(this.lastScreen(id), n); }
+
+  // ======================================================== resumes (U1)
+
+  resumeView(r: Resume): ResumeView {
+    const hash = this.resumes.hash(r.slug) ?? hashText('');
+    const st = resumeStatus(r, this.catalogs?.get(r.harness) ?? null, this.healthOf(r.harness), this.now());
+    const stale = this.store.listAgents()
+      .filter((a) => a.kind === 'agent' && a.resume === r.slug && a.state !== 'retired' && a.resume_hash !== hash)
+      .map((a) => a.id);
+    return { ...r, hash, builtin: this.resumes.isBuiltin(r), status: st.status, status_detail: st.detail, resolved_model: st.resolved, stale_agents: stale };
+  }
+
+  resumeViews(): ResumeView[] { return this.resumes.list().map((r) => this.resumeView(r)); }
+
+  emitResume(slug: string) {
+    const r = this.resumes.get(slug);
+    if (r) this.emit({ type: 'resume.updated', project_id: '*', resume: this.resumeView(r) });
+    else this.emit({ type: 'resume.deleted', project_id: '*', slug });
+  }
+
+  /**
+   * "Apply to existing agents": every non-retired agent hired from an older copy of the resume takes the current
+   * harness/model/effort/can_hire/title/hash; the changed resume text is prepended to its next envelope.
+   */
+  applyResume(slug: string): string[] {
+    const r = this.resumes.get(slug);
+    if (!r) throw new HttpError(404, `No resume "${slug}".`);
+    const view = this.resumeView(r);
+    const out: string[] = [];
+    for (const id of view.stale_agents) {
+      const a = this.store.getAgent(id);
+      if (!a) continue;
+      const harnessChanged = a.harness !== r.harness;
+      const note = [
+        `[sparrow] Your resume "${slug}" was updated by the user${harnessChanged ? ` (you now run on ${r.harness}; this is a fresh session, check your folder for earlier work)` : ''}. Your role from now on:`,
+        '',
+        r.body.trim(),
+      ].join('\n');
+      this.saveAgent(id, {
+        harness: r.harness, model: r.model, effort: r.effort, can_hire: r.can_hire, title: r.title, resume_hash: view.hash,
+        resume_note: note, ...(harnessChanged ? { session_id: null } : {}),
+      });
+      out.push(id);
+    }
+    if (out.length) this.say(`apply ${slug} → ${out.length} agent(s)`);
+    this.emitResume(slug);
+    return out;
+  }
+
+  /** Recent project roots for "Start captain", newest activity first. */
+  recentRoots(): string[] {
+    const last = new Map<string, number>();
+    for (const p of this.store.listProjects()) {
+      if (p.id === DOCTOR_PROJECT) continue;
+      last.set(p.root, Math.max(p.created_at, ...this.store.listAgents(p.id).map((a) => a.updated_at)));
+    }
+    return [...last.entries()].sort((a, b) => b[1] - a[1]).map(([root]) => root);
   }
 
   // ======================================================== messaging
@@ -398,8 +558,8 @@ export class Core {
     record: () => Message, newState: AgentState,
   ): Promise<{ ended: boolean; message: MessageView | null }> {
     // A report from a call that is already over (e.g. `done` twice): accept silently, record nothing.
-    if (caller.kind === 'agent' && callHeader && callHeader !== caller.call_id) return { ended: true, message: null };
-    const onCall = caller.kind === 'agent' && caller.state === 'working' && !!caller.call_id;
+    if (caller.kind !== 'human' && callHeader && callHeader !== caller.call_id) return { ended: true, message: null };
+    const onCall = caller.kind !== 'human' && caller.state === 'working' && !!caller.call_id;
     // Amendment A1: with pending deliveries record NOTHING; the piggyback hands them over and the agent reports again.
     if ((onCall || caller.kind === 'human') && this.store.countPending(caller.id) > 0) {
       this.say(`${reason} @${caller.handle} not sent: ${this.store.countPending(caller.id)} new message(s) first`);
@@ -463,13 +623,13 @@ export class Core {
   takeInbox(callerId: string, callHeader: string | null = null): MessageView[] {
     const a = this.store.getAgent(callerId);
     if (!a) return [];
-    if (a.kind === 'agent') {
+    if (a.kind !== 'human') {
       if (a.state !== 'working' || !a.call_id) return [];
       if (callHeader && callHeader !== a.call_id) return [];
     }
     const pending = this.store.pendingFor(a.id);
     if (!pending.length) return [];
-    this.store.markDelivered(a.id, pending.map((m) => m.id), a.kind === 'agent' ? a.call_id : null, this.now());
+    this.store.markDelivered(a.id, pending.map((m) => m.id), a.kind !== 'human' ? a.call_id : null, this.now());
     return pending.map((m) => this.view(m));
   }
 
@@ -502,7 +662,7 @@ export class Core {
     if (a.state === 'retired') { this.store.dropPending(a.id); return; }
     if (a.state === 'working' || a.state === 'queued') return;
     if (this.store.countPending(a.id) === 0) return;
-    if (this.store.countWorking() < this.settings.max_running) {
+    if (a.kind === 'probe' || this.store.countWorking() < this.settings.max_running) {
       await this.startCall(a, {});
     } else {
       this.saveAgent(a.id, { state: 'queued', queued_at: this.now() });
@@ -534,7 +694,9 @@ export class Core {
     const sessionId = opts.fresh ? null : a0.session_id;
     const resume = opts.fresh ? false : (opts.resume ?? sessionId != null) && sessionId != null;
     const project = this.store.getProject(a0.project_id);
-    const envelope = renderEnvelope(a0, pending, this.handleOf, { prefix: opts.prefix, projectId: project?.id });
+    const note = this.store.takeResumeNote(a0.id);
+    const prefix = [note, opts.prefix].filter(Boolean).join('\n\n') || undefined;
+    const envelope = renderEnvelope(a0, pending, this.handleOf, { prefix, projectId: project?.id });
     const now = this.now();
     const call: Call = {
       id: callId, agent_id: a0.id, started_at: now, ended_at: null, end_reason: null, exit_code: null, resumed: resume,
@@ -547,7 +709,8 @@ export class Core {
     const agent = this.store.tx(() => {
       this.store.markDelivered(a0.id, pending.map((m) => m.id), callId, now);
       this.store.insertCall(call);
-      return this.store.patchAgent(a0.id, { state: 'working', call_id: callId, session_id: sessionId, queued_at: null }, now);
+      const last_run = { harness: a0.harness, model: a0.model, effort: a0.effort, at: now };
+      return this.store.patchAgent(a0.id, { state: 'working', call_id: callId, session_id: sessionId, queued_at: null, last_run }, now);
     });
     this.emit({ type: 'agent.updated', project_id: agent.project_id, agent });
     this.emit({ type: 'call.started', project_id: agent.project_id, call });
@@ -714,7 +877,7 @@ export class Core {
 
   async turnEnd(caller: Agent, callHeader: string | null, req: TurnEndReq): Promise<TurnEndRes> {
     let a = this.noteSession(caller, req?.session_id);
-    if (a.kind !== 'agent' || a.state !== 'working' || !a.call_id || (callHeader && callHeader !== a.call_id)) {
+    if (a.kind === 'human' || a.state !== 'working' || !a.call_id || (callHeader && callHeader !== a.call_id)) {
       return { action: 'allow' };
     }
     const call = this.store.getCall(a.call_id)!;
@@ -756,7 +919,7 @@ export class Core {
   }
 
   async exitHook(caller: Agent, callHeader: string | null, code: number): Promise<{ ok: true }> {
-    if (caller.kind !== 'agent') return { ok: true };
+    if (caller.kind === 'human') return { ok: true };
     if (!caller.call_id) {
       // The harness of an already-ended call exited (e.g. after done): its window is closing itself.
       // Forget the id now so a pending grace close can never hit a reused tmux id.
@@ -920,7 +1083,7 @@ export class Core {
     }
     // Windows left open by an interrupted close grace period.
     for (const a of this.store.listAgents()) {
-      if (a.kind === 'agent' && a.state !== 'working' && a.tmux_window_id) {
+      if (a.kind !== 'human' && a.state !== 'working' && a.tmux_window_id) {
         await this.stopIfOurs(a);
         this.saveAgent(a.id, { tmux_window_id: null });
       }
@@ -1031,7 +1194,7 @@ export class Core {
   // ======================================================== reads
 
   listProjects() {
-    return this.store.listProjects().map((p) => {
+    return this.store.listProjects().filter((p) => p.id !== DOCTOR_PROJECT).map((p) => {
       const agents = this.store.listAgents(p.id).filter((a) => a.kind === 'agent');
       return { ...p, agents: agents.length, working: agents.filter((a) => a.state === 'working').length, cards: this.store.countCards(p.id) };
     });
@@ -1055,7 +1218,9 @@ export class Core {
       if (q.caller && q.caller.id !== t.id) thread = this.dmThread(q.caller.id, t.id);
       else { thread = null; fromOrTo = t.id; }
     }
-    return this.store.listMessages({ project, thread, after: q.after ?? null, limit, fromOrTo }).map((m) => this.view(m));
+    const rows = this.store.listMessages({ project, thread, after: q.after ?? null, limit, fromOrTo });
+    // Probe traffic stays out of chat unless the _doctor project is asked for explicitly.
+    return (project ? rows : rows.filter((m) => m.project_id !== DOCTOR_PROJECT)).map((m) => this.view(m));
   }
 
   threads(project: string) {
