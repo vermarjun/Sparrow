@@ -104,3 +104,13 @@ describe('captain', () => {
     }
   }, 15_000);
 });
+
+// Attach instructions are shell commands: the semicolon must reach tmux as one argument.
+test('attach command shell escaping preserves the tmux command separator', async () => {
+  const { tmuxAttach } = await import('../../src/cli/format');
+  const cmd = tmuxAttach({ tmux_session: 'u1cli-demo', tmux_window: 'worker' });
+  const p = Bun.spawn(['bash', '-c', `tmux() { printf '<%s>\\n' "$@"; }; ${cmd}`], { stdout: 'pipe', stderr: 'pipe' });
+  const out = await new Response(p.stdout).text();
+  expect(await p.exited).toBe(0);
+  expect(out).toContain('<;>\n<select-window>');
+});
