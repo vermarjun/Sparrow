@@ -277,7 +277,7 @@ export class Doctor {
         o.onTrip({
           status: 'fail', detail: `${what}: ${why}${said ? `\n${o.harness} reported: ${said}` : ''}${screen ? `\nLast screen:\n${screen}` : ''}`,
           fix: said
-            ? `${o.harness} itself reported: ${said.slice(0, 300)}. Fix that in your ${o.harness} account or provider (or set doctor_models.${o.harness} in config.json to a model you can use), then Run doctor.`
+            ? `${o.harness} itself reported: ${said.slice(0, 300).replace(/\.+$/, '')}. Fix that in your ${o.harness} account or provider (or set doctor_models.${o.harness} in config.json to a model you can use), then Run doctor.`
             : failure?.fix ?? `Attach to the probe window (tmux session ${probe.tmux_session}) during the next run to see where ${o.harness} stops; if the model is the problem, set doctor_models.${o.harness} in config.json. Then Run doctor.`,
           duration_ms: total,
         });

@@ -1076,6 +1076,8 @@ export class Core {
       const ended = this.endCall(a, 'server_restart', { state: 'crashed', close: 'dead' });
       await this.notifyParent(ended, `@${a.handle} was interrupted by a server restart; message @${a.handle} to resume it.`, {});
     }
+    // Probes from a doctor run the restart interrupted are done for: close and retire them.
+    for (const a of this.store.listAgents(DOCTOR_PROJECT)) if (a.kind === 'probe' && a.state !== 'retired') await this.retireProbe(a.id);
     // Windows left open by an interrupted close grace period.
     for (const a of this.store.listAgents()) {
       if (a.kind !== 'human' && a.state !== 'working' && a.tmux_window_id) {

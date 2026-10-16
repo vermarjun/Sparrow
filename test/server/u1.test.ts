@@ -422,6 +422,15 @@ describe('doctor + probes', () => {
     expect((await ctx.req('POST', '/api/resumes/nope/test')).status).toBe(404);
   });
 
+  test('boot recovery retires probes a restart interrupted', async () => {
+    const ctx = await doctorCtx();
+    const p = ctx.core.hireProbe({ harness: 'fake', model: null, effort: null, task: 'hey', run: 'r1', label: 'fake' });
+    await until(() => !!ctx.store.getAgent(p.id)!.tmux_window_id);
+    await ctx.core.recover();
+    expect(ctx.store.getAgent(p.id)!.state).toBe('retired');
+    expect(ctx.sp.stopsFor(p.id).length).toBe(1);
+  });
+
   test('healthFrom maps check statuses (warn counts as fine, missing run = unknown)', () => {
     const ck = (id: string, status: DoctorCheck['status'], fix: string | null = null): DoctorCheck => ({ id, harness: 'codex', label: id, status, detail: '', fix, duration_ms: null, updated_at: 0 });
     const run: DoctorRun = { id: 'doc_1', started_at: 0, ended_at: 5, checks: [ck('codex.binary', 'warn'), ck('codex.login', 'fail', 'log in'), ck('codex.roundtrip', 'skipped')], versions: {}, version_changed: [] };
