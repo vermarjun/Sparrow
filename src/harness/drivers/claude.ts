@@ -6,6 +6,7 @@ import type { Agent } from '../../shared/types';
 import type { StartSpec } from '../index';
 import { CLAUDE_BIN, CLAUDE_JSON } from '../env';
 import { hookCommand, writeAtomic, type Arg, type CallFiles } from '../launch';
+import { claudePluginDir, ensureClaudePlugin } from '../claude-plugin';
 import * as tmux from '../tmux';
 import type { Driver, PreparedLaunch } from './types';
 
@@ -63,8 +64,9 @@ export const claudeDriver: Driver = {
     const settingsPath = join(files.dir, 'claude-settings.json');
     writeAtomic(settingsPath, JSON.stringify(claudeSettings(), null, 2));
     preAcceptTrust(a.cwd);
+    ensureClaudePlugin();
 
-    const argv: Arg[] = [CLAUDE_BIN(), '--dangerously-skip-permissions'];
+    const argv: Arg[] = [CLAUDE_BIN(), '--dangerously-skip-permissions', '--setting-sources', 'project,local', '--plugin-dir', claudePluginDir()];
     argv.push(resume ? '--resume' : '--session-id', sessionId);
     argv.push('-n', a.handle);
     if (a.model) argv.push('--model', a.model);

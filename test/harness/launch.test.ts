@@ -63,7 +63,7 @@ describe('drivers build the right commands', () => {
     const files = writeCallTexts(agent.id, 'c1', 'sys', 'hi');
     const a = await claudeDriver.prepare({ agent, call_id: 'c1', system_prompt: 'sys', prompt: 'hi', resume: false }, files);
     const s = buildScript(agent, 'c1', a);
-    expect(s).toContain(`/claude --dangerously-skip-permissions --session-id ${a.session_id} -n ${agent.handle} --model haiku --effort low --append-system-prompt "$(cat ${files.system})" --settings `);
+    expect(s).toContain(`/claude --dangerously-skip-permissions --setting-sources project,local --plugin-dir ${join(TEST_HOME, 'claude-plugin')} --session-id ${a.session_id} -n ${agent.handle} --model haiku --effort low --append-system-prompt "$(cat ${files.system})" --settings `);
     expect(a.session_id).toMatch(/^[0-9a-f-]{36}$/);
     const settings = JSON.parse(readFileSync(join(files.dir, 'claude-settings.json'), 'utf8'));
     expect(settings.hooks.Stop[0].hooks[0].command).toContain('hook.ts claude-stop');
@@ -134,8 +134,8 @@ describe('installHarnessAssets', () => {
     const { installHarnessAssets } = await import('../../src/harness/install');
     const a = await installHarnessAssets();
     const b = await installHarnessAssets();
-    expect(b[0]).toBe(`OpenCode plugin: ${join(TEST_HOME, 'opencode', 'plugins', 'sparrow.js')} (up to date)`);
-    expect(a.length).toBe(4);
+    expect(b).toContain(`OpenCode plugin: ${join(TEST_HOME, 'opencode', 'plugins', 'sparrow.js')} (up to date)`);
+    expect(a.length).toBe(5);
     expect(b.some((l) => l.startsWith('claude: '))).toBe(true);
     expect(b.some((l) => l.startsWith('codex: '))).toBe(true);
     expect(b.some((l) => l.startsWith('opencode: '))).toBe(true);
