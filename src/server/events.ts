@@ -29,7 +29,8 @@ export function sseHandler(bus: EventBus, pingMs = 15_000) {
       const queue: ServerEvent[] = [];
       let wake: (() => void) | null = null;
       const unsub = bus.subscribe((e) => {
-        if (project && e.project_id !== project) return;
+        // Global events (project_id '*') reach every subscriber, with or without ?project=.
+        if (project && e.project_id !== project && e.project_id !== '*') return;
         queue.push(e);
         wake?.();
       });

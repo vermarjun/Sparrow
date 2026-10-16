@@ -6,7 +6,7 @@ import type { Spawner, StartSpec } from '../../src/harness/index';
 import { DEFAULT_SETTINGS, type Settings } from '../../src/shared/config';
 import type { Agent, ServerEvent } from '../../src/shared/types';
 import type { Clock } from '../../src/server/core';
-import { createApp } from '../../src/server/main';
+import { type AppDeps, createApp } from '../../src/server/main';
 
 export class FakeSpawner implements Spawner {
   starts: StartSpec[] = [];
@@ -96,6 +96,8 @@ export interface Ctx {
   app: ReturnType<typeof createApp>['app'];
   core: ReturnType<typeof createApp>['core'];
   store: ReturnType<typeof createApp>['store'];
+  catalogs: ReturnType<typeof createApp>['catalogs'];
+  doctor: ReturnType<typeof createApp>['doctor'];
   sp: FakeSpawner;
   clock: FakeClock;
   events: ServerEvent[];
@@ -105,13 +107,13 @@ export interface Ctx {
   req: <T = any>(method: string, path: string, body?: unknown, as?: string | null, call?: string | null) => Promise<{ status: number; body: T }>;
 }
 
-export async function setup(settings: Partial<Settings> = {}): Promise<Ctx> {
+export async function setup(settings: Partial<Settings> = {}, extra: Partial<AppDeps> = {}): Promise<Ctx> {
   const root = mkdtempSync(join(tmpdir(), 'sparrow-t1-proj-'));
   mkdirSync(join(root, 'sub'), { recursive: true });
   const sp = new FakeSpawner();
   const clock = new FakeClock();
   const logs: string[] = [];
-  const { app, core, store, events: bus } = createApp({
+  const { app, core, store, events: bus, catalogs, doctor } = createApp({
     spawner: sp,
     settings: { ...DEFAULT_SETTINGS, ...settings },
     resumeDirs: [makeResumesDir()],
@@ -121,6 +123,9 @@ export async function setup(settings: Partial<Settings> = {}): Promise<Ctx> {
     protocolPath: '/nonexistent/protocol.md',
     deliverDelayMs: 1000,
     detectRoot: (cwd) => cwd,
+    doctorRoot: mkdtempSync(join(tmpdir(), 'sparrow-t1-doc-')),
+    doctorShared: [],
+    ...extra,
   });
   const events: ServerEvent[] = [];
   bus.subscribe((e) => events.push(e));
@@ -135,7 +140,7 @@ export async function setup(settings: Partial<Settings> = {}): Promise<Ctx> {
     return { status: res.status, body: parsed };
   };
   const reg = await req('POST', '/api/captains/register', { cwd: root });
-  return { app, core, store, sp, clock, events, logs, root, captain: reg.body.agent, req };
+  return { app, core, store, catalogs, doctor, sp, clock, events, logs, root, captain: reg.body.agent, req };
 }
 
 /** Hire as the captain (or `as`) and return the new agent. */

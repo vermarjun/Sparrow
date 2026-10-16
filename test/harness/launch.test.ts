@@ -144,11 +144,11 @@ describe('installHarnessAssets', () => {
 
 describe('opencode helpers (fix round 2)', () => {
   test('per-agent state dir seeds the remembered variant = effort (or clears it)', () => {
-    const home = seedState('ag_seed', 'opencode-go/deepseek-v4-flash', 'low');
+    const home = seedState('ag_seed', 'prov/model-a', 'low');
     expect(home).toBe(join(TEST_HOME, 'agents', 'ag_seed', 'opencode-state'));
     const f = join(home, 'opencode', 'model.json');
-    expect(JSON.parse(readFileSync(f, 'utf8')).variant).toEqual({ 'opencode-go/deepseek-v4-flash': 'low' });
-    seedState('ag_seed', 'opencode-go/deepseek-v4-flash', null);
+    expect(JSON.parse(readFileSync(f, 'utf8')).variant).toEqual({ 'prov/model-a': 'low' });
+    seedState('ag_seed', 'prov/model-a', null);
     expect(JSON.parse(readFileSync(f, 'utf8')).variant).toEqual({});
   });
 

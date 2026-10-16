@@ -72,3 +72,16 @@ export async function until<T>(fn: () => Promise<T | null | undefined | false> |
   }
   throw new Error(`until: timed out${last ? ': ' + (last as Error).message : ''}`);
 }
+
+// Real-harness tests (SPARROW_REAL=1) never hardcode model ids: they take the cheapest model the live catalog
+// offers (U1 rule, same as the doctor). SPARROW_REAL_MODEL_<HARNESS>=<id> overrides it, e.g. when the account
+// cannot use the cheapest paid model.
+export async function realModel(h: 'claude' | 'codex' | 'opencode'): Promise<{ model: string; effort: string | null }> {
+  const { fetchCatalog, cheapestModel } = await import('../../src/harness/catalog');
+  const cat = await fetchCatalog(h);
+  const override = process.env[`SPARROW_REAL_MODEL_${h.toUpperCase()}`];
+  const pick = cheapestModel(cat, override ? { [h]: override } : {});
+  if (!pick) throw new Error(`no ${h} model in the live catalog: ${cat.error ?? 'empty'}`);
+  console.log(`[${h}] live catalog v${cat.version}: ${cat.models.length} models → ${pick.model} / ${pick.effort ?? 'default effort'}`);
+  return pick;
+}

@@ -1,0 +1,1 @@
+{"type": "system", "subtype": "init", "cwd": "/tmp/x", "session_id": "1692ef64-a940-4d36-9d4e-3cafd8a358cf", "model": "claude-sonnet-5-5", "permissionMode": "default", "apiKeySource": "none", "tools": ["Bash", "Read"]}

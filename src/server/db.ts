@@ -3,10 +3,11 @@ import { Database } from 'bun:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type {
-  Agent, AgentState, Call, CallEndReason, Card, CardNote, CardState, Delivery, Message, MessageKind, Project,
+  Agent, AgentState, Call, CallEndReason, Card, CardNote, CardState, Delivery, DoctorCheck, DoctorRun, HarnessCatalog,
+  Message, MessageKind, Project,
 } from '../shared/types';
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);
@@ -41,6 +42,9 @@ CREATE TABLE IF NOT EXISTS agents (
   last_update_at INTEGER,
   last_seen_at INTEGER,
   queued_at INTEGER,
+  resume_hash TEXT,
+  last_run TEXT,
+  resume_note TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   UNIQUE (project_id, handle)
@@ -57,7 +61,10 @@ CREATE TABLE IF NOT EXISTS calls (
   restarts INTEGER NOT NULL DEFAULT 0,
   prompt TEXT NOT NULL DEFAULT '',
   quiet_nudged_at INTEGER,
-  long_notified INTEGER NOT NULL DEFAULT 0
+  long_notified INTEGER NOT NULL DEFAULT 0,
+  harness TEXT,
+  model TEXT,
+  effort TEXT
 );
 CREATE INDEX IF NOT EXISTS calls_agent ON calls (agent_id, started_at);
 CREATE TABLE IF NOT EXISTS messages (
@@ -97,7 +104,33 @@ CREATE TABLE IF NOT EXISTS cards (
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS catalogs (
+  harness TEXT PRIMARY KEY,
+  data TEXT NOT NULL,
+  fetched_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS doctor_runs (
+  id TEXT PRIMARY KEY,
+  started_at INTEGER NOT NULL,
+  ended_at INTEGER,
+  data TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS resume_tests (
+  slug TEXT PRIMARY KEY,
+  data TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
 `;
+
+// Columns added after v1. A v1 database gets them via ALTER TABLE on open (new tables come from CREATE IF NOT EXISTS).
+const ADDED_COLUMNS: [table: string, column: string, type: string][] = [
+  ['agents', 'resume_hash', 'TEXT'],
+  ['agents', 'last_run', 'TEXT'],
+  ['agents', 'resume_note', 'TEXT'],   // changed resume text to prepend to the next envelope ("apply to existing agents")
+  ['calls', 'harness', 'TEXT'],
+  ['calls', 'model', 'TEXT'],
+  ['calls', 'effort', 'TEXT'],
+];
 
 type Row = Record<string, any>;
 const json = <T>(s: unknown, fallback: T): T => {
@@ -157,8 +190,9 @@ export function rowToDelivery(r: Row): Delivery {
 const AGENT_COLS = [
   'id', 'project_id', 'handle', 'kind', 'resume', 'title', 'harness', 'model', 'effort', 'can_hire', 'parent_id', 'depth',
   'cwd', 'tmux_session', 'tmux_window', 'tmux_window_id', 'session_id', 'state', 'call_id', 'last_end_reason',
-  'last_update', 'last_update_at', 'last_seen_at', 'created_at', 'updated_at',
+  'last_update', 'last_update_at', 'last_seen_at', 'resume_hash', 'last_run', 'created_at', 'updated_at',
 ] as const;
+const JSON_COLS = new Set(['can_hire', 'last_run']);
 
 /** Thin typed wrapper over bun:sqlite. All methods are synchronous. */
 export class Store {
@@ -169,8 +203,22 @@ export class Store {
     this.db = new Database(path, { create: true });
     this.db.exec('PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = OFF;');
     this.db.exec(SCHEMA);
+    this.migrate();
+  }
+
+  /** Bring an older database up to SCHEMA_VERSION: add missing columns, then record the version. */
+  private migrate() {
+    for (const [table, column, type] of ADDED_COLUMNS) {
+      const cols = this.db.query(`PRAGMA table_info(${table})`).all() as Row[];
+      if (!cols.some((c) => c.name === column)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+    }
     const v = this.db.query('SELECT version FROM schema_version LIMIT 1').get() as Row | null;
     if (!v) this.db.query('INSERT INTO schema_version (version) VALUES (?)').run(SCHEMA_VERSION);
+    else if (v.version < SCHEMA_VERSION) this.db.query('UPDATE schema_version SET version = ?').run(SCHEMA_VERSION);
+  }
+
+  schemaVersion(): number {
+    return ((this.db.query('SELECT version FROM schema_version LIMIT 1').get() as Row | null)?.version as number) ?? 0;
   }
 
   close() { this.db.close(); }
@@ -206,12 +254,21 @@ export class Store {
       : this.db.query('SELECT * FROM agents ORDER BY created_at DESC, rowid DESC').all();
     return (rows as Row[]).map(rowToAgent);
   }
+  /** Spawned agents (kind agent or probe) in a state. */
   agentsInState(state: AgentState): Agent[] {
-    return (this.db.query("SELECT * FROM agents WHERE state = ? AND kind = 'agent' ORDER BY created_at, rowid").all(state) as Row[]).map(rowToAgent);
+    return (this.db.query("SELECT * FROM agents WHERE state = ? AND kind != 'human' ORDER BY created_at, rowid").all(state) as Row[]).map(rowToAgent);
+  }
+  /** Changed resume text waiting to be prepended to the agent's next envelope; read-and-clear. */
+  takeResumeNote(id: string): string | null {
+    const r = this.db.query('SELECT resume_note FROM agents WHERE id = ?').get(id) as Row | null;
+    if (!r?.resume_note) return null;
+    this.db.query('UPDATE agents SET resume_note = NULL WHERE id = ?').run(id);
+    return r.resume_note as string;
   }
   children(agentId: string): Agent[] {
     return (this.db.query('SELECT * FROM agents WHERE parent_id = ? ORDER BY created_at, rowid').all(agentId) as Row[]).map(rowToAgent);
   }
+  /** Working agents that count against max_running (probes don't). */
   countWorking(): number {
     return (this.db.query("SELECT COUNT(*) AS n FROM agents WHERE state = 'working' AND kind = 'agent'").get() as Row).n;
   }
@@ -220,14 +277,14 @@ export class Store {
     return r ? rowToAgent(r) : null;
   }
   insertAgent(a: Agent) {
-    const vals = AGENT_COLS.map((c) => (c === 'can_hire' ? JSON.stringify(a.can_hire) : (a as any)[c] ?? null));
+    const vals = AGENT_COLS.map((c) => (JSON_COLS.has(c) ? ((a as any)[c] == null ? null : JSON.stringify((a as any)[c])) : (a as any)[c] ?? null));
     this.db.query(`INSERT INTO agents (${AGENT_COLS.join(', ')}) VALUES (${AGENT_COLS.map(() => '?').join(', ')})`).run(...vals);
   }
   /** Patch columns of an agent (bumps updated_at) and return the new row. */
-  patchAgent(id: string, patch: Partial<Agent> & { queued_at?: number | null }, now: number): Agent {
+  patchAgent(id: string, patch: Partial<Agent> & { queued_at?: number | null; resume_note?: string | null }, now: number): Agent {
     const entries = Object.entries({ ...patch, updated_at: now }).filter(([k]) => k !== 'id');
     const sets = entries.map(([k]) => `${k} = ?`).join(', ');
-    const vals = entries.map(([k, v]) => (k === 'can_hire' ? JSON.stringify(v) : v ?? null));
+    const vals = entries.map(([k, v]) => (JSON_COLS.has(k) ? (v == null ? null : JSON.stringify(v)) : v ?? null));
     this.db.query(`UPDATE agents SET ${sets} WHERE id = ?`).run(...(vals as any[]), id);
     return this.getAgent(id)!;
   }
@@ -244,8 +301,8 @@ export class Store {
     return this.callsFor(agentId, 1)[0] ?? null;
   }
   insertCall(c: Call) {
-    this.db.query('INSERT INTO calls (id, agent_id, started_at, ended_at, end_reason, exit_code, resumed, nudges, restarts, prompt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(c.id, c.agent_id, c.started_at, c.ended_at, c.end_reason, c.exit_code, c.resumed ? 1 : 0, c.nudges, c.restarts, c.prompt);
+    this.db.query('INSERT INTO calls (id, agent_id, started_at, ended_at, end_reason, exit_code, resumed, nudges, restarts, prompt, harness, model, effort) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(c.id, c.agent_id, c.started_at, c.ended_at, c.end_reason, c.exit_code, c.resumed ? 1 : 0, c.nudges, c.restarts, c.prompt, c.harness ?? null, c.model ?? null, c.effort ?? null);
   }
   patchCall(id: string, patch: Partial<CallRow>): CallRow {
     const entries = Object.entries(patch).filter(([k]) => k !== 'id');
@@ -343,5 +400,34 @@ export class Store {
   }
   countCards(project: string): number {
     return (this.db.query('SELECT COUNT(*) AS n FROM cards WHERE project_id = ?').get(project) as Row).n;
+  }
+
+  // ---------- catalogs (U1)
+  saveCatalog(c: HarnessCatalog) {
+    this.db.query('INSERT INTO catalogs (harness, data, fetched_at) VALUES (?, ?, ?) ON CONFLICT(harness) DO UPDATE SET data = excluded.data, fetched_at = excluded.fetched_at')
+      .run(c.harness, JSON.stringify(c), c.fetched_at);
+  }
+  listCatalogs(): HarnessCatalog[] {
+    return (this.db.query('SELECT data FROM catalogs ORDER BY harness').all() as Row[]).map((r) => json<HarnessCatalog | null>(r.data, null)).filter((x): x is HarnessCatalog => !!x);
+  }
+
+  // ---------- doctor runs (U1)
+  saveDoctorRun(r: DoctorRun) {
+    this.db.query('INSERT INTO doctor_runs (id, started_at, ended_at, data) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET ended_at = excluded.ended_at, data = excluded.data')
+      .run(r.id, r.started_at, r.ended_at, JSON.stringify(r));
+  }
+  latestDoctorRun(finishedOnly = false): DoctorRun | null {
+    const r = this.db.query(`SELECT data FROM doctor_runs ${finishedOnly ? 'WHERE ended_at IS NOT NULL' : ''} ORDER BY started_at DESC, rowid DESC LIMIT 1`).get() as Row | null;
+    return r ? json<DoctorRun | null>(r.data, null) : null;
+  }
+
+  // ---------- resume tests (U1): latest "Test resume" check per slug
+  saveResumeTest(slug: string, c: DoctorCheck) {
+    this.db.query('INSERT INTO resume_tests (slug, data, updated_at) VALUES (?, ?, ?) ON CONFLICT(slug) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at')
+      .run(slug, JSON.stringify(c), c.updated_at);
+  }
+  getResumeTest(slug: string): DoctorCheck | null {
+    const r = this.db.query('SELECT data FROM resume_tests WHERE slug = ?').get(slug) as Row | null;
+    return r ? json<DoctorCheck | null>(r.data, null) : null;
   }
 }

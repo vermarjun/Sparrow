@@ -1,6 +1,6 @@
 // Fix round 2 (I1 bug 2): OpenCode resume must always land its envelope. Gated: SPARROW_REAL=1.
 // 6 kill → resume cycles in a NARROW (70-col) tmux session; every resume must produce a user message + turn end.
-import { TEST_HOME } from './helpers';
+import { realModel, TEST_HOME } from './helpers';
 import { afterAll, expect, test } from 'bun:test';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -16,7 +16,8 @@ afterAll(async () => {
 });
 
 test.skipIf(!REAL)('opencode: 6 resumes in a narrow window all land', async () => {
-  const stub = startStub(4128);
+  const pick = await realModel('opencode');
+  const stub = startStub(4148);
   process.env.SPARROW_URL = stub.url;
   const cwd = join(TEST_HOME, `oc-resume-${Date.now()}`);
   mkdirSync(cwd, { recursive: true });
@@ -25,7 +26,7 @@ test.skipIf(!REAL)('opencode: 6 resumes in a narrow window all land', async () =
   const spawner = createSpawner();
   const agent: Agent = {
     id: `ag_ocres${Date.now().toString(36)}`, project_id: 'r', handle: 'ocres', kind: 'agent', resume: 'opencode', title: 'R',
-    harness: 'opencode', model: 'opencode-go/deepseek-v4-flash', effort: 'low', can_hire: [], parent_id: null, depth: 1, cwd,
+    harness: 'opencode', model: pick.model, effort: pick.effort, can_hire: [], parent_id: null, depth: 1, cwd,
     tmux_session: 'sptest-narrow', tmux_window: 'oc', tmux_window_id: null, session_id: null, state: 'working', call_id: null,
     last_end_reason: null, last_update: null, last_update_at: null, last_seen_at: null, resume_hash: null, last_run: null, created_at: 0, updated_at: 0,
   };

@@ -1,9 +1,10 @@
 // Real-harness verification matrix (CONTRACT §6 / T2 brief). Gated: SPARROW_REAL=1 bun test test/harness/real.test.ts
 // Optional: SPARROW_REAL_HARNESSES=claude,codex,opencode (default all three).
-// Uses cheap models, a fresh temp cwd (a git repo, to trigger trust dialogs if not handled), the stub server on
-// 4125–4127 and the private tmux socket. Kills every window it opens.
-import { TEST_HOME } from './helpers';
-import { afterAll, describe, expect, test } from 'bun:test';
+// Uses the cheapest model of each live catalog at its lowest effort (U1; see realModel), a fresh temp cwd (a git
+// repo, to trigger trust dialogs if not handled), the stub server on 4145–4147 and the private tmux socket.
+// Kills every window it opens.
+import { realModel, TEST_HOME } from './helpers';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { startStub, type Stub } from './stub-server';
@@ -20,9 +21,9 @@ function typedSection(): string {
 }
 const WANT = (process.env.SPARROW_REAL_HARNESSES ?? 'claude,codex,opencode').split(',');
 const CFG: Record<string, { model: string; effort: string | null; port: number }> = {
-  claude: { model: 'haiku', effort: 'low', port: 4125 },
-  codex: { model: 'gpt-6-luna', effort: 'low', port: 4126 },
-  opencode: { model: 'opencode-go/deepseek-v4-flash', effort: 'low', port: 4127 },
+  claude: { model: '', effort: null, port: 4145 },
+  codex: { model: '', effort: null, port: 4146 },
+  opencode: { model: '', effort: null, port: 4147 },
 };
 
 afterAll(async () => {
@@ -47,8 +48,11 @@ async function harnessChild(windowId: string): Promise<number> {
   return Number(new TextDecoder().decode(r.stdout).trim().split('\n')[0]);
 }
 
-for (const h of ['claude', 'codex', 'opencode'] as HarnessName[]) {
+for (const h of ['claude', 'codex', 'opencode'] as const) {
   describe.skipIf(!REAL || !WANT.includes(h))(`real ${h}`, () => {
+    beforeAll(async () => {
+      Object.assign(CFG[h], await realModel(h));
+    }, 120_000);
     test(`${h}: matrix checks 1–11`, async () => {
       const stub: Stub = startStub(CFG[h].port);
       process.env.SPARROW_URL = stub.url;
