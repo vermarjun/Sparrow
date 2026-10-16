@@ -4,7 +4,7 @@ import { parseArgs, type ParseArgsConfig } from 'node:util';
 import { existsSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { api, ApiError, type ApiOpts } from './client';
-import { BIN, PORT, REPO_ROOT, SERVER_URL, SPARROW_HOME, TMUX_SOCKET } from '../shared/config';
+import { BIN, LOG_FILE, PORT, REPO_ROOT, SERVER_URL, SPARROW_HOME, TMUX_SOCKET } from '../shared/config';
 import { CARD_STATES } from '../shared/types';
 import type {
   Agent, Card, CardState, DoneStatus, EndCallRes, HireRes, MessageRes, MessageView, Project,
@@ -20,9 +20,11 @@ import {
 const USAGE: Record<string, string> = {
   up: 'sparrow up [--port N] [--max-running N] [--tmux]   start the server (foreground; --tmux: in tmux session \'sparrow\', window \'server\')',
   install: 'sparrow install [--force]   seed resumes, link ~/.local/bin/sparrow, install skills + harness assets',
+  stop: 'sparrow stop   stop the server',
+  captain: 'sparrow captain [--cwd dir] [--model m] [--effort e]   open your Claude Code captain in tmux',
   status: 'sparrow status   server health + working agents and their windows',
   whoami: 'sparrow whoami',
-  resumes: 'sparrow resumes   the directory: slug, title, harness/model, can_hire, description',
+  resumes: 'sparrow resumes   the directory: slug, title, harness/model/effort, status, can_hire, description',
   roster: 'sparrow roster [--all]   agents in my project',
   hire: 'sparrow hire <resume> "<task>" [--name h] [--cwd d] [--tmux-session s] [--tmux-window w] [--card N] [--model m] [--effort e]',
   send: 'sparrow send <@handle|group> "<text>" [--card N]',
@@ -42,6 +44,7 @@ function fullUsage(): string {
   return [
     'sparrow — local agent factory. Text arguments may be `-` to read stdin (use a quoted heredoc).',
     '',
+    '  sparrow   start detached if needed, open the UI, and return',
     ...Object.values(USAGE).map((u) => '  ' + u),
     '',
     'Global: --json prints the raw server response.  Server: ' + SERVER_URL,
@@ -211,6 +214,20 @@ function cardState(cmd: string, v: string): CardState {
 type Handler = (ctx: Ctx, args: string[]) => Promise<Out | number>;
 
 const commands: Record<string, Handler> = {
+  async stop(ctx, args) {
+    parse('stop', args);
+    const { stopServer } = await import('./lifecycle');
+    const text = await stopServer();
+    return { raw: { ok: true, message: text }, text };
+  },
+  async captain(ctx, args) {
+    const { values, positionals } = parse('captain', args, { cwd: { type: 'string' }, model: { type: 'string' }, effort: { type: 'string' } });
+    if (positionals.length) throw new UsageError('captain', 'unexpected positional argument');
+    await api('GET', '/api/health', undefined, { agentId: null });
+    const { launchCaptain } = await import('../harness/captain');
+    const r = await launchCaptain({ cwd: values.cwd ?? process.cwd(), model: values.model, effort: values.effort });
+    return { raw: r, text: `Captain: ${r.cwd} · ${r.session}:${r.window}\n${r.attach}` };
+  },
   async whoami(ctx, args) {
     const { values } = parse('whoami', args);
     void values;
@@ -467,8 +484,8 @@ const commands: Record<string, Handler> = {
       health = await api('GET', '/api/health', undefined, { retries: 0, timeoutMs: 3000, agentId: null });
     } catch (e) {
       if (e instanceof ApiError && e.status === 0) {
-        if (ctx.json) { console.log(JSON.stringify({ ok: false, url: SERVER_URL }, null, 2)); return 1; }
-        console.log(`Sparrow server: not running at ${SERVER_URL}\nStart it: sparrow up --tmux`);
+        if (ctx.json) { console.log(JSON.stringify({ ok: false, url: SERVER_URL, port: PORT, log: LOG_FILE, pid: null }, null, 2)); return 1; }
+        console.log(`Sparrow server: not running at ${SERVER_URL} · port ${PORT} · log ${LOG_FILE}\nStart it: sparrow`);
         return 1;
       }
       throw e;
@@ -483,7 +500,7 @@ const commands: Record<string, Handler> = {
     const queued = agents.filter((a) => a.state === 'queued');
     const lines = [
       `Sparrow server: up · ${SERVER_URL} · pid ${health.pid} · v${health.version} · started ${hhmm(health.started_at)} (${age(health.started_at)})`,
-      `Home: ${SPARROW_HOME} · UI: ${SERVER_URL}`,
+      `Home: ${SPARROW_HOME} · port ${PORT} · log ${LOG_FILE} · UI: ${SERVER_URL}`,
       `Projects: ${projects.length ? projects.map((p) => `${p.id} (${p.working}/${p.agents} working, ${p.cards} cards)`).join(', ') : 'none yet'}`,
     ];
     if (working.length) {
@@ -494,7 +511,7 @@ const commands: Record<string, Handler> = {
       }
     } else lines.push('Working: none');
     if (queued.length) lines.push(`Queued (${queued.length}): ${queued.map((a) => `@${a.handle} [${a.project_id}]`).join(', ')}`);
-    return { raw: { health, projects, working, queued }, text: lines.join('\n') };
+    return { raw: { health, port: PORT, log: LOG_FILE, projects, working, queued }, text: lines.join('\n') };
   },
 
   async up(ctx, args) {
@@ -632,7 +649,15 @@ export async function main(argv: string[]): Promise<number> {
   const json = head.includes('--json');
   const [cmd, ...args] = [...head.filter((a) => a !== '--json'), ...tail];
   const flagArgs = args.includes('--') ? args.slice(0, args.indexOf('--')) : args;
-  if (!cmd || cmd === 'help' || cmd === '--help' || cmd === '-h') {
+  if (!cmd) {
+    try {
+      const { openUi } = await import('./lifecycle');
+      const r = await openUi();
+      console.log(json ? JSON.stringify(r, null, 2) : `Sparrow: ${r.url} (pid ${r.health.pid})\nLog: ${r.log}`);
+      return 0;
+    } catch (e) { console.error(`sparrow: ${(e as Error).message}`); return 1; }
+  }
+  if (cmd === 'help' || cmd === '--help' || cmd === '-h') {
     if (cmd && args[0] && USAGE[args[0]]) console.log('usage: ' + USAGE[args[0]]);
     else console.log(fullUsage());
     return cmd ? 0 : 2;
