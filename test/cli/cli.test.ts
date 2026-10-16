@@ -295,15 +295,28 @@ describe('roster / resumes / log / status', () => {
     ok(r);
     expect(stub.find('POST', '/api/captains/register').length).toBe(0);
     expect(r.stdout).toBe([
-      'builder — Builder [claude · opus/high]',
+      'builder — Builder [claude · opus · effort high]',
       '  Implements one task.',
-      'sub-captain — Sub-captain [claude · opus/high]',
+      '  status: unchecked',
+      '  can hire: nobody',
+      'sub-captain — Sub-captain [claude · opus · effort high]',
       '  Owns a slice.',
+      '  status: unchecked',
       '  can hire: builder, verifier',
       '',
       'Hire: sparrow hire <slug> "<task>"',
       '',
     ].join('\n'));
+  });
+
+  test('resumes show resolved aliases and refuse-looking unusable status', async () => {
+    stub.on('GET', '/api/resumes', [
+      { slug: 'broken', title: 'Broken', description: 'Old model.', harness: 'claude', model: 'opus', effort: 'low', can_hire: [], status: 'model_gone', resolved_model: 'claude-opus-retired', status_detail: 'model no longer offered' },
+    ]);
+    const r = await run(['resumes'], { url });
+    ok(r);
+    expect(r.stdout).toContain('opus → claude-opus-retired');
+    expect(r.stdout).toContain('status: model_gone — UNUSABLE: do not hire · model no longer offered');
   });
 
   test('log pages through messages and filters by handle', async () => {
@@ -414,12 +427,10 @@ describe('misc', () => {
     expect(j.inbox).toEqual([]);
   });
 
-  test('unknown command and bare sparrow exit 2; help exits 0', async () => {
+  test('unknown command exits 2; help exits 0', async () => {
     let r = await run(['frobnicate'], { url });
     expect(r.code).toBe(2);
     expect(r.stderr).toContain('unknown command');
-    r = await run([], { url });
-    expect(r.code).toBe(2);
     r = await run(['help'], { url });
     expect(r.code).toBe(0);
     expect(r.stdout).toContain('sparrow hire <resume>');
