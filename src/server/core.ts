@@ -229,7 +229,7 @@ export class Core {
         harness: 'human', model: null, effort: null, can_hire: ['*'], parent_id: null, depth: 0, cwd,
         tmux_session: this.tmuxPrefix + project.id, tmux_window: '', tmux_window_id: null, session_id: req.session_id ?? null,
         state: 'idle', call_id: null, last_end_reason: null, last_update: null, last_update_at: null, last_seen_at: now,
-        created_at: now, updated_at: now,
+        resume_hash: null, last_run: null, created_at: now, updated_at: now,
       };
       this.store.insertAgent(a);
       cap = a;
@@ -319,7 +319,7 @@ export class Core {
       harness: resume.harness, model: req.model ?? resume.model, effort: req.effort ?? resume.effort, can_hire: resume.can_hire,
       parent_id: caller.id, depth, cwd, tmux_session: req.tmux_session || this.tmuxPrefix + project,
       tmux_window: req.tmux_window || handle, tmux_window_id: null, session_id: null, state: 'idle', call_id: null,
-      last_end_reason: null, last_update: null, last_update_at: null, last_seen_at: null, created_at: now, updated_at: now,
+      last_end_reason: null, last_update: null, last_update_at: null, last_seen_at: null, resume_hash: null, last_run: null, created_at: now, updated_at: now,
     };
     this.store.insertAgent(agent);
     this.emit({ type: 'agent.updated', project_id: project, agent });
@@ -539,6 +539,7 @@ export class Core {
     const call: Call = {
       id: callId, agent_id: a0.id, started_at: now, ended_at: null, end_reason: null, exit_code: null, resumed: resume,
       nudges: 0, restarts: opts.restarts ?? Math.max(0, ...pending.map((m) => Number(m.meta?.restart) || 0)), prompt: envelope,
+      harness: a0.harness === 'human' ? null : a0.harness, model: a0.model, effort: a0.effort,
     };
     const oldWindow = a0.tmux_window_id;
     const t = this.closeTimers.get(a0.id);

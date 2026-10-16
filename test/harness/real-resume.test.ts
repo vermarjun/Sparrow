@@ -27,7 +27,7 @@ test.skipIf(!REAL)('opencode: 6 resumes in a narrow window all land', async () =
     id: `ag_ocres${Date.now().toString(36)}`, project_id: 'r', handle: 'ocres', kind: 'agent', resume: 'opencode', title: 'R',
     harness: 'opencode', model: 'opencode-go/deepseek-v4-flash', effort: 'low', can_hire: [], parent_id: null, depth: 1, cwd,
     tmux_session: 'sptest-narrow', tmux_window: 'oc', tmux_window_id: null, session_id: null, state: 'working', call_id: null,
-    last_end_reason: null, last_update: null, last_update_at: null, last_seen_at: null, created_at: 0, updated_at: 0,
+    last_end_reason: null, last_update: null, last_update_at: null, last_seen_at: null, resume_hash: null, last_run: null, created_at: 0, updated_at: 0,
   };
   try {
     const r = await spawner.start({ agent, call_id: 'call_0', system_prompt: 'You are a test agent. Reply with one word.', prompt: 'Reply "zero".', resume: false });

@@ -1,9 +1,8 @@
-// FROZEN CONTRACT — shared by server, harness, cli and web.
-// Change only through the orchestrator (see .orchestra/CONTRACT.md).
+// Shared contract — server, harness, cli and web. U1 additions are specified in .orchestra/U1-CONTRACT.md.
 // All times are epoch milliseconds.
 
 export type HarnessName = 'claude' | 'codex' | 'opencode' | 'fake';
-export type AgentKind = 'human' | 'agent';
+export type AgentKind = 'human' | 'agent' | 'probe'; // probe = doctor / "test resume" agent: hidden project, not counted in max_running
 
 export type AgentState =
   | 'idle'     // no window; resumable; a delivery wakes it
@@ -59,9 +58,13 @@ export interface Agent {
   last_update: string | null;    // text of the latest `update`
   last_update_at: number | null;
   last_seen_at: number | null;   // latest CLI request or hook from this agent
+  resume_hash: string | null;    // ResumeView.hash of the resume copy this agent was hired from (or last applied)
+  last_run: RunInfo | null;      // what the latest call actually launched with
   created_at: number;
   updated_at: number;
 }
+
+export interface RunInfo { harness: HarnessName | 'human'; model: string | null; effort: string | null; at: number }
 
 // One call = one window lifetime (spawn → done/ask/wait/crash/...).
 export interface Call {
@@ -75,6 +78,9 @@ export interface Call {
   nudges: number;                // reminders sent during this call
   restarts: number;              // auto-restarts already used in this chain of calls
   prompt: string;                // envelope passed as the first prompt
+  harness: HarnessName | null;   // launched with (null for rows from before U1)
+  model: string | null;
+  effort: string | null;
 }
 
 export interface Message {
@@ -137,6 +143,87 @@ export interface Resume {
   path: string;
 }
 
+// ---------- U1: model catalog, doctor, editable resumes, captain launcher
+
+export interface CatalogModel {
+  id: string;                    // exactly what is passed to the harness (--model / -m)
+  label: string;                 // display name
+  efforts: string[];             // effort values this model accepts, in harness order; [] = no effort control
+  default_effort: string | null;
+  hidden: boolean;               // harness marks it hidden (codex visibility 'hide'); still valid, shown last
+  cost: { input: number; output: number } | null; // USD per 1M tokens when the harness reports it
+  resolves_to: string | null;    // claude alias -> full id (e.g. 'opus' -> 'claude-opus-5-5'); else null
+  description: string | null;
+}
+
+export interface HarnessCatalog {
+  harness: HarnessName;          // 'claude' | 'codex' | 'opencode' (never 'fake')
+  ok: boolean;                   // fetch succeeded
+  error: string | null;          // why the fetch failed (binary missing, command error, ...), with a fix hint
+  version: string | null;        // harness --version at fetch time
+  binary: string | null;         // absolute path used
+  models: CatalogModel[];
+  fetched_at: number;
+}
+
+export type CheckStatus = 'pending' | 'running' | 'pass' | 'warn' | 'fail' | 'skipped';
+
+export interface DoctorCheck {
+  id: string;                    // stable key, e.g. 'claude.binary', 'claude.login', 'claude.catalog', 'claude.spawn', 'claude.roundtrip', 'tmux', 'port', 'path', 'skills', 'hooks'
+  harness: HarnessName | null;   // null for shared checks
+  label: string;
+  status: CheckStatus;
+  detail: string;                // what was observed (version, path, model used, duration, error text)
+  fix: string | null;            // what the user should do when status is warn/fail
+  duration_ms: number | null;
+  updated_at: number;
+}
+
+export interface DoctorRun {
+  id: string;                    // 'doc_' + ulid
+  started_at: number;
+  ended_at: number | null;       // null while running
+  checks: DoctorCheck[];
+  versions: Record<string, string | null>;   // harness -> version seen this run
+  version_changed: string[];     // harnesses whose version differs from the previous run ("re-verified on new version")
+}
+
+// Per-harness verdict used by the hire gate and the UI. From the latest finished doctor run; null fields = not checked yet.
+export interface HarnessHealth {
+  harness: HarnessName;
+  installed: boolean | null;
+  logged_in: boolean | null;
+  working: boolean | null;       // round trip passed
+  fix: string | null;
+  checked_at: number | null;
+}
+
+export type ResumeStatus = 'ok' | 'harness_missing' | 'harness_logged_out' | 'harness_broken' | 'model_gone' | 'effort_invalid' | 'unchecked';
+
+export interface ResumeView extends Resume {
+  hash: string;                  // sha256 (first 12 hex) of the file content; changes on every edit
+  builtin: boolean;              // served from assets/resumes (not yet copied to ~/.sparrow/resumes)
+  status: ResumeStatus;
+  status_detail: string | null;  // human text, e.g. "model gpt-6-nova no longer offered by codex"
+  resolved_model: string | null; // claude alias resolved through the catalog
+  stale_agents: string[];        // ids of non-retired agents hired from an older copy (agent.resume_hash !== hash)
+}
+
+export interface ResumeWriteReq {
+  slug?: string;                 // required on create; ignored on update (slug = file name, immutable)
+  title: string;
+  description: string;
+  harness: HarnessName;
+  model: string | null;
+  effort: string | null;
+  can_hire: string[];
+  limits: { quiet_minutes: number; max_call_minutes: number };
+  body: string;
+}
+
+export interface CaptainStartReq { cwd: string; model?: string | null; effort?: string | null }
+export interface CaptainStartRes { session: string; window: string; window_id: string; cwd: string; attach: string } // attach = exact shell command
+
 // ---------- HTTP API (JSON). Caller identity: header X-Sparrow-Agent: <agent id>.
 // Hooks also send X-Sparrow-Call: <call id>; the server ignores hooks for calls that are no longer open.
 // Errors: 4xx/5xx with { error: string } — written so an agent can act on it.
@@ -186,4 +273,9 @@ export type ServerEvent =
   | { type: 'agent.updated'; project_id: string; agent: Agent }
   | { type: 'card.updated'; project_id: string; card: Card }
   | { type: 'call.started'; project_id: string; call: Call }
-  | { type: 'call.ended'; project_id: string; call: Call };
+  | { type: 'call.ended'; project_id: string; call: Call }
+  // Global events (U1): project_id is '*'; delivered to every SSE subscriber regardless of ?project=
+  | { type: 'catalog.updated'; project_id: '*'; catalogs: HarnessCatalog[] }
+  | { type: 'doctor.updated'; project_id: '*'; run: DoctorRun }
+  | { type: 'resume.updated'; project_id: '*'; resume: ResumeView }
+  | { type: 'resume.deleted'; project_id: '*'; slug: string };

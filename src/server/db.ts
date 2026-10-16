@@ -113,6 +113,7 @@ export function rowToAgent(r: Row): Agent {
     tmux_window_id: r.tmux_window_id ?? null, session_id: r.session_id ?? null, state: r.state as AgentState,
     call_id: r.call_id ?? null, last_end_reason: (r.last_end_reason ?? null) as CallEndReason | null,
     last_update: r.last_update ?? null, last_update_at: r.last_update_at ?? null, last_seen_at: r.last_seen_at ?? null,
+    resume_hash: r.resume_hash ?? null, last_run: json(r.last_run, null),
     created_at: r.created_at, updated_at: r.updated_at,
   };
 }
@@ -124,7 +125,7 @@ export function rowToCall(r: Row): CallRow {
     id: r.id, agent_id: r.agent_id, started_at: r.started_at, ended_at: r.ended_at ?? null,
     end_reason: (r.end_reason ?? null) as CallEndReason | null, exit_code: r.exit_code ?? null, resumed: !!r.resumed,
     nudges: r.nudges, restarts: r.restarts, prompt: r.prompt, quiet_nudged_at: r.quiet_nudged_at ?? null,
-    long_notified: !!r.long_notified,
+    long_notified: !!r.long_notified, harness: r.harness ?? null, model: r.model ?? null, effort: r.effort ?? null,
   };
 }
 
