@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Store } from '../../src/server/db';
 import { DOCTOR_PROJECT } from '../../src/server/core';
-import { healthFrom } from '../../src/server/doctor';
+import { defaultSharedChecks, healthFrom, missingManagedHooks } from '../../src/server/doctor';
 import { removePidFile, writePidFile } from '../../src/server/main';
 import { parseResume, serializeResume } from '../../src/server/resumes';
 import type { CatalogModel, DoctorCheck, DoctorRun, HarnessCatalog, ResumeView } from '../../src/shared/types';
@@ -429,6 +429,19 @@ describe('doctor + probes', () => {
     await ctx.core.recover();
     expect(ctx.store.getAgent(p.id)!.state).toBe('retired');
     expect(ctx.sp.stopsFor(p.id).length).toBe(1);
+  });
+
+  test('managed Claude hooks with a missing binary are reported (warn input), present ones are not', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sparrow-u1-managed-'));
+    const f = join(dir, 'remote-settings.json');
+    writeFileSync(f, JSON.stringify({ hooks: {
+      PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: '/usr/local/bin/rtk hook claude' }, { type: 'command', command: '/bin/echo ok' }] }],
+      Stop: [{ hooks: [{ type: 'command', command: 'nosuchtool-xyz --flag' }, { type: 'command', command: '"$HOME/x" y' }] }],
+    } }));
+    const miss = missingManagedHooks([f], (p) => p === '/bin/echo', () => null);
+    expect(miss.map((m) => [m.event, m.binary])).toEqual([['PreToolUse', '/usr/local/bin/rtk'], ['Stop', 'nosuchtool-xyz']]);
+    expect(missingManagedHooks([join(dir, 'nope.json')])).toEqual([]);
+    expect(defaultSharedChecks().map((c) => c.id)).toEqual(['tmux', 'port', 'path', 'skills', 'hooks']);
   });
 
   test('healthFrom maps check statuses (warn counts as fine, missing run = unknown)', () => {

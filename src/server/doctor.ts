@@ -397,8 +397,53 @@ export function defaultSharedChecks(): SharedCheck[] {
         const need = [['bun', bunPath()], ['hook entry', hookEntry()], ['opencode plugin', pluginSource()]] as const;
         const bad = need.filter(([, p]) => !existsSync(p));
         if (bad.length) return { status: 'fail', detail: bad.map(([n, p]) => `${n} missing: ${p}`).join('; '), fix: 'Agent hooks call these by absolute path. Reinstall bun or restore the Sparrow checkout (git status), then restart Sparrow.' };
+        const managed = missingManagedHooks(managedSettingsFiles());
+        if (managed.length) {
+          const bins = [...new Set(managed.map((m) => m.binary))];
+          return {
+            status: 'warn',
+            detail: managed.map((m) => `org-managed Claude hook ${m.binary} is missing (${m.event} in ${m.file}); agents print a non-blocking hook error`).join('; '),
+            fix: `install ${bins.join(', ')} or ask your Claude admin; Sparrow cannot disable managed hooks`,
+          };
+        }
         return { status: 'pass', detail: `${need.map(([, p]) => p).join(', ')} · opencode config ${opencodeConfigDir()} · PATH for agents ${spawnEnv('claude').PATH.split(':').slice(0, 2).join(':')}`, fix: null };
       },
     },
   ];
+}
+
+// ---------------------------------------------------------------- org-managed Claude hooks
+
+/** Claude settings Sparrow cannot override (remote / managed); their hooks run inside every Claude agent. */
+export function managedSettingsFiles(home = homedir()): string[] {
+  const dir = join(home, '.claude');
+  const out = [join(dir, 'remote-settings.json')];
+  try { for (const f of readdirSync(dir)) if (/^managed-settings.*\.json$/.test(f)) out.push(join(dir, f)); } catch { /* no ~/.claude */ }
+  out.push('/Library/Application Support/ClaudeCode/managed-settings.json');
+  return out.filter((f) => existsSync(f));
+}
+
+export interface MissingHook { file: string; event: string; command: string; binary: string }
+
+/** Hook commands in those files whose executable does not exist (e.g. /usr/local/bin/rtk). */
+export function missingManagedHooks(files: string[], exists: (p: string) => boolean = existsSync, which: (b: string) => string | null = (b) => Bun.which(b)): MissingHook[] {
+  const out: MissingHook[] = [];
+  for (const file of files) {
+    let j: any;
+    try { j = JSON.parse(readFileSync(file, 'utf8')); } catch { continue; }
+    const hooks = j?.hooks && typeof j.hooks === 'object' ? j.hooks : {};
+    for (const [event, groups] of Object.entries(hooks)) {
+      if (!Array.isArray(groups)) continue;
+      for (const g of groups as any[]) {
+        for (const h of Array.isArray(g?.hooks) ? g.hooks : []) {
+          if (typeof h?.command !== 'string') continue;
+          const binary = (h.command.trim().match(/^"([^"]+)"|^'([^']+)'|^(\S+)/) ?? []).slice(1).find(Boolean);
+          if (!binary || /[$`]/.test(binary)) continue;
+          const found = binary.includes('/') ? exists(binary) : !!which(binary);
+          if (!found) out.push({ file, event, command: h.command, binary });
+        }
+      }
+    }
+  }
+  return out;
 }
