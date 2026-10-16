@@ -91,6 +91,11 @@ export function modelOptions(catalog: HarnessCatalog | undefined, current: strin
   }
   const out = [...models.filter((m) => !m.hidden).map(opt), ...models.filter((m) => m.hidden).map(opt)]
   if (current && !findModel(catalog, current)) out.unshift({ value: current, label: current, hint: 'not in the catalog', hidden: false, gone: true })
+  else if (current && !models.some((m) => m.id === current)) {
+    // a full id that an alias resolves to (e.g. 'claude-opus-5-5' for 'opus'): keep it selectable as itself
+    const alias = findModel(catalog, current)!
+    out.unshift({ value: current, label: current, hint: `same model as ${alias.id}`, hidden: false, gone: false })
+  }
   return out
 }
 

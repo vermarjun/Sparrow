@@ -27,6 +27,13 @@ describe('model options', () => {
     expect(modelGone(codex, 'gpt-6-luna')).toBe(false)
     expect(modelGone(codex, null)).toBe(false)
   })
+  test('a full Claude id that an alias resolves to stays selectable as itself', () => {
+    const full = claude.models.find((m) => m.resolves_to)!.resolves_to!
+    const opts = modelOptions(claude, full)
+    expect(opts[0]).toMatchObject({ value: full, gone: false })
+    expect(opts.filter((o) => o.value === full)).toHaveLength(1)
+    expect(modelGone(claude, full)).toBe(false)
+  })
   test('a failed catalog never says "gone"', () => {
     const failed: HarnessCatalog = { ...codex, ok: false, models: [], error: 'codex: command not found' }
     expect(modelGone(failed, 'gpt-6-nova')).toBe(false)
