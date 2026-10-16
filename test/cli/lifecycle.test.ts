@@ -45,6 +45,25 @@ describe('one command lifecycle', () => {
     }
   }, 60_000);
 
+  test('stop uses pidfile and SIGKILL fallback when a server cannot answer or handle SIGTERM', async () => {
+    const { home, env } = setup(4154);
+    let pid: number | undefined;
+    try {
+      expect((await run([], { env })).code).toBe(0);
+      const h = await fetch('http://127.0.0.1:4154/api/health').then(r => r.json()) as any;
+      pid = h.pid;
+      writeFileSync(join(home, 'server.pid'), JSON.stringify({ pid, port: 4154 }));
+      process.kill(pid!, 'SIGSTOP');
+      const r = await run(['stop'], { env });
+      expect(r.code).toBe(0);
+      expect(r.stdout).toContain(`stopped (pid ${pid})`);
+      expect(existsSync(join(home, 'server.pid'))).toBe(false);
+      expect(() => process.kill(pid!, 0)).toThrow();
+    } finally {
+      if (pid) { try { process.kill(pid, 'SIGKILL'); } catch {} }
+    }
+  }, 20_000);
+
   test('foreign port reports pid/command and never kills the owner, even with a stale pidfile', async () => {
     const { home, env } = setup(4151);
     const foreign = Bun.spawn([process.execPath, '-e', 'Bun.serve({port:4151,fetch:()=>new Response("foreign")});'], { env: cleanEnv(env), stdout: 'ignore', stderr: 'pipe' });
