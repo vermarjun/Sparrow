@@ -344,7 +344,7 @@ describe('doctor + probes', () => {
     expect(ctx.store.countWorking()).toBe(1); // the probe is not counted
     // hidden from projects, agents and chat
     expect((await ctx.req('GET', '/api/projects')).body.map((p: any) => p.id)).not.toContain(DOCTOR_PROJECT);
-    expect((await ctx.req('GET', '/api/agents')).body.some((a: any) => a.kind === 'probe')).toBe(false);
+    expect((await ctx.req('GET', '/api/agents')).body.some((a: any) => a.project_id === DOCTOR_PROJECT)).toBe(false);
     expect((await ctx.req('GET', '/api/messages')).body.some((m: any) => m.project_id === DOCTOR_PROJECT)).toBe(false);
     expect((await ctx.req('GET', `/api/agents?project=${DOCTOR_PROJECT}`)).body.some((a: any) => a.id === probe.id)).toBe(true);
     const task = ctx.sp.startsFor(probe.id)[0].prompt;
@@ -371,15 +371,18 @@ describe('doctor + probes', () => {
     expect(ctx.store.latestDoctorRun(true)!.id).toBe(run.id);
   });
 
-  test('a probe that never reports fails the round trip with a fix, and is retired', async () => {
-    const ctx = await doctorCtx({ doctor_timeout_ms: 800 });
+  test('a probe that never reports fails the round trip with the harness\'s own error as the fix, and is retired', async () => {
+    const ctx = await ctxWith({
+      settings: { doctor_timeout_ms: 800 },
+      extra: { doctorHarnesses: ['fake'], doctorShared: [], doctorOps: { ...okOps, diagnose: (p: any) => `APIError: subscription ended (${p.handle})` } },
+    });
     await ctx.req('POST', '/api/doctor/run');
     await until(async () => (await ctx.req('GET', '/api/doctor')).body.run.ended_at != null);
     const run = (await ctx.req('GET', '/api/doctor')).body.run as DoctorRun;
     const rt = run.checks.find((x) => x.id === 'fake.roundtrip')!;
     expect(rt.status).toBe('fail');
-    expect(rt.detail).toContain('no update or done within 0.8 s');
-    expect(rt.fix).toBeTruthy();
+    expect(rt.detail).toContain('no update or done within 0.8 s\nfake reported: APIError: subscription ended (fake)');
+    expect(rt.fix).toStartWith('fake itself reported: APIError: subscription ended (fake). Fix that in your fake account');
     expect(ctx.store.listAgents(DOCTOR_PROJECT).filter((a) => a.kind === 'probe').every((a) => a.state === 'retired')).toBe(true);
     expect(ctx.sp.stops.length).toBe(1);
   });

@@ -6,13 +6,13 @@ import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import {
-  binaryExists, binaryFor, cheapestModel, harnessVersion, loginStatus, type LoginResult, type RealHarness, run, spawnEnv,
+  binaryExists, binaryFor, cheapestModel, harnessVersion, loginStatus, type LoginResult, opencodeLastError, type RealHarness, run, spawnEnv,
 } from '../harness/catalog';
 import { opencodeConfigDir, pluginSource } from '../harness/drivers/opencode';
 import { BIN, ASSETS, type Settings } from '../shared/config';
 import { bunPath, CODEX_HOME, hookEntry, serverUrl } from '../harness/env';
 import { ulid } from '../shared/ids';
-import type { CheckStatus, DoctorCheck, DoctorRun, HarnessCatalog, HarnessHealth, HarnessName } from '../shared/types';
+import type { Agent, CheckStatus, DoctorCheck, DoctorRun, HarnessCatalog, HarnessHealth, HarnessName } from '../shared/types';
 import type { CatalogService } from './catalog';
 import { type Core, HttpError } from './core';
 
@@ -22,6 +22,8 @@ export interface BinaryResult { ok: boolean; path: string | null; version: strin
 export interface HarnessOps {
   binary(h: HarnessName): Promise<BinaryResult>;
   login(h: HarnessName): Promise<LoginResult>;
+  /** The harness's own error for a failed probe (e.g. a provider API error), when it records one. */
+  diagnose?(probe: Agent): string | null;
 }
 
 export const realOps: HarnessOps = {
@@ -35,6 +37,7 @@ export const realOps: HarnessOps = {
     return { ok: true, path, version, detail: `${path} (v${version})`, fix: null };
   },
   login: (h) => loginStatus(h as RealHarness),
+  diagnose: (probe) => (probe.harness === 'opencode' ? opencodeLastError(probe.session_id) : null),
 };
 
 export interface SharedCheck { id: string; label: string; run(): Promise<{ status: CheckStatus; detail: string; fix: string | null }> }
@@ -269,9 +272,13 @@ export class Doctor {
       } else {
         const screen = core.lastScreenOf(id, 8);
         const why = failure?.detail ?? (reportAt == null ? `no update or done within ${fmt(timeout)}` : `reported, but the window did not close within ${fmt(timeout)}`);
+        let said: string | null = null;
+        try { said = this.ops.diagnose?.(core.store.getAgent(id)!) ?? null; } catch { said = null; }
         o.onTrip({
-          status: 'fail', detail: `${what}: ${why}${screen ? `\nLast screen:\n${screen}` : ''}`,
-          fix: failure?.fix ?? `Attach to the probe window (tmux session ${probe.tmux_session}) during the next run to see where ${o.harness} stops; if the model is the problem, set doctor_models.${o.harness} in config.json. Then Run doctor.`,
+          status: 'fail', detail: `${what}: ${why}${said ? `\n${o.harness} reported: ${said}` : ''}${screen ? `\nLast screen:\n${screen}` : ''}`,
+          fix: said
+            ? `${o.harness} itself reported: ${said.slice(0, 300)}. Fix that in your ${o.harness} account or provider (or set doctor_models.${o.harness} in config.json to a model you can use), then Run doctor.`
+            : failure?.fix ?? `Attach to the probe window (tmux session ${probe.tmux_session}) during the next run to see where ${o.harness} stops; if the model is the problem, set doctor_models.${o.harness} in config.json. Then Run doctor.`,
           duration_ms: total,
         });
       }

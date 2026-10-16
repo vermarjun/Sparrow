@@ -9,7 +9,8 @@ import type { Settings } from '../shared/config';
 import type { CatalogModel, HarnessCatalog, HarnessName } from '../shared/types';
 import { CLAUDE_BIN, CLAUDE_JSON, CODEX_BIN, OPENCODE_BIN, binDir, bunPath, sparrowHome } from './env';
 import { KEEP_RE, UNSET_PREFIX_RE, UNSET_VARS } from './launch';
-import { ensurePlugin, opencodeConfigDir } from './drivers/opencode';
+import { Database } from 'bun:sqlite';
+import { ensurePlugin, opencodeConfigDir, opencodeDbPath } from './drivers/opencode';
 
 export type RealHarness = 'claude' | 'codex' | 'opencode';
 export const REAL_HARNESSES: RealHarness[] = ['claude', 'codex', 'opencode'];
@@ -307,4 +308,26 @@ export function cheapestModel(cat: HarnessCatalog, overrides: Settings['doctor_m
   const paid = cat.models.filter((m) => !m.hidden && m.cost && m.cost.input + m.cost.output > 0 && !m.id.includes('preview'));
   paid.sort((a, b) => a.cost!.input + a.cost!.output - (b.cost!.input + b.cost!.output));
   return pick(paid[0]);
+}
+
+// ---------------------------------------------------------------- diagnosis after a failed round trip
+
+/**
+ * The provider error OpenCode recorded on the session's latest assistant message (e.g. "Your Go subscription
+ * ended ..."), or null. Read-only; OpenCode keeps sessions in its own SQLite DB.
+ */
+export function opencodeLastError(sessionId: string | null): string | null {
+  if (!sessionId || !existsSync(opencodeDbPath())) return null;
+  let db: Database | null = null;
+  try {
+    db = new Database(opencodeDbPath(), { readonly: true });
+    const r = db.query(`SELECT json_extract(data, '$.error.data.message') AS m, json_extract(data, '$.error.name') AS n FROM message
+      WHERE session_id = ? AND json_extract(data, '$.role') = 'assistant' AND json_extract(data, '$.error') IS NOT NULL
+      ORDER BY time_created DESC LIMIT 1`).get(sessionId) as { m: string | null; n: string | null } | null;
+    return r ? `${r.n ?? 'error'}: ${r.m ?? '(no message)'}` : null;
+  } catch {
+    return null;
+  } finally {
+    db?.close();
+  }
 }

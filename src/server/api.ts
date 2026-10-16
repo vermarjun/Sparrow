@@ -194,8 +194,8 @@ export function createApi(core: Core, opts: ApiOpts = {}) {
   app.get('/api/agents', (c) => {
     const project = c.req.query('project') || null;
     const rows = core.store.listAgents(project);
-    // Probe agents (doctor / test resume) stay hidden unless the _doctor project is asked for.
-    return c.json(project === DOCTOR_PROJECT ? rows : rows.filter((a) => a.kind !== 'probe'));
+    // The _doctor project (probes + its captain) stays hidden unless asked for.
+    return c.json(project ? rows : rows.filter((a) => a.project_id !== DOCTOR_PROJECT));
   });
 
   const agentRef = (c: Context<{ Variables: Vars }>) => {
