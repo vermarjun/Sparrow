@@ -677,7 +677,7 @@ export class Core {
       this.waiters.set(agentId, entry);
       timer = setTimeout(() => finish('ready'), sec * 1000); // real time on purpose: an HTTP request is waiting
       signal?.addEventListener('abort', onAbort, { once: true });
-      if (signal?.aborted) finish('ready');
+      if (signal?.aborted) finish('aborted');
     });
   }
 
