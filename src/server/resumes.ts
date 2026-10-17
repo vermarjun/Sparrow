@@ -74,6 +74,17 @@ export function parseResume(text: string, path: string, settings: Pick<S, 'quiet
   };
 }
 
+/**
+ * Fill {{harness}} {{model}} {{effort}} {{runtime}} in resume text from the live settings. Unknown {{x}} stay as is.
+ * web/src/lib/resumeVars.ts mirrors this (web cannot import server code): keep the two in step.
+ */
+export function renderResumeText(text: string, s: { harness: string; model?: string | null; effort?: string | null }): string {
+  const model = s.model || 'harness default';
+  const effort = s.effort || 'default';
+  const vars: Record<string, string> = { harness: s.harness, model, effort, runtime: `${s.harness} · ${model} · effort ${effort}` };
+  return text.replace(/\{\{\s*(\w+)\s*\}\}/g, (all, k: string) => (Object.hasOwn(vars, k) ? vars[k] : all));
+}
+
 /** sha256 of the file content, first 12 hex (ResumeView.hash). */
 export const hashText = (text: string) => createHash('sha256').update(text).digest('hex').slice(0, 12);
 

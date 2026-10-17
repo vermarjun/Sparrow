@@ -245,6 +245,8 @@ limits: { quiet_minutes: 15, max_call_minutes: 90 }
 ---
 <role prompt>
 ```
+**Template variables.** `description` and the body may contain `{{harness}}` (claude|codex|opencode|fake, same as `{{harness}}` in the protocol), `{{model}}` (configured model, else `harness default`), `{{effort}}` (configured effort, else `default`) and `{{runtime}}` (`<harness> · <model> · effort <effort>`, the wording of the bracket in `sparrow resumes`). They are filled in whenever a resume is shown or used, never on disk: `renderResumeText` in `src/server/resumes.ts` (mirrored for the web in `web/src/lib/resumeVars.ts`). The agent's system prompt and the apply note render the body with the AGENT's actual harness/model/effort (so a `hire --model` override shows); `sparrow resumes` and the web Resumes list render the description with the resume's current settings; the web editor keeps the raw text. Unknown `{{x}}` is left as is. Seeded resumes use the variables instead of naming a model. The protocol header line also carries `model` and `effort`.
+
 Six resumes: `sub-captain` (claude, can_hire: [builder, builder-codex, verifier, researcher, presenter]), `builder` (claude), `builder-codex` (codex), `verifier` (codex), `researcher` (opencode), `presenter` (opencode). Tests may add a `fake` resume in a temp `SPARROW_HOME`.
 
 ## 9. Web

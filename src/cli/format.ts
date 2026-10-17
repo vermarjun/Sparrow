@@ -1,4 +1,5 @@
 // Plain-text renderers for the sparrow CLI. Models read this output, so keep it compact and stable.
+import { renderResumeText } from '../server/resumes';
 import type { Agent, Card, CardState, MessageView, Resume, ResumeView, TeamStatus } from '../shared/types';
 import { TMUX_SOCKET } from '../shared/config';
 
@@ -207,7 +208,7 @@ export function resumesDirectory(resumes: (Resume | ResumeView)[]): string {
       const h = `${r.harness} · ${model} · effort ${r.effort ?? 'default'}`;
       const status = view.status ?? 'unchecked';
       const unusable = !['ok', 'unchecked'].includes(status);
-      const lines = [`${r.slug} — ${r.title} [${h}]`, `  ${oneLine(r.description, 160)}`];
+      const lines = [`${r.slug} — ${r.title} [${h}]`, `  ${oneLine(renderResumeText(r.description, r), 160)}`];
       lines.push(`  status: ${status}${unusable ? ' — UNUSABLE: do not hire' : ''}${view.status_detail ? ` · ${view.status_detail}` : ''}`);
       lines.push(`  can hire: ${r.can_hire.length ? r.can_hire.join(', ') : 'nobody'}`);
       return lines.join('\n');

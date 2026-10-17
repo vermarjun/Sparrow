@@ -3,13 +3,14 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ASSETS } from '../shared/config';
 import type { Agent, Message, Project, Resume } from '../shared/types';
+import { renderResumeText } from './resumes';
 
 export const PROTOCOL_PATH = join(ASSETS, 'protocol.md');
 
 export const FALLBACK_PROTOCOL = `# Sparrow protocol
 
 You are @{{handle}} ({{title}}), an agent in project {{project}}, hired by @{{parent}}.
-Agent id: {{agent_id}}. Harness: {{harness}}. Folder: {{cwd}}. tmux window: {{tmux}}.
+Agent id: {{agent_id}}. Harness: {{harness}} · model {{model}} · effort {{effort}}. Folder: {{cwd}}. tmux window: {{tmux}}.
 
 Nobody reads this window. Communicate ONLY through the \`sparrow\` CLI:
 - \`sparrow update "did X; next Y"\` at milestones (about every 10 minutes).
@@ -22,7 +23,7 @@ Nobody reads this window. Communicate ONLY through the \`sparrow\` CLI:
 `;
 
 export interface PromptVars {
-  handle: string; title: string; project: string; parent: string; cwd: string; harness: string;
+  handle: string; title: string; project: string; parent: string; cwd: string; harness: string; model: string; effort: string;
   agent_id: string; can_hire: string; tmux: string;
 }
 
@@ -47,11 +48,13 @@ export function renderSystemPrompt(agent: Agent, resume: Resume, parent: Agent |
     parent: parent?.handle ?? 'captain',
     cwd: agent.cwd,
     harness: agent.harness,
+    model: agent.model || 'harness default',
+    effort: agent.effort || 'default',
     agent_id: agent.id,
     can_hire: canHireSentence(agent.can_hire),
     tmux: `${agent.tmux_session}:${agent.tmux_window}`,
   };
-  return `${fillTemplate(tpl, vars).trimEnd()}\n\n# Your role\n\n${resume.body.trim()}\n`;
+  return `${fillTemplate(tpl, vars).trimEnd()}\n\n# Your role\n\n${renderResumeText(resume.body, agent).trim()}\n`;
 }
 
 export function hhmm(ms: number): string {

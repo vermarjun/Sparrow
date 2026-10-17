@@ -15,6 +15,7 @@ import {
   type ResumeField,
 } from '@/lib/catalog'
 import { agoLabel, duration, plural } from '@/lib/format'
+import { renderResumeText } from '@/lib/resumeVars'
 import { useStore } from '@/lib/store'
 import { cn } from '@/lib/utils'
 import { Empty, HarnessLabel, PathText, useNow } from '@/components/sparrow/bits'
@@ -72,7 +73,7 @@ function ResumeList() {
                       <span className="font-mono text-xs text-muted-foreground">{r.slug}</span>
                       {r.builtin && <span className="rounded border px-1 text-[10px] text-muted-foreground" title="Served from assets/resumes; saving copies it to ~/.sparrow/resumes">built-in</span>}
                     </div>
-                    <div className="truncate text-xs text-muted-foreground">{r.description}</div>
+                    <div className="truncate text-xs text-muted-foreground">{renderResumeText(r.description, r)}</div>
                   </TableCell>
                   <TableCell className="py-2"><HarnessLabel harness={r.harness} /></TableCell>
                   <TableCell className="py-2">
@@ -233,7 +234,7 @@ function ResumeEditor({ slug }: { slug: string | null }) {
             <Field id="title" label="Title" err={err}>
               <Input id="title" value={form.title} onChange={(e) => set('title', e.target.value)} placeholder="Builder" aria-invalid={err?.field === 'title'} />
             </Field>
-            <Field id="description" label="Description" hint="one line; shown to captains choosing a resume" err={err}>
+            <Field id="description" label="Description" hint="one line; shown to captains. Variables: {{harness}} {{model}} {{effort}} {{runtime}}" err={err}>
               <Input id="description" value={form.description} onChange={(e) => set('description', e.target.value)} />
             </Field>
 
@@ -333,7 +334,7 @@ function ResumeEditor({ slug }: { slug: string | null }) {
             )}
           </div>
 
-          <Field id="body" label="Role prompt" hint="markdown; becomes the agent's system prompt" err={err} className="min-h-0">
+          <Field id="body" label="Role prompt" hint="markdown; becomes the agent's system prompt. Variables: {{harness}} {{model}} {{effort}} {{runtime}}, filled in from the agent's actual settings" err={err} className="min-h-0">
             <Textarea id="body" value={form.body} onChange={(e) => set('body', e.target.value)} spellCheck={false} aria-invalid={err?.field === 'body'}
               className="min-h-[calc(100vh-11rem)] resize-y bg-background font-mono text-[12.5px] leading-relaxed" data-testid="body" />
           </Field>

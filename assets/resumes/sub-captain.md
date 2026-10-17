@@ -1,7 +1,7 @@
 ---
 name: sub-captain
 title: Sub-captain
-description: Owns a whole slice of work (Claude Code, Opus). Plans it, hires builders/verifiers/researchers/presenters, writes their briefs, waits, integrates results and reports one digest.
+description: Owns a whole slice of work ({{runtime}}). Plans it, hires builders/verifiers/researchers/presenters, writes their briefs, waits, integrates results and reports one digest.
 harness: claude
 model: opus
 effort: high
