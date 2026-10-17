@@ -394,6 +394,15 @@ describe('roster / resumes / log / status', () => {
     ].join('\n'));
   });
 
+  test('resumes render template variables in the description from the resume\'s current settings', async () => {
+    stub.on('GET', '/api/resumes', [
+      { slug: 'builder', title: 'Builder', description: 'Builds ({{runtime}}) on {{harness}}; {{x}}.', harness: 'claude', model: 'sonnet', effort: null, can_hire: [], limits: { quiet_minutes: 15, max_call_minutes: 90 }, body: '', path: '' },
+    ]);
+    const r = await run(['resumes'], { url });
+    ok(r);
+    expect(r.stdout).toContain('builder — Builder [claude · sonnet · effort default]\n  Builds (claude · sonnet · effort default) on claude; {{x}}.\n');
+  });
+
   test('resumes show resolved aliases and refuse-looking unusable status', async () => {
     stub.on('GET', '/api/resumes', [
       { slug: 'broken', title: 'Broken', description: 'Old model.', harness: 'claude', model: 'opus', effort: 'low', can_hire: [], status: 'model_gone', resolved_model: 'claude-opus-retired', status_detail: 'model no longer offered' },

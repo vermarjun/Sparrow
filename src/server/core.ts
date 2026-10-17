@@ -17,7 +17,7 @@ import { EventBus } from './events';
 import {
   crashResume, freshReplay, hhmm, NUDGE_REPORT, nudgeQuiet, PROTOCOL_PATH, renderEnvelope, renderSystemPrompt,
 } from './prompts';
-import { hashText, Resumes } from './resumes';
+import { hashText, renderResumeText, Resumes } from './resumes';
 
 /** Hidden project for doctor / "test resume" probe agents (never listed, never in chat). */
 export const DOCTOR_PROJECT = '_doctor';
@@ -484,7 +484,7 @@ export class Core {
       const note = [
         `[sparrow] Your resume "${slug}" was updated by the user${harnessChanged ? ` (you now run on ${r.harness}; this is a fresh session, check your folder for earlier work)` : ''}. Your role from now on:`,
         '',
-        r.body.trim(),
+        renderResumeText(r.body, r).trim(),
       ].join('\n');
       this.saveAgent(id, {
         harness: r.harness, model: r.model, effort: r.effort, can_hire: r.can_hire, title: r.title, resume_hash: view.hash,

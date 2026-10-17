@@ -1,7 +1,7 @@
 ---
 name: builder
 title: Builder
-description: Implements one task end to end in the given folder (Claude Code, Opus). Writes the code, runs it, tests it, and reports evidence.
+description: Implements one task end to end in the given folder ({{runtime}}). Writes the code, runs it, tests it, and reports evidence.
 harness: claude
 model: opus
 effort: high

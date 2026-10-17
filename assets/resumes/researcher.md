@@ -1,7 +1,7 @@
 ---
 name: researcher
 title: Researcher
-description: Web + codebase research on OpenCode (Kimi K3). Answers a question with cited sources, writes findings to a markdown file, and reports a short summary.
+description: Web + codebase research ({{runtime}}). Answers a question with cited sources, writes findings to a markdown file, and reports a short summary.
 harness: opencode
 model: opencode-go/kimi-k3
 can_hire: []
