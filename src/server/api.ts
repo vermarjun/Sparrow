@@ -236,6 +236,7 @@ export function createApi(core: Core, opts: ApiOpts = {}) {
     if (wait > 0) {
       const result = await core.waitForPending(caller.id, wait, c.req.raw.signal);
       if (result === 'superseded') return c.json({ inbox: [], team: core.team(caller.id), superseded: true });
+      if (result === 'aborted') return new Response(null, { status: 204 });
     }
     // `team`: the caller's children that are still busy, so a timed-out wait shows each one's latest update.
     return reply(c, { team: core.team(caller.id) });

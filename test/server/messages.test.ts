@@ -407,6 +407,25 @@ describe('inbox long-poll', () => {
     expect(ctx.store.deliveriesFor(quietId)).toMatchObject([{ state: 'delivered' }]);
   });
 
+  test('an aborted long-poll leaves quiet deliveries pending', async () => {
+    const ctx = await setup();
+    const a = await hire(ctx, 'builder', 'x');
+    const quiet = await ctx.req('POST', '/api/update', { text: 'still pending' }, a.id, agentOf(ctx, a.id).call_id);
+    const quietId = quiet.body.message.id;
+    const controller = new AbortController();
+    const pending = ctx.app.request('/api/inbox?wait=30', {
+      method: 'GET',
+      headers: { 'x-sparrow-agent': ctx.captain.id },
+      signal: controller.signal,
+    });
+
+    await flush();
+    controller.abort();
+    const response = await pending;
+    expect(response.status).toBe(204);
+    expect(ctx.store.deliveriesFor(quietId)).toMatchObject([{ state: 'pending', delivered_at: null }]);
+  });
+
   test('last reads recent delivered messages in seq order and leaves pending deliveries alone', async () => {
     const ctx = await setup();
     const firstAgent = await hire(ctx, 'builder', 'first');

@@ -653,19 +653,20 @@ export class Core {
     return this.store.deliveredFor(agentId, limit).map((m) => this.view(m));
   }
 
-  /** Long-poll: resolves when the agent has ≥1 WAKING pending delivery or after `sec` seconds (quiet ones never end it). */
-  waitForPending(agentId: string, sec: number, signal?: AbortSignal): Promise<'ready' | 'superseded'> {
+  /** Long-poll: ready on a waking delivery or timeout; superseded/aborted requests are reported without taking messages. */
+  waitForPending(agentId: string, sec: number, signal?: AbortSignal): Promise<'ready' | 'superseded' | 'aborted'> {
+    if (signal?.aborted) return Promise.resolve('aborted');
     // A new long-poll owns this agent's inbox. Resolve the old request without allowing its route
     // to piggyback pending deliveries; the new request will decide what to take.
     this.waiters.get(agentId)?.finish('superseded');
-    if (this.store.countWaking(agentId) > 0 || sec <= 0 || signal?.aborted) return Promise.resolve('ready');
-    return new Promise<'ready' | 'superseded'>((res) => {
+    if (this.store.countWaking(agentId) > 0 || sec <= 0) return Promise.resolve('ready');
+    return new Promise<'ready' | 'superseded' | 'aborted'>((res) => {
       let timer: ReturnType<typeof setTimeout> | null = null;
       let finished = false;
-      const onAbort = () => finish('ready');
-      let finish!: (result: 'ready' | 'superseded') => void;
+      const onAbort = () => finish('aborted');
+      let finish!: (result: 'ready' | 'superseded' | 'aborted') => void;
       const entry = { finish: (result: 'ready' | 'superseded') => finish(result) };
-      finish = (result: 'ready' | 'superseded') => {
+      finish = (result: 'ready' | 'superseded' | 'aborted') => {
         if (finished) return;
         finished = true;
         if (this.waiters.get(agentId) === entry) this.waiters.delete(agentId);
