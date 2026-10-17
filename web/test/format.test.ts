@@ -59,8 +59,7 @@ describe('text', () => {
     expect(splitMentions('@maya ok')[0]).toEqual({ text: '@maya', mention: true })
   })
   test('thread titles', () => {
-    expect(threadTitle('group', 'group')).toBe('Group')
-    expect(threadTitle('dm @captain ↔ @james', 'dm:a:b')).toBe('@captain ↔ @james')
+    expect(threadTitle('dm @captain ↔ @james')).toBe('@captain ↔ @james')
   })
   test('preview strips markdown', () => {
     expect(previewLine('## Title\n\n| a | b |\n|---|---|\n**Pick** `x` now')).toBe('Title Pick x now')

@@ -224,7 +224,8 @@ export function createApi(core: Core, opts: ApiOpts = {}) {
     const caller = need(c);
     const wait = Math.min(Math.max(Number(c.req.query('wait')) || 0, 0), 600);
     if (wait > 0) await core.waitForPending(caller.id, wait, c.req.raw.signal);
-    return reply(c, {});
+    // `team`: the caller's children that are still busy, so a timed-out wait shows each one's latest update.
+    return reply(c, { team: core.team(caller.id) });
   });
 
   app.get('/api/messages', (c) => {

@@ -45,15 +45,20 @@ Hiring returns at once. Max concurrent agents is limited; extra hires show `queu
 - **Elsewhere:** check `sparrow inbox` between other work, or after each user turn.
 - Every sparrow command you run also prints new messages (`━━ 📨 …`).
 
-Message kinds you will see: `result: ok|blocked|failed` (an agent ran `done`), `question` (it ran `ask` and is paused), `system` (crash / stopped without reporting / running very long — includes its last screen).
+Agent progress updates are quiet DMs to that agent's parent. The parent receives them bundled with
+the agent's result or another waking message; they never wake or interrupt the parent on their own.
+If `sparrow inbox --wait` times out, its `Still working:` digest lists each active child and its
+latest update (or says `no update yet`).
+
+Message kinds you will see: `update` (arrives bundled before that agent's result, or in the timeout digest), `result: ok|blocked|failed` (an agent ran `done`), `question` (it ran `ask` and is paused), `system` (crash / stopped without reporting / running very long — includes its last screen).
 
 ## 5. Respond
 ```bash
 sparrow send @maya "Use Redis, not memory; REDIS_URL is in .env"   # answers a question / gives more work
 sparrow log @maya -n 20                                           # what it said and received
-sparrow send group "@maya @leo please sync on the token format"   # only @mentioned agents wake
 ```
 Messaging an agent whose window closed respawns it **on the same session** — it remembers everything. Crashed agents restart automatically once; after that you get a crash notice and one message from you resumes it.
+Communication uses direct messages; `group` is a reserved handle and cannot be used with `send` or `log`.
 
 Verify before you trust: for important results, hire a `verifier` with the builder's evidence and acceptance checks.
 

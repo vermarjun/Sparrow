@@ -59,6 +59,27 @@ export function hhmm(ms: number): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
+export function hhmmss(ms: number): string {
+  return `${hhmm(ms)}:${String(new Date(ms).getSeconds()).padStart(2, '0')}`;
+}
+
+/** The agent a message is about: its sender, or `meta.about` for system notices. */
+export function aboutOf(m: Message): string {
+  return m.from_id === 'system' && typeof m.meta?.about === 'string' ? m.meta.about : m.from_id;
+}
+
+/** Messages grouped by the agent they are about; groups in order of first appearance, seq order inside each. */
+export function groupByAbout<T extends Message>(messages: T[]): T[][] {
+  const groups = new Map<string, T[]>();
+  for (const m of [...messages].sort((a, b) => a.seq - b.seq)) {
+    const k = aboutOf(m);
+    const g = groups.get(k);
+    if (g) g.push(m);
+    else groups.set(k, [m]);
+  }
+  return [...groups.values()];
+}
+
 /** Resolves an agent id to a handle ('system' for system). */
 export type HandleOf = (id: string) => string;
 
@@ -73,7 +94,7 @@ export function messageHeader(m: Message, handleOf: HandleOf): string {
     case 'result': label = `result from ${from}${m.meta?.status ? ` (${m.meta.status})` : ''}`; break;
     case 'system': label = 'system notice'; break;
     case 'update': label = `update from ${from}`; break;
-    default: label = m.thread === 'group' ? `group from ${from} (@mention)` : `DM from ${from}`;
+    default: label = `DM from ${from}`;
   }
   return `── ${label} · ${t}${card} ──`;
 }
@@ -93,7 +114,22 @@ export function renderEnvelope(agent: Agent, messages: Message[], handleOf: Hand
     const n = messages.length;
     const proj = opts.projectId ?? agent.project_id;
     parts.push(`[sparrow] ${n} new message${n === 1 ? '' : 's'} for @${agent.handle} (project ${proj}):`);
-    for (const m of messages) parts.push(`${messageHeader(m, handleOf)}\n${m.text.trim()}`);
+    // Per agent: its updates (one timed line each), then its result / question / notice in full.
+    for (const group of groupByAbout(messages)) {
+      let updates: Message[] = [];
+      const flush = () => {
+        if (!updates.length) return;
+        const lines = updates.map((u) => `${hhmmss(u.created_at)}  ${u.text.trim().replace(/\n/g, '\n          ')}${u.card_id != null ? ` (card #${u.card_id})` : ''}`);
+        parts.push(`── updates from @${handleOf(updates[0].from_id)} ──\n${lines.join('\n')}`);
+        updates = [];
+      };
+      for (const m of group) {
+        if (m.kind === 'update') { updates.push(m); continue; }
+        flush();
+        parts.push(`${messageHeader(m, handleOf)}\n${m.text.trim()}`);
+      }
+      flush();
+    }
   }
   parts.push(envelopeFooter(opts.isCaptain ?? agent.can_hire.length > 0));
   return parts.join('\n\n') + '\n';

@@ -7,13 +7,19 @@ import { api, ApiError, type ApiOpts } from './client';
 import { BIN, LOG_FILE, PORT, REPO_ROOT, SERVER_URL, SPARROW_HOME, TMUX_SOCKET } from '../shared/config';
 import { CARD_STATES } from '../shared/types';
 import type {
-  Agent, Card, CardState, DoneStatus, EndCallRes, HireRes, MessageRes, MessageView, Project,
+  Agent, Card, CardState, DoneStatus, EndCallRes, HireRes, InboxRes, MessageRes, MessageView, Project,
   RegisterCaptainRes, ResumeView,
 } from '../shared/types';
 import {
   age, agentSummary, cardBoard, cardDetail, hhmm, inboxBlock, logLines, oneLine, resumesDirectory,
-  rosterTable, tmuxAttach,
+  rosterTable, teamDigest, tmuxAttach,
 } from './format';
+
+/** Messages that wake their recipient. Quiet deliveries (amendment A5) are updates and FYI system notices. */
+const wakes = (m: MessageView) => m.kind !== 'update' && !(m.meta as { fyi?: unknown } | null)?.fyi;
+
+const GROUP_REMOVED = 'group chat was removed; DM a teammate: sparrow send @<handle> "…"';
+const isGroup = (t: string | undefined) => !!t && ['group', '@group'].includes(t.trim().toLowerCase());
 
 // ---------------------------------------------------------------- usage
 
@@ -27,13 +33,13 @@ const USAGE: Record<string, string> = {
   resumes: 'sparrow resumes   the directory: slug, title, harness/model/effort, status, can_hire, description',
   roster: 'sparrow roster [--all]   agents in my project',
   hire: 'sparrow hire <resume> "<task>" [--name h] [--cwd d] [--tmux-session s] [--tmux-window w] [--card N] [--model m] [--effort e]',
-  send: 'sparrow send <@handle|group> "<text>" [--card N]',
+  send: 'sparrow send <@handle> "<text>" [--card N]',
   update: 'sparrow update "<text>" [--card N]',
   ask: 'sparrow ask "<question>"',
   done: 'sparrow done "<summary>" [--status ok|blocked|failed]',
   wait: 'sparrow wait ["<reason>"]',
   inbox: 'sparrow inbox [--wait SEC]   (SEC ≤ 600)',
-  log: 'sparrow log [@handle|group] [-n 30]',
+  log: 'sparrow log [@handle] [-n 30]',
   propose: 'sparrow propose "<title>" [--details d] [--category c]',
   card: 'sparrow card list | add "<title>" [--details d] [--state s] [--assignee @h] [--category c] | move <N> <state> | assign <N> <@h|none> | note <N> "<text>"',
   release: 'sparrow release <@handle>',
@@ -308,19 +314,16 @@ const commands: Record<string, Handler> = {
   async send(ctx, args) {
     const { values, positionals } = parse('send', args, { card: { type: 'string' } });
     const [target, ...rest] = positionals;
-    if (!target) throw new UsageError('send', 'missing <@handle|group>');
-    const to = target.toLowerCase() === 'group' ? 'group' : handleArg(target);
+    if (!target) throw new UsageError('send', 'missing <@handle>');
+    if (isGroup(target)) throw new UsageError('send', GROUP_REMOVED);
+    const to = handleArg(target);
     const text = await textArg('send', rest, '"<text>"');
     const body: Record<string, unknown> = { to, text };
     const card = intArg('send', values.card as string | undefined, '--card', 1);
     if (card !== undefined) body.card_id = card;
     await identify(ctx);
     const res = await call<MessageRes>(ctx, 'POST', '/api/send', body);
-    const woken = res.message?.to_handles ?? [];
-    const line = to === 'group'
-      ? `Sent to group${woken.length ? ` · delivered to ${woken.map((h) => '@' + h).join(' ')}` : ' · no @mentions, nobody woken'}.`
-      : `Sent to ${to}.`;
-    return { raw: res, text: line };
+    return { raw: res, text: `Sent to ${to}.` };
   },
 
   async update(ctx, args) {
@@ -364,24 +367,30 @@ const commands: Record<string, Handler> = {
     const { values } = parse('inbox', args, { wait: { type: 'string' } });
     const wait = intArg('inbox', values.wait as string | undefined, '--wait', 0, 600);
     await identify(ctx);
-    // Captain mode: register already piggybacked (and consumed) pending messages → show them now, don't long-poll.
-    if (ctx.inbox.length) return { raw: { inbox: ctx.inbox } };
+    // Captain mode: register already piggybacked (and consumed) pending messages. If one of them wakes, show them now
+    // without long-polling. Quiet ones alone (updates, FYI notices) must not end the wait: they print with what arrives.
+    if (ctx.inbox.some(wakes)) return { raw: { inbox: ctx.inbox } };
     const path = wait ? `/api/inbox?wait=${wait}` : '/api/inbox';
-    const res = await call<{ inbox: MessageView[] }>(ctx, 'GET', path, undefined, { timeoutMs: ((wait ?? 0) + 30) * 1000 });
-    return { raw: res, text: ctx.inbox.length ? undefined : `No new messages${wait ? ` (waited ${wait}s)` : ''}.` };
+    const res = await call<InboxRes>(ctx, 'GET', path, undefined, { timeoutMs: ((wait ?? 0) + 30) * 1000 });
+    const digest = teamDigest(res.team ?? []);
+    return {
+      raw: res,
+      text: ctx.inbox.length ? undefined : `No new messages${wait ? ` (waited ${wait}s)` : ''}.`,
+      trailer: digest ? (ctx.inbox.length ? '\n' : '') + digest : undefined,
+    };
   },
 
   async log(ctx, args) {
     const { values, positionals } = parse('log', args, { n: { type: 'string', short: 'n' } });
     const n = intArg('log', values.n as string | undefined, '-n', 1, 10_000) ?? 30;
     const target = positionals[0];
-    if (positionals.length > 1) throw new UsageError('log', 'at most one target (@handle or group)');
+    if (positionals.length > 1) throw new UsageError('log', 'at most one target (@handle)');
+    if (isGroup(target)) throw new UsageError('log', 'group chat was removed; use sparrow log @<handle> (or no target for everything)');
     const { project } = await self(ctx);
-    const isGroup = target?.toLowerCase() === 'group';
     const all: MessageView[] = [];
     let after = 0;
     for (let page = 0; page < 1000; page++) {
-      const q = `/api/messages?project=${encodeURIComponent(project.id)}&after=${after}&limit=100${isGroup ? '&thread=group' : ''}`;
+      const q = `/api/messages?project=${encodeURIComponent(project.id)}&after=${after}&limit=100`;
       const batch = await call<MessageView[]>(ctx, 'GET', q);
       if (!batch.length) break;
       all.push(...batch);
@@ -390,13 +399,12 @@ const commands: Record<string, Handler> = {
       after = last;
     }
     let msgs = all;
-    if (isGroup) msgs = all.filter((m) => m.thread === 'group');
-    else if (target) {
+    if (target) {
       const h = handleArg(target).slice(1).toLowerCase();
       msgs = all.filter((m) => m.from_handle === h || m.to_handles.includes(h));
     }
     msgs = msgs.sort((a, b) => a.seq - b.seq).slice(-n);
-    const head = `Log ${target ? (isGroup ? 'group' : handleArg(target)) : 'all'} · project ${project.id} · last ${msgs.length}`;
+    const head = `Log ${target ? handleArg(target) : 'all'} · project ${project.id} · last ${msgs.length}`;
     return { raw: msgs, text: `${head}\n${logLines(msgs)}` };
   },
 
@@ -573,6 +581,16 @@ async function endCall(ctx: Ctx, res: EndCallRes, what: string, kind: 'done' | '
   return { raw: res, text };
 }
 
+/** Best effort: the project's agents, so inbox group headers can name each sender's resume. Never piggybacks. */
+async function projectAgents(ctx: Ctx): Promise<Agent[]> {
+  if (!ctx.project) return [];
+  try {
+    return await api<Agent[]>('GET', `/api/agents?project=${encodeURIComponent(ctx.project.id)}`, undefined, { agentId: ctx.agentId, retries: 0, timeoutMs: 5000 });
+  } catch {
+    return [];
+  }
+}
+
 async function probeHealth(port: number): Promise<{ pid: number } | null> {
   try {
     const r = await fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(1500) });
@@ -709,7 +727,7 @@ export async function main(argv: string[]): Promise<number> {
         try { handle = (await self(ctx)).me.handle; } catch {}
       }
       if (out.text) console.log('');
-      console.log(inboxBlock(ctx.inbox, handle));
+      console.log(inboxBlock(ctx.inbox, handle, await projectAgents(ctx)));
     }
     if (out.trailer) console.log(out.trailer);
     return 0;

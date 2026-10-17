@@ -71,14 +71,15 @@ run('e2e with the real spawner + fake harness', () => {
     expect(started.agent.tmux_window_id).toMatch(/^@\d+$/);
     expect(windows()).toContain('james');
     const r = await api('GET', '/api/inbox?wait=20');
-    expect(r.inbox.map((m: any) => [m.kind, m.text])).toEqual([['result', 'first done']]);
+    // the update is quiet: it did not end the wait early; it arrives bundled with the result
+    expect(r.inbox.map((m: any) => [m.kind, m.text])).toEqual([['update', 'hello'], ['result', 'first done']]);
     const closed = await until(() => windows(), (w) => !w.includes('james'), 10_000);
     expect(closed).not.toContain('james');
     await api('POST', '/api/send', { to: '@james', text: 'FAKE:recall\nFAKE:done recalled' });
     const r2 = await api('GET', '/api/inbox?wait=20');
-    expect(r2.inbox.map((m: any) => m.text)).toEqual(['recalled']);
-    const group = await api('GET', `/api/messages?project=proj&thread=group`, undefined, null);
-    expect(group.map((m: any) => m.text)).toContain('recall: banana');
+    expect(r2.inbox.map((m: any) => m.text)).toEqual(['recall: banana', 'recalled']);
+    const dm = await api('GET', `/api/messages?project=proj&thread=@james`, undefined, cap);
+    expect(dm.filter((m: any) => m.kind === 'update').map((m: any) => m.text)).toContain('recall: banana');
     const detail = await api('GET', `/api/agents/${h.agent.id}`, undefined, null);
     expect(detail.calls.map((c: any) => [c.resumed, c.end_reason])).toEqual([[true, 'done'], [false, 'done']]);
   }, 60_000);
@@ -106,8 +107,9 @@ run('e2e with the real spawner + fake harness', () => {
     Bun.spawnSync(['tmux', '-L', SOCKET, 'kill-window', '-t', win]);
     const r = await api('GET', '/api/inbox?wait=20');
     const got = r.inbox.map((m: any) => `${m.kind}: ${m.text}`);
-    if (got.length !== 1 || got[0] !== 'result: fake: done') console.error('SERVER LOG:\n' + (await Bun.file(join(home, 'server.log')).text()));
-    expect(got).toEqual(['result: fake: done']); // the FYI restart notice is not delivered
+    if (got.at(-1) !== 'result: fake: done') console.error('SERVER LOG:\n' + (await Bun.file(join(home, 'server.log')).text()));
+    // the FYI restart notice (and the updates) are quiet: they did not end the wait; they arrive bundled with the result
+    expect(got.filter((g: string) => !g.startsWith('update: '))).toEqual(['system: @victim crashed (exit -1); restarting on the same session.', 'result: fake: done']);
     const thread = await api('GET', `/api/messages?project=proj&thread=@victim`, undefined, cap);
     const fyi = thread.find((m: any) => m.kind === 'system');
     expect(fyi.text).toBe('@victim crashed (exit -1); restarting on the same session.');

@@ -7,7 +7,7 @@ import type {
   Message, MessageKind, Project,
 } from '../shared/types';
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);
@@ -87,6 +87,7 @@ CREATE TABLE IF NOT EXISTS deliveries (
   state TEXT NOT NULL,
   call_id TEXT,
   delivered_at INTEGER,
+  wake INTEGER NOT NULL DEFAULT 1,
   PRIMARY KEY (message_id, to_id)
 );
 CREATE INDEX IF NOT EXISTS deliveries_to ON deliveries (to_id, state);
@@ -130,6 +131,7 @@ const ADDED_COLUMNS: [table: string, column: string, type: string][] = [
   ['calls', 'harness', 'TEXT'],
   ['calls', 'model', 'TEXT'],
   ['calls', 'effort', 'TEXT'],
+  ['deliveries', 'wake', 'INTEGER NOT NULL DEFAULT 1'], // v3: 0 = quiet delivery (never wakes)
 ];
 
 type Row = Record<string, any>;
@@ -184,7 +186,10 @@ export function rowToCard(r: Row): Card {
 }
 
 export function rowToDelivery(r: Row): Delivery {
-  return { message_id: r.message_id, to_id: r.to_id, state: r.state, call_id: r.call_id ?? null, delivered_at: r.delivered_at ?? null };
+  return {
+    message_id: r.message_id, to_id: r.to_id, state: r.state, wake: r.wake !== 0, call_id: r.call_id ?? null,
+    delivered_at: r.delivered_at ?? null,
+  };
 }
 
 const AGENT_COLS = [
@@ -324,38 +329,45 @@ export class Store {
     const r = this.db.query('SELECT * FROM messages WHERE id = ?').get(id) as Row | null;
     return r ? rowToMessage(r) : null;
   }
+  /** Old 'group' rows (group chat was removed) are never listed. */
   listMessages(q: { project?: string | null; thread?: string | null; threadLike?: string | null; after?: number | null; limit: number; fromOrTo?: string | null }): Message[] {
-    const where: string[] = [];
+    const where: string[] = ["thread != 'group'"];
     const args: any[] = [];
     if (q.project) { where.push('project_id = ?'); args.push(q.project); }
     if (q.thread) { where.push('thread = ?'); args.push(q.thread); }
     if (q.threadLike) { where.push('thread LIKE ?'); args.push(q.threadLike); }
     if (q.fromOrTo) { where.push("(from_id = ? OR thread LIKE ? OR mentions LIKE ?)"); args.push(q.fromOrTo, `%${q.fromOrTo}%`, `%${q.fromOrTo}%`); }
-    const w = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const w = `WHERE ${where.join(' AND ')}`;
     let rows: Row[];
     if (q.after != null) {
-      rows = this.db.query(`SELECT * FROM messages ${w}${w ? ' AND' : ' WHERE'} seq > ? ORDER BY seq ASC LIMIT ?`).all(...args, q.after, q.limit) as Row[];
+      rows = this.db.query(`SELECT * FROM messages ${w} AND seq > ? ORDER BY seq ASC LIMIT ?`).all(...args, q.after, q.limit) as Row[];
     } else {
       rows = (this.db.query(`SELECT * FROM messages ${w} ORDER BY seq DESC LIMIT ?`).all(...args, q.limit) as Row[]).reverse();
     }
     return rows.map(rowToMessage);
   }
   threadSummaries(project: string): { thread: string; count: number; last_seq: number }[] {
-    return this.db.query('SELECT thread, COUNT(*) AS count, MAX(seq) AS last_seq FROM messages WHERE project_id = ? GROUP BY thread ORDER BY last_seq DESC').all(project) as any[];
+    return this.db.query("SELECT thread, COUNT(*) AS count, MAX(seq) AS last_seq FROM messages WHERE project_id = ? AND thread != 'group' GROUP BY thread ORDER BY last_seq DESC").all(project) as any[];
   }
   messageBySeq(seq: number): Message | null {
     const r = this.db.query('SELECT * FROM messages WHERE seq = ?').get(seq) as Row | null;
     return r ? rowToMessage(r) : null;
   }
-  insertDelivery(messageId: string, toId: string) {
-    this.db.query("INSERT OR IGNORE INTO deliveries (message_id, to_id, state, call_id, delivered_at) VALUES (?, ?, 'pending', NULL, NULL)").run(messageId, toId);
+  /** wake = false: a quiet delivery (pending like any other, but never wakes the recipient). */
+  insertDelivery(messageId: string, toId: string, wake = true) {
+    this.db.query("INSERT OR IGNORE INTO deliveries (message_id, to_id, state, call_id, delivered_at, wake) VALUES (?, ?, 'pending', NULL, NULL, ?)").run(messageId, toId, wake ? 1 : 0);
   }
-  /** Pending deliveries for an agent as messages, in seq order. */
+  /** Pending deliveries for an agent (waking and quiet) as messages, in seq order. */
   pendingFor(agentId: string): Message[] {
     return (this.db.query("SELECT m.* FROM deliveries d JOIN messages m ON m.id = d.message_id WHERE d.to_id = ? AND d.state = 'pending' ORDER BY m.seq").all(agentId) as Row[]).map(rowToMessage);
   }
+  /** All pending deliveries, waking and quiet. */
   countPending(agentId: string): number {
     return (this.db.query("SELECT COUNT(*) AS n FROM deliveries WHERE to_id = ? AND state = 'pending'").get(agentId) as Row).n;
+  }
+  /** Pending deliveries that wake the recipient (quiet ones excluded): these start calls and end long-polls. */
+  countWaking(agentId: string): number {
+    return (this.db.query("SELECT COUNT(*) AS n FROM deliveries WHERE to_id = ? AND state = 'pending' AND wake = 1").get(agentId) as Row).n;
   }
   markDelivered(agentId: string, messageIds: string[], callId: string | null, now: number) {
     const q = this.db.query("UPDATE deliveries SET state = 'delivered', call_id = ?, delivered_at = ? WHERE to_id = ? AND message_id = ? AND state = 'pending'");

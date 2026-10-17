@@ -118,9 +118,8 @@ export function splitMentions(text: string, handles?: Set<string>): Segment[] {
   return out
 }
 
-/** "dm @a ↔ @b" → "@a ↔ @b"; "group" → "Group". */
-export function threadTitle(label: string, thread: string): string {
-  if (thread === 'group') return 'Group'
+/** "dm @a ↔ @b" → "@a ↔ @b". */
+export function threadTitle(label: string): string {
   return label.replace(/^dm\s+/, '')
 }
 

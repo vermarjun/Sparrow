@@ -2,25 +2,27 @@ import { describe, expect, test } from 'bun:test'
 import type { Agent, Card, MessageView } from '../../src/shared/types'
 import { emptyData, reduce, type Data } from '../src/lib/reduce'
 
-const msg = (seq: number, thread = 'group', extra: Partial<MessageView> = {}): MessageView => ({
+const msg = (seq: number, thread = 'dm:ag_a:ag_b', extra: Partial<MessageView> = {}): MessageView => ({
   seq, id: `msg_${seq}`, project_id: 'p', thread, from_id: 'ag_a', kind: 'chat', text: `m${seq}`, mentions: [], card_id: null, meta: {},
-  created_at: seq * 1000, from_handle: 'a', thread_label: thread === 'group' ? 'group' : 'dm @a ↔ @b', to_handles: [], ...extra,
+  created_at: seq * 1000, from_handle: 'a', thread_label: 'dm @a ↔ @b', to_handles: [], ...extra,
 })
 
 describe('reduce', () => {
   test('message.created appends to a loaded thread, dedupes, bumps the thread row', () => {
-    let d: Data = { ...emptyData('p'), messages: { group: [msg(1)] }, threads: [{ thread: 'group', label: 'group', members: [], last: msg(1), count: 1 }] }
-    d = reduce(d, { type: 'message.created', project_id: 'p', message: msg(2) })
-    expect(d.messages.group.map((m) => m.seq)).toEqual([1, 2])
+    const thread = 'dm:ag_a:ag_b'
+    let d: Data = { ...emptyData('p'), messages: { [thread]: [msg(1)] }, threads: [{ thread, label: 'dm @a ↔ @b', members: ['a', 'b'], last: msg(1), count: 1 }] }
+    d = reduce(d, { type: 'message.created', project_id: 'p', message: msg(2, thread) })
+    expect(d.messages[thread].map((m) => m.seq)).toEqual([1, 2])
     expect(d.threads[0].count).toBe(2)
-    const same = reduce(d, { type: 'message.created', project_id: 'p', message: msg(2) })
+    const same = reduce(d, { type: 'message.created', project_id: 'p', message: msg(2, thread) })
     expect(same).toBe(d)
   })
-  test('a new DM thread is added after the group', () => {
-    let d: Data = { ...emptyData('p'), threads: [{ thread: 'group', label: 'group', members: [], last: msg(1), count: 1 }] }
+  test('a new DM thread sorts ahead of older DMs', () => {
+    const older = 'dm:ag_c:ag_d'
+    let d: Data = { ...emptyData('p'), threads: [{ thread: older, label: 'dm @c ↔ @d', members: ['c', 'd'], last: msg(1, older), count: 1 }] }
     d = reduce(d, { type: 'message.created', project_id: 'p', message: msg(5, 'dm:ag_a:ag_b') })
-    expect(d.threads.map((t) => t.thread)).toEqual(['group', 'dm:ag_a:ag_b'])
-    expect(d.threads[1].members).toEqual(['a', 'b'])
+    expect(d.threads.map((t) => t.thread)).toEqual(['dm:ag_a:ag_b', older])
+    expect(d.threads[0].members).toEqual(['a', 'b'])
     expect(d.messages['dm:ag_a:ag_b']).toBeUndefined() // not loaded → fetched on open
   })
   test('events from other projects are ignored', () => {

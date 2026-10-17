@@ -87,20 +87,20 @@ export interface Message {
   seq: number;                   // global monotonic
   id: string;                    // 'msg_' + ulid
   project_id: string;
-  thread: string;                // 'group' | 'dm:<agentIdA>:<agentIdB>' (ids sorted ascending)
+  thread: string;                // 'dm:<agentIdA>:<agentIdB>' (ids sorted ascending); old 'group' rows are hidden by the API
   from_id: string;               // agent id, or 'system', or 'user' (web UI, unused in v1)
   kind: MessageKind;
   text: string;
-  mentions: string[];            // agent ids that got a delivery (woken) by this message
+  mentions: string[];            // agent ids woken by this message (quiet recipients are not listed)
   card_id: number | null;
-  meta: Record<string, unknown>; // result: {status}; system: {about: agentId, exit_code?, screen?}
+  meta: Record<string, unknown>; // result: {status, call_ms?}; system: {about: agentId, fyi?, exit_code?, screen?}
   created_at: number;
 }
 
 // Message as returned by the API (adds display fields).
 export interface MessageView extends Message {
   from_handle: string;           // 'system' for system messages
-  thread_label: string;          // 'group' or 'dm @a ↔ @b'
+  thread_label: string;          // 'dm @a ↔ @b'
   to_handles: string[];          // handles of mentions (DM target included)
 }
 
@@ -109,6 +109,7 @@ export interface Delivery {
   message_id: string;
   to_id: string;
   state: DeliveryState;
+  wake: boolean;                 // false = quiet: never wakes or ends a long-poll; handed over with the next waking delivery
   call_id: string | null;        // the call that consumed it
   delivered_at: number | null;
 }
@@ -244,7 +245,7 @@ export interface HireReq {
 }
 export interface HireRes extends WithInbox { agent: Agent; message: MessageView }
 
-export interface SendReq { to: string; text: string; card_id?: number } // to: '@handle' (DM) | 'group' (mentions in text wake)
+export interface SendReq { to: string; text: string; card_id?: number } // to: '@handle' (DM only; group chat was removed)
 export interface UpdateReq { text: string; card_id?: number }
 export interface AskReq { question: string }
 export interface DoneReq { summary: string; status?: DoneStatus }
@@ -260,6 +261,18 @@ export interface WithInbox { inbox: MessageView[] }
 export interface MessageRes extends WithInbox { message: MessageView }
 // done / ask / wait: ended=false means new messages arrived (in `inbox`) and the agent must keep working.
 export interface EndCallRes extends WithInbox { ended: boolean; message: MessageView | null }
+
+// GET /api/inbox: the caller's non-retired children whose state is not idle (the "Still working" digest).
+export interface TeamStatus {
+  handle: string;
+  resume: string;
+  harness: HarnessName | 'human';
+  state: AgentState;
+  call_started_at: number | null;  // the open call's start, else null
+  last_update: string | null;
+  last_update_at: number | null;
+}
+export interface InboxRes extends WithInbox { team: TeamStatus[] }
 
 // Hooks (sent by `sparrow hook ...` from inside an agent's session)
 export interface TurnEndReq { harness: HarnessName; session_id?: string; last_message?: string; stop_hook_active?: boolean }

@@ -1,5 +1,5 @@
 // Plain-text renderers for the sparrow CLI. Models read this output, so keep it compact and stable.
-import type { Agent, Card, CardState, MessageView, Resume, ResumeView } from '../shared/types';
+import type { Agent, Card, CardState, MessageView, Resume, ResumeView, TeamStatus } from '../shared/types';
 import { TMUX_SOCKET } from '../shared/config';
 
 export function age(at: number | null | undefined, now = Date.now()): string {
@@ -16,6 +16,27 @@ export function age(at: number | null | undefined, now = Date.now()): string {
 export function hhmm(at: number): string {
   const d = new Date(at);
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+export function hhmmss(at: number): string {
+  return `${hhmm(at)}:${String(new Date(at).getSeconds()).padStart(2, '0')}`;
+}
+
+/** Call length: 42s, 5m02s, 1h05m. */
+export function duration(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m${String(s % 60).padStart(2, '0')}s`;
+  return `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}m`;
+}
+
+/** Coarse span for the team digest: 45s, 12m, 1h05m. */
+function span(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}m`;
 }
 
 export function oneLine(text: string | null | undefined, max = 70): string {
@@ -57,40 +78,88 @@ function kindTag(m: MessageView): string | null {
   }
 }
 
-/** One message as `[DM from @a · 14:02 · task · card #3] text`. */
-export function messageLine(m: MessageView): string {
-  const where = m.thread === 'group' ? 'group' : 'DM';
-  const parts: string[] = [];
-  if (m.from_id === 'system' || m.kind === 'system') parts.push('system');
-  else parts.push(`${where} from @${m.from_handle}`);
-  parts.push(hhmm(m.created_at));
-  const tag = kindTag(m);
-  if (tag) parts.push(tag);
-  if (m.card_id != null) parts.push(`card #${m.card_id}`);
-  return `[${parts.join(' · ')}] ${m.text.trim()}`;
+const INDENT = '    ';
+const indent = (text: string) => text.split('\n').map((l) => (l ? INDENT + l : ''));
+
+/** Handles in a DM thread label ('dm @a ↔ @b') other than `me`. */
+function peers(m: MessageView, me: string | null): string[] {
+  return [...m.thread_label.matchAll(/@([a-z0-9-]+)/g)].map((x) => x[1]).filter((h) => h !== me);
 }
 
-export function inboxBlock(inbox: MessageView[], handle: string | null): string {
+/** The agent a message is about: its sender, or `meta.about` for system notices. */
+function aboutOf(m: MessageView): string {
+  return m.from_id === 'system' && typeof m.meta?.about === 'string' ? (m.meta.about as string) : m.from_id;
+}
+
+/** One message under its group header: `  14:02:10  update  text`; results and multi-line texts print as an indented block. */
+function inboxEntry(m: MessageView): string[] {
+  const card = m.card_id != null ? ` · card #${m.card_id}` : '';
+  const text = m.text.trim();
+  const tag = m.kind === 'result' ? `result (${String((m.meta as any)?.status ?? 'ok')})` : m.kind === 'chat' ? 'DM' : m.kind;
+  const head = `  ${hhmmss(m.created_at)}  ${tag}${card}`;
+  if (m.kind !== 'result' && !text.includes('\n')) return [`${head}  ${text}`];
+  return [head, ...indent(text)];
+}
+
+/**
+ * Group header. With a result: `── @james · builder · done ok · call 5m02s ──`. A pure conversation (DMs, tasks,
+ * questions): `── @maya (DM) ──`. Otherwise (updates, notices): `── @james · builder ──`.
+ */
+function groupHeader(group: MessageView[], me: string | null, agents: Map<string, Agent>): string {
+  const first = group[0];
+  const a = agents.get(aboutOf(first));
+  const handle = a?.handle ?? (first.from_id !== 'system' ? first.from_handle : peers(first, me)[0] ?? 'system');
+  const resume = a && a.kind !== 'human' ? a.resume : null;
+  const result = [...group].reverse().find((m) => m.kind === 'result');
+  if (result) {
+    const ms = (result.meta as any)?.call_ms;
+    const bits = [`@${handle}`, resume, `done ${String((result.meta as any)?.status ?? 'ok')}`, typeof ms === 'number' ? `call ${duration(ms)}` : null];
+    return `── ${bits.filter(Boolean).join(' · ')} ──`;
+  }
+  if (group.every((m) => m.kind === 'chat' || m.kind === 'task' || m.kind === 'question')) return `── @${handle} (DM) ──`;
+  return `── @${handle}${resume ? ` · ${resume}` : ''} ──`;
+}
+
+/** New messages grouped by the agent they are about (sender, or meta.about for notices), seq order inside each group. */
+export function inboxBlock(inbox: MessageView[], handle: string | null, agents: Agent[] = []): string {
   if (!inbox.length) return '';
   const n = inbox.length;
   const who = handle ? ` for @${handle}` : '';
-  const sorted = [...inbox].sort((a, b) => a.seq - b.seq);
-  return [
-    `━━ 📨 ${n} new message${n === 1 ? '' : 's'}${who} ━━`,
-    ...sorted.map(messageLine),
-    '━━ Act on these before you finish. ━━',
-  ].join('\n');
+  const byId = new Map(agents.map((a) => [a.id, a]));
+  const groups = new Map<string, MessageView[]>();
+  for (const m of [...inbox].sort((a, b) => a.seq - b.seq)) {
+    const k = aboutOf(m);
+    const g = groups.get(k);
+    if (g) g.push(m);
+    else groups.set(k, [m]);
+  }
+  const lines = [`━━ 📨 ${n} new message${n === 1 ? '' : 's'}${who} ━━`];
+  for (const g of groups.values()) lines.push(groupHeader(g, handle, byId), ...g.flatMap(inboxEntry));
+  lines.push('━━ Act on these before you finish. ━━');
+  return lines.join('\n');
 }
 
-/** Log view: `#seq 14:02 group @a → @b [kind]: text` — one message per entry, full text. */
+/** After `sparrow inbox`: each busy child with its latest update. Empty string when nobody is busy. */
+export function teamDigest(team: TeamStatus[], now = Date.now()): string {
+  if (!team.length) return '';
+  const lines = team.map((t) => {
+    const state = t.state === 'working' && t.call_started_at != null ? `working ${span(now - t.call_started_at)}` : t.state;
+    // A working child's update from an earlier call says nothing about this one.
+    const stale = t.state === 'working' && t.call_started_at != null && (t.last_update_at ?? 0) < t.call_started_at;
+    const upd = t.last_update && !stale ? `last update ${age(t.last_update_at, now)}: ${oneLine(t.last_update, 100)}` : 'no update yet';
+    return `  @${t.handle} · ${t.resume} · ${state} · ${upd}`;
+  });
+  return ['Still working:', ...lines].join('\n');
+}
+
+/** Log view: `14:02 @a → @b [kind]: text` — one message per entry, full text. */
 export function logLines(msgs: MessageView[]): string {
   if (!msgs.length) return 'No messages.';
   return msgs
     .map((m) => {
       const from = m.from_id === 'system' ? 'system' : `@${m.from_handle}`;
-      const to = m.thread === 'group'
-        ? `group${m.to_handles.length ? ` (→ ${m.to_handles.map((h) => '@' + h).join(' ')})` : ''}`
-        : m.to_handles.map((h) => '@' + h).join(' ') || m.thread_label;
+      // Updates and notices have no woken recipient: show the other side of the DM thread.
+      const to = (m.to_handles.length ? m.to_handles : peers(m, m.from_handle)).map((h) => '@' + h).join(' ') || m.thread_label;
       const tag = kindTag(m) ?? (m.kind === 'system' ? 'system' : '');
       const card = m.card_id != null ? ` card #${m.card_id}` : '';
       return `${hhmm(m.created_at)} ${from} → ${to}${tag ? ` [${tag}]` : ''}${card}: ${m.text.trim()}`;

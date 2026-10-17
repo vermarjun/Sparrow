@@ -17,11 +17,7 @@ export const emptyData = (project: string | null = null): Data => ({
 })
 
 export function sortThreads(rows: ThreadRow[]): ThreadRow[] {
-  return [...rows].sort((a, b) => {
-    if (a.thread === 'group') return -1
-    if (b.thread === 'group') return 1
-    return (b.last?.created_at ?? 0) - (a.last?.created_at ?? 0)
-  })
+  return [...rows].sort((a, b) => (b.last?.created_at ?? 0) - (a.last?.created_at ?? 0))
 }
 
 export function appendMessage(list: MessageView[] | undefined, m: MessageView): MessageView[] | undefined {
@@ -33,7 +29,6 @@ export function appendMessage(list: MessageView[] | undefined, m: MessageView): 
 }
 
 function membersOf(m: MessageView): string[] {
-  if (m.thread === 'group') return []
   const fromLabel = m.thread_label.match(/@[a-z][a-z0-9-]*/gi)?.map((h) => h.slice(1))
   return fromLabel ?? [m.from_handle, ...m.to_handles]
 }

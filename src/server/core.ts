@@ -8,7 +8,7 @@ import { newId } from '../shared/ids';
 import type {
   Agent, AgentState, Call, CallEndReason, Card, CardCreateReq, CardPatchReq, CardState, DoneReq, HireReq,
   HarnessHealth, HarnessName, Message, MessageKind, MessageView, Project, RegisterCaptainReq, RegisterCaptainRes, Resume,
-  ResumeView, SendReq, ServerEvent, TurnEndReq, TurnEndRes, UpdateReq,
+  ResumeView, SendReq, ServerEvent, TeamStatus, TurnEndReq, TurnEndRes, UpdateReq,
 } from '../shared/types';
 import { CARD_STATES } from '../shared/types';
 import { type CatalogService, gateCheck, resumeStatus } from './catalog';
@@ -56,7 +56,6 @@ export interface CoreDeps {
 const FRIENDLY = ['james', 'maya', 'leo', 'iris', 'omar', 'nina', 'theo', 'zara', 'ravi', 'lena', 'ivan', 'mira', 'kai', 'ada', 'ben', 'cleo'];
 const RESERVED = new Set(['captain', 'group', 'system', 'user', 'all', 'everyone', 'here', 'none']);
 const HANDLE_RE = /^[a-z][a-z0-9-]{0,23}$/;
-const MENTION_RE = /(^|[^A-Za-z0-9_.-])@([A-Za-z][A-Za-z0-9-]{0,23})/g; // case-insensitive (amendment A3)
 
 export function gitRoot(cwd: string): string {
   try {
@@ -145,7 +144,6 @@ export class Core {
   };
 
   threadLabel(thread: string, short = false): string {
-    if (thread === 'group') return 'group';
     const ids = thread.split(':').slice(1);
     const agents = ids.map((id) => this.store.getAgent(id));
     const sorted = agents
@@ -182,18 +180,25 @@ export class Core {
     return `dm:${[a, b].sort().join(':')}`;
   }
 
-  /** Insert a message + pending deliveries; emits + wakes long-pollers. Does NOT wake agents (callers decide when). */
+  /**
+   * Insert a message + pending deliveries; emits + wakes long-pollers. Does NOT wake agents (callers decide when).
+   * `quiet` recipients get a quiet delivery (amendment A5): pending, handed over with the next waking delivery, but
+   * never wakes them or ends their long-poll. Retired quiet recipients are skipped (nothing would ever consume it).
+   */
   private post(p: {
     project_id: string; thread: string; from_id: string; kind: MessageKind; text: string; to: string[];
-    card_id?: number | null; meta?: Record<string, unknown>;
+    quiet?: string[]; card_id?: number | null; meta?: Record<string, unknown>;
   }): Message {
     const to = [...new Set(p.to)].filter((id) => id !== p.from_id);
+    const quiet = [...new Set(p.quiet ?? [])]
+      .filter((id) => id !== p.from_id && !to.includes(id) && this.store.getAgent(id)?.state !== 'retired');
     const m = this.store.tx(() => {
       const msg = this.store.insertMessage({
         id: newId('msg'), project_id: p.project_id, thread: p.thread, from_id: p.from_id, kind: p.kind, text: p.text,
         mentions: to, card_id: p.card_id ?? null, meta: p.meta ?? {}, created_at: this.now(),
       });
       for (const id of to) this.store.insertDelivery(msg.id, id);
+      for (const id of quiet) this.store.insertDelivery(msg.id, id, false);
       return msg;
     });
     this.emit({ type: 'message.created', project_id: m.project_id, message: this.view(m) });
@@ -499,19 +504,9 @@ export class Core {
   async send(caller: Agent, req: SendReq): Promise<MessageView> {
     const text = req?.text;
     if (!isText(req?.to) || !isText(text)) throw new HttpError(400, 'send needs {to, text} as non-empty strings');
-    const cardId = this.checkCard(caller.project_id, req.card_id);
     const toL = String(req.to).trim().toLowerCase();
-    if (toL === 'group' || toL === '@group') {
-      const mentioned: string[] = [];
-      for (const mm of text.matchAll(MENTION_RE)) {
-        const a = this.store.getAgentByHandle(caller.project_id, mm[2].toLowerCase().replace(/-+$/, ''));
-        if (a && a.id !== caller.id && a.state !== 'retired') mentioned.push(a.id);
-      }
-      const m = this.post({ project_id: caller.project_id, thread: 'group', from_id: caller.id, kind: 'chat', text, to: mentioned, card_id: cardId });
-      this.say(`group @${caller.handle}: ${clip(text.replace(/\s+/g, ' '), 60)}${mentioned.length ? ` (wakes ${m.mentions.map((id) => '@' + this.handleOf(id)).join(' ')})` : ''}`);
-      for (const id of m.mentions) this.bg(this.wake(id));
-      return this.view(m);
-    }
+    if (toL === 'group' || toL === '@group') throw new HttpError(400, 'Group chat was removed. DM a teammate: sparrow send @<handle> "…"');
+    const cardId = this.checkCard(caller.project_id, req.card_id);
     const target = this.resolveAgent(caller.project_id, req.to);
     if (!target || target.project_id !== caller.project_id) {
       throw new HttpError(404, `No agent ${req.to} in project ${caller.project_id}. Roster: ${this.rosterText(caller.project_id)}`);
@@ -534,10 +529,16 @@ export class Core {
     return c.id;
   }
 
+  /** An update goes to the DM thread with the parent as a QUIET delivery: it reaches the parent with its next waking message. */
   update(caller: Agent, req: UpdateReq): MessageView {
     if (!isText(req?.text)) throw new HttpError(400, 'update needs {text} as a non-empty string');
+    const parent = caller.parent_id ? this.store.getAgent(caller.parent_id) : null;
+    if (!parent) throw new HttpError(400, `@${caller.handle} has no parent; updates go to a parent. Use sparrow card note to annotate a card.`);
     const cardId = this.checkCard(caller.project_id, req.card_id);
-    const m = this.post({ project_id: caller.project_id, thread: 'group', from_id: caller.id, kind: 'update', text: req.text, to: [], card_id: cardId });
+    const m = this.post({
+      project_id: caller.project_id, thread: this.dmThread(caller.id, parent.id), from_id: caller.id, kind: 'update',
+      text: req.text, to: [], quiet: [parent.id], card_id: cardId,
+    });
     this.saveAgent(caller.id, { last_update: req.text, last_update_at: this.now() });
     if (cardId != null) {
       const c = this.store.getCard(cardId)!;
@@ -550,23 +551,24 @@ export class Core {
   /** Shared tail of done / ask / wait. */
   private async finish(
     caller: Agent, callHeader: string | null, reason: 'done' | 'ask' | 'wait',
-    record: () => Message, newState: AgentState,
+    record: () => Message | null, newState: AgentState,
   ): Promise<{ ended: boolean; message: MessageView | null }> {
     // A report from a call that is already over (e.g. `done` twice): accept silently, record nothing.
     if (caller.kind !== 'human' && callHeader && callHeader !== caller.call_id) return { ended: true, message: null };
     const onCall = caller.kind !== 'human' && caller.state === 'working' && !!caller.call_id;
-    // Amendment A1: with pending deliveries record NOTHING; the piggyback hands them over and the agent reports again.
-    if ((onCall || caller.kind === 'human') && this.store.countPending(caller.id) > 0) {
-      this.say(`${reason} @${caller.handle} not sent: ${this.store.countPending(caller.id)} new message(s) first`);
+    // Amendment A1: with WAKING pending deliveries record NOTHING; the piggyback hands them over and the agent
+    // reports again. Quiet ones (A5: children's updates, FYI notices) never block; they wait for the next call.
+    if ((onCall || caller.kind === 'human') && this.store.countWaking(caller.id) > 0) {
+      this.say(`${reason} @${caller.handle} not sent: ${this.store.countWaking(caller.id)} new message(s) first`);
       return { ended: false, message: null };
     }
     const m = record();
     if (onCall) {
       this.endCall(caller, reason, { state: newState });
     }
-    for (const id of m.mentions) this.bg(this.wake(id));
+    for (const id of m?.mentions ?? []) this.bg(this.wake(id));
     if (onCall) this.bg(this.dequeue());
-    return { ended: true, message: this.view(m) };
+    return { ended: true, message: m ? this.view(m) : null };
   }
 
   private parentOf(a: Agent): Agent {
@@ -581,9 +583,10 @@ export class Core {
     if (!['ok', 'blocked', 'failed'].includes(status)) throw new HttpError(400, 'status must be ok | blocked | failed');
     const parent = this.parentOf(caller);
     return this.finish(caller, callHeader, 'done', () => {
+      const call = caller.call_id ? this.store.getCall(caller.call_id) : null;
       const m = this.post({
         project_id: caller.project_id, thread: this.dmThread(caller.id, parent.id), from_id: caller.id, kind: 'result',
-        text: req.summary, to: [parent.id], meta: { status },
+        text: req.summary, to: [parent.id], meta: { status, ...(call ? { call_ms: this.now() - call.started_at } : {}) },
       });
       this.say(`done @${caller.handle} (${status}) → @${parent.handle}`);
       return m;
@@ -607,14 +610,24 @@ export class Core {
     const reason = (isText(req?.reason) && req.reason.trim()) || 'for messages';
     return this.finish(caller, callHeader, 'wait', () => {
       const text = `waiting: ${reason}`;
-      const m = this.post({ project_id: caller.project_id, thread: 'group', from_id: caller.id, kind: 'update', text, to: [] });
+      const parent = caller.parent_id ? this.store.getAgent(caller.parent_id) : null;
+      // The human captain has no parent: nothing to record, but last_update still says what it waits for.
+      const m = parent
+        ? this.post({
+          project_id: caller.project_id, thread: this.dmThread(caller.id, parent.id), from_id: caller.id, kind: 'update',
+          text, to: [], quiet: [parent.id],
+        })
+        : null;
       this.saveAgent(caller.id, { last_update: text, last_update_at: this.now() });
       this.say(`wait @${caller.handle}: ${clip(reason, 60)}`);
       return m;
     }, 'waiting');
   }
 
-  /** Piggyback: pending deliveries for the caller, now marked delivered. Only for the human captain and agents on the matching open call. */
+  /**
+   * Piggyback: pending deliveries (waking and quiet, seq order) for the caller, now marked delivered. Only for the
+   * human captain and agents on the matching open call.
+   */
   takeInbox(callerId: string, callHeader: string | null = null): MessageView[] {
     const a = this.store.getAgent(callerId);
     if (!a) return [];
@@ -628,9 +641,9 @@ export class Core {
     return pending.map((m) => this.view(m));
   }
 
-  /** Long-poll: resolves when the agent has ≥1 pending delivery or after `sec` seconds. */
+  /** Long-poll: resolves when the agent has ≥1 WAKING pending delivery or after `sec` seconds (quiet ones never end it). */
   waitForPending(agentId: string, sec: number, signal?: AbortSignal): Promise<void> {
-    if (this.store.countPending(agentId) > 0 || sec <= 0) return Promise.resolve();
+    if (this.store.countWaking(agentId) > 0 || sec <= 0) return Promise.resolve();
     return new Promise<void>((res) => {
       let set = this.waiters.get(agentId);
       if (!set) this.waiters.set(agentId, (set = new Set()));
@@ -647,6 +660,17 @@ export class Core {
     });
   }
 
+  /** The caller's non-retired children that are not idle, for the `inbox` digest ("Still working"). */
+  team(agentId: string): TeamStatus[] {
+    return this.store.children(agentId)
+      .filter((a) => a.state !== 'retired' && a.state !== 'idle')
+      .map((a) => ({
+        handle: a.handle, resume: a.resume, harness: a.harness, state: a.state,
+        call_started_at: a.call_id ? this.store.getCall(a.call_id)?.started_at ?? null : null,
+        last_update: a.last_update, last_update_at: a.last_update_at,
+      }));
+  }
+
   // ======================================================== wake / calls / queue
 
   workingCount() { return this.store.countWorking(); }
@@ -656,7 +680,7 @@ export class Core {
     if (!a || a.kind === 'human') return;
     if (a.state === 'retired') { this.store.dropPending(a.id); return; }
     if (a.state === 'working' || a.state === 'queued') return;
-    if (this.store.countPending(a.id) === 0) return;
+    if (this.store.countWaking(a.id) === 0) return; // quiet-only pending never starts a call
     if (a.kind === 'probe' || this.store.countWorking() < this.settings.max_running) {
       await this.startCall(a, {});
     } else {
@@ -670,7 +694,7 @@ export class Core {
     while (this.store.countWorking() < this.settings.max_running) {
       const q = this.store.oldestQueued();
       if (!q) break;
-      if (this.store.countPending(q.id) === 0) {
+      if (this.store.countWaking(q.id) === 0) {
         this.saveAgent(q.id, { state: 'idle', queued_at: null });
         continue;
       }
@@ -827,13 +851,16 @@ export class Core {
     this.bg(this.wake(parent.id));
   }
 
-  /** FYI system notice: same thread, NO delivery — never wakes anyone (e.g. "crashed; restarting", quiet nudges). */
+  /**
+   * FYI system notice: same thread, QUIET delivery to the parent — never wakes it; it arrives together with the next
+   * waking message (e.g. "crashed; restarting", quiet nudges).
+   */
   fyiParent(a: Agent, text: string, meta: Record<string, unknown> = {}): void {
     const parent = a.parent_id ? this.store.getAgent(a.parent_id) : null;
     if (!parent) return;
     this.post({
       project_id: a.project_id, thread: this.dmThread(parent.id, a.id), from_id: 'system', kind: 'system', text,
-      to: [], meta: { about: a.id, fyi: true, ...meta },
+      to: [], quiet: [parent.id], meta: { about: a.id, fyi: true, ...meta },
     });
   }
 
@@ -877,7 +904,8 @@ export class Core {
     }
     const call = this.store.getCall(a.call_id)!;
     const isClaude = (req?.harness ?? a.harness) === 'claude';
-    const pending = this.store.pendingFor(a.id);
+    // Deliver when ≥1 waking message is pending (quiet ones go along); quiet-only pending is not a reason to continue.
+    const pending = this.store.countWaking(a.id) > 0 ? this.store.pendingFor(a.id) : [];
     if (pending.length) {
       this.store.markDelivered(a.id, pending.map((m) => m.id), a.call_id, this.now());
       const env = renderEnvelope(a, pending, this.handleOf, {});
@@ -969,7 +997,7 @@ export class Core {
       if (this.store.countWorking() >= this.settings.max_running) {
         // No free slot (another hire took it meanwhile): queue the restart; its envelope waits as a pending delivery.
         if (fresh) a = this.saveAgent(a.id, { session_id: null });
-        const thread = a.parent_id ? this.dmThread(a.parent_id, a.id) : 'group';
+        const thread = this.dmThread(a.parent_id ?? '', a.id); // every spawned agent has a parent
         this.post({ project_id: a.project_id, thread, from_id: 'system', kind: 'system', text: prefix, to: [a.id], meta: { about: a.id, restart: call.restarts + 1, exit_code: code } });
         this.saveAgent(a.id, { state: 'queued', queued_at: this.now() });
         this.fyiParent(a, `@${a.handle} crashed (exit ${code}); restart queued (max_running ${this.settings.max_running} reached).`, { exit_code: code });
@@ -1208,7 +1236,8 @@ export class Core {
     let thread = q.thread || null;
     let fromOrTo: string | null = null;
     let project = q.project || q.caller?.project_id || null;
-    if (thread && thread !== 'group' && !thread.startsWith('dm:')) {
+    if (thread === 'group') return []; // group chat was removed; its old rows stay in the DB, hidden
+    if (thread && !thread.startsWith('dm:')) {
       const t = this.resolveAgent(project, thread);
       if (!t) throw new HttpError(404, `No agent ${thread}${project ? ` in project ${project}` : ''}.`);
       project = t.project_id;
@@ -1222,14 +1251,12 @@ export class Core {
 
   threads(project: string) {
     if (!project) throw new HttpError(400, 'threads needs ?project=');
-    const sums = this.store.threadSummaries(project);
-    const groupMembers = this.store.listAgents(project).filter((a) => a.state !== 'retired').map((a) => a.handle).reverse();
-    const out = sums.map((s) => {
+    // DM threads only (threadSummaries leaves out old 'group' rows), most recent first.
+    return this.store.threadSummaries(project).map((s) => {
       const last = this.view(this.store.messageBySeq(s.last_seq)!);
-      const members = s.thread === 'group' ? groupMembers : s.thread.split(':').slice(1).map((id) => this.handleOf(id));
-      return { thread: s.thread, label: s.thread === 'group' ? 'group' : this.threadLabel(s.thread, true), members, last, count: s.count };
+      const members = s.thread.split(':').slice(1).map((id) => this.handleOf(id));
+      return { thread: s.thread, label: this.threadLabel(s.thread, true), members, last, count: s.count };
     });
-    return [...out.filter((t) => t.thread === 'group'), ...out.filter((t) => t.thread !== 'group')];
   }
 
   // ======================================================== shutdown

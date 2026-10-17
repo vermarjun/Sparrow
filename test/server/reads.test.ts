@@ -74,27 +74,41 @@ describe('read endpoints', () => {
     expect(agentOf(ctx, a.id).last_seen_at).toBe(ctx.clock.now());
   });
 
-  test('messages (thread, after, @handle) and threads', async () => {
-    const ctx = await setup();
+  test('messages (thread, after, @handle) and threads; old group rows stay in the DB but are hidden', async () => {
+    const ctx = await setup({ max_running: 10 });
     const pid = ctx.captain.project_id;
     const a = await hire(ctx, 'builder', 'task one');
+    const b = await hire(ctx, 'builder', 'task two');
+    // rows written by an older server, when group chat existed
+    const old = (text: string) => ctx.store.insertMessage({
+      id: `msg_old_${text}`, project_id: pid, thread: 'group', from_id: ctx.captain.id, kind: 'chat', text,
+      mentions: [a.id], card_id: null, meta: {}, created_at: ctx.clock.now(),
+    });
+    old('g1');
     await ctx.req('POST', '/api/update', { text: 'u1' }, a.id);
-    await ctx.req('POST', '/api/send', { to: 'group', text: `hey @${a.handle}` }, ctx.captain.id);
+    old('g2');
+    await ctx.req('POST', '/api/send', { to: `@${a.handle}`, text: 'dm1' }, ctx.captain.id);
+    expect(ctx.store.countMessages()).toBe(6);
     const all = await ctx.req('GET', `/api/messages?project=${pid}`);
-    expect(all.body.map((m: any) => m.text)).toEqual(['task one', 'u1', `hey @${a.handle}`]);
+    expect(all.body.map((m: any) => m.text)).toEqual(['task one', 'task two', 'u1', 'dm1']);
     const after = await ctx.req('GET', `/api/messages?project=${pid}&after=${all.body[0].seq}`);
-    expect(after.body.length).toBe(2);
+    expect(after.body.map((m: any) => m.text)).toEqual(['task two', 'u1', 'dm1']);
     const group = await ctx.req('GET', `/api/messages?project=${pid}&thread=group`);
-    expect(group.body.map((m: any) => m.text)).toEqual(['u1', `hey @${a.handle}`]);
+    expect(group.status).toBe(200);
+    expect(group.body).toEqual([]);
     const dm = await ctx.req('GET', `/api/messages?thread=@${a.handle}`, undefined, ctx.captain.id);
-    expect(dm.body.map((m: any) => m.text)).toEqual(['task one']);
-    const lim = await ctx.req('GET', `/api/messages?project=${pid}&limit=1`);
-    expect(lim.body.map((m: any) => m.text)).toEqual([`hey @${a.handle}`]);
+    expect(dm.body.map((m: any) => m.text)).toEqual(['task one', 'u1', 'dm1']);
+    const mine = await ctx.req('GET', `/api/messages?thread=@${a.handle}`, undefined, a.id); // own: from or to
+    expect(mine.body.map((m: any) => m.text)).toEqual(['task one', 'u1', 'dm1']);
+    const lim = await ctx.req('GET', `/api/messages?project=${pid}&limit=2`); // limit counts visible rows only
+    expect(lim.body.map((m: any) => m.text)).toEqual(['u1', 'dm1']);
     const th = await ctx.req('GET', `/api/threads?project=${pid}`);
-    expect(th.body.map((t: any) => t.label)).toEqual(['group', `@captain ↔ @${a.handle}`]);
-    expect(th.body[0].count).toBe(2);
+    expect(th.body.map((t: any) => t.thread)).not.toContain('group');
+    expect(th.body.map((t: any) => t.label)).toEqual([`@captain ↔ @${a.handle}`, `@captain ↔ @${b.handle}`]);
+    expect(th.body[0].count).toBe(3);
     expect(th.body[0].members.sort()).toEqual(['captain', a.handle].sort());
-    expect(th.body[1].last.text).toBe('task one');
+    expect(th.body[0].last.text).toBe('dm1');
+    expect(th.body[1].last.text).toBe('task two');
   });
 
   test('bad JSON → 400; unknown endpoint → 404 JSON; identified-only endpoint without header → 401', async () => {
@@ -105,7 +119,7 @@ describe('read endpoints', () => {
     const nf = await ctx.req('GET', '/api/bogus');
     expect(nf.status).toBe(404);
     expect(nf.body.error).toContain('No such endpoint');
-    const un = await ctx.req('POST', '/api/send', { to: 'group', text: 'x' });
+    const un = await ctx.req('POST', '/api/send', { to: '@captain', text: 'x' });
     expect(un.status).toBe(401);
   });
 
@@ -165,6 +179,40 @@ describe('prompts + resumes', () => {
     const m: Message = { seq: 1, id: 'm1', project_id: 'plutus', thread: 'dm:a:b', from_id: 'ag_0', kind: 'task', text: 'Build it', mentions: ['ag_1'], card_id: 3, meta: {}, created_at: t };
     const env = renderEnvelope(agent, [m], () => 'captain');
     expect(env).toBe('[sparrow] 1 new message for @james (project plutus):\n\n── task from @captain · 14:02 · card #3 ──\nBuild it\n\nReport with the sparrow CLI: `sparrow update` as you go, then `sparrow done` (or `sparrow ask` if blocked).\n');
+  });
+
+  test('envelope groups by agent: a child\'s updates (timed lines) then its result; notices go under meta.about', () => {
+    const t = new Date('2026-10-13T14:02:00').getTime();
+    const base = { project_id: 'plutus', thread: 'dm:a:b', mentions: [], card_id: null, meta: {} };
+    const ms: Message[] = [
+      { ...base, seq: 7, id: 'r', from_id: 'ag_b', kind: 'result', text: '## Result\nok', meta: { status: 'ok', call_ms: 61_000 }, mentions: ['ag_1'], created_at: t + 120_000 },
+      { ...base, seq: 2, id: 'u1', from_id: 'ag_b', kind: 'update', text: 'one\ntwo', card_id: 4, created_at: t + 5_000 },
+      { ...base, seq: 3, id: 'n', from_id: 'system', kind: 'system', text: '@c crashed (exit 1); restarting', meta: { about: 'ag_c', fyi: true }, created_at: t + 6_000 },
+      { ...base, seq: 4, id: 'u2', from_id: 'ag_b', kind: 'update', text: 'three', created_at: t + 61_000 },
+      { ...base, seq: 5, id: 'u3', from_id: 'ag_c', kind: 'update', text: 'c back', created_at: t + 62_000 },
+    ];
+    const handles: Record<string, string> = { ag_b: 'bob', ag_c: 'cat' };
+    const env = renderEnvelope({ ...agent, can_hire: ['builder'] }, ms, (id) => handles[id] ?? id);
+    expect(env).toBe([
+      '[sparrow] 5 new messages for @james (project plutus):',
+      '',
+      '── updates from @bob ──',
+      '14:02:05  one',
+      '          two (card #4)',
+      '14:03:01  three',
+      '',
+      '── result from @bob (ok) · 14:04 ──',
+      '## Result\nok',
+      '',
+      '── system notice · 14:02 ──',
+      '@c crashed (exit 1); restarting',
+      '',
+      '── updates from @cat ──',
+      '14:03:02  c back',
+      '',
+      'Report with the sparrow CLI: `sparrow update` as you go, `sparrow wait` while your hires work, then `sparrow done` (or `sparrow ask` if blocked).',
+      '',
+    ].join('\n'));
   });
 
   test('notice texts', () => {

@@ -127,13 +127,15 @@ describe('exit / crash (§3.8)', () => {
     expect(calls[0].restarts).toBe(1);
     expect(calls[1]).toMatchObject({ end_reason: 'crashed', exit_code: 137 });
     expect(agentOf(ctx, a.id).state).toBe('working');
-    let inbox = (await ctx.req('GET', '/api/inbox', undefined, ctx.captain.id)).body.inbox;
-    expect(inbox).toEqual([]); // FYI: posted, not delivered
     const fyi = ctx.store.listMessages({ project: a.project_id, limit: 100 }).filter((m) => m.kind === 'system');
     expect(fyi.map((m) => m.text)).toEqual([`@${a.handle} crashed (exit 137); restarting on the same session.`]);
     expect(fyi[0].mentions).toEqual([]);
     expect(fyi[0].thread).toBe(`dm:${[ctx.captain.id, a.id].sort().join(':')}`);
-    expect(ctx.store.deliveriesFor(fyi[0].id)).toEqual([]);
+    // A5: FYI = quiet delivery to the parent (wakes nobody); any inbox read hands it over with the quiet update.
+    expect(ctx.store.deliveriesFor(fyi[0].id)).toMatchObject([{ to_id: ctx.captain.id, state: 'pending', wake: false }]);
+    expect(ctx.store.countWaking(ctx.captain.id)).toBe(0);
+    let inbox = (await ctx.req('GET', '/api/inbox', undefined, ctx.captain.id)).body.inbox;
+    expect(inbox.map((m: any) => [m.kind, m.text])).toEqual([['update', 'half way'], ['system', fyi[0].text]]);
     // second crash, long after start so not the fresh fallback
     await ctx.clock.advance(60_000);
     ctx.sp.screens.set(a.id, Array.from({ length: 30 }, (_, i) => `row ${i}`).join('\n'));
@@ -245,9 +247,11 @@ describe('watchdog, quiet, boot recovery (§3.5, §3.9)', () => {
     await ctx.core.watchdogTick();
     await ctx.core.watchdogTick();
     expect(ctx.sp.delivers.length).toBe(1);
+    expect(ctx.store.countWaking(ctx.captain.id)).toBe(1); // max_call notice wakes; the quiet-nudge note is FYI (quiet)
     const inbox = (await ctx.req('GET', '/api/inbox', undefined, ctx.captain.id)).body.inbox;
-    expect(inbox.length).toBe(1); // max_call notice is delivered; the quiet-nudge note is FYI only
-    expect(inbox[0].text).toContain(`@${a.handle} has been working 4 min`);
+    expect(inbox.length).toBe(2); // handed over together, in seq order
+    expect(inbox[0].text).toBe(`@${a.handle} posted nothing for 1 min; nudged it to post a progress update.`);
+    expect(inbox[1].text).toContain(`@${a.handle} has been working 4 min`);
     const notes = ctx.store.listMessages({ project: a.project_id, limit: 100 }).filter((m) => m.kind === 'system');
     expect(notes.map((m) => m.text)).toEqual([
       `@${a.handle} posted nothing for 1 min; nudged it to post a progress update.`,
@@ -301,15 +305,21 @@ describe('FYI vs action-needed notices', () => {
     await ctx.core.watchdogTick(); // quiet nudge (FYI)
     expect(ctx.sp.delivers.length).toBe(1);
     expect(agentOf(ctx, sc.id).state).toBe('waiting');
-    expect(ctx.store.countPending(sc.id)).toBe(0);
+    expect(ctx.store.countWaking(sc.id)).toBe(0);
+    expect(ctx.store.countPending(sc.id)).toBe(2); // both FYI notices wait, quietly
     // unreported is action-needed → delivered → sub-captain wakes
     const bb = agentOf(ctx, b.id);
     for (let i = 0; i < 3; i++) await ctx.req('POST', '/api/hooks/turn-end', { harness: 'fake' }, b.id, bb.call_id);
     expect(agentOf(ctx, b.id).last_end_reason).toBe('unreported');
     expect(agentOf(ctx, sc.id).state).toBe('working');
     expect(ctx.sp.starts.at(-1)!.agent.id).toBe(sc.id);
-    expect(ctx.sp.starts.at(-1)!.prompt).toContain('stopped without reporting');
-    expect(ctx.sp.starts.at(-1)!.prompt).not.toContain('restarting');
+    const prompt = ctx.sp.starts.at(-1)!.prompt;
+    expect(prompt).toContain('stopped without reporting');
+    // The quiet FYI notices ride along with the waking one, in seq order.
+    expect(prompt).toContain('[sparrow] 3 new messages');
+    expect(prompt.indexOf(`@${b.handle} crashed (exit 9); restarting`)).toBeGreaterThan(-1);
+    expect(prompt.indexOf('posted nothing for 1 min')).toBeGreaterThan(prompt.indexOf(`@${b.handle} crashed (exit 9); restarting`));
+    expect(prompt.indexOf('stopped without reporting')).toBeGreaterThan(prompt.indexOf('posted nothing for 1 min'));
   });
 });
 

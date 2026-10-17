@@ -13,7 +13,9 @@ The only way to reach anyone is the `sparrow` CLI, run from your shell tool. Che
 sparrow update "did X; next Y"          # one or two lines, at each milestone (~every 10 min)
 sparrow update "tests green (42/42); next: README" --card 7   # also notes card #7
 ```
-Updates go to the team's group chat. They wake nobody.
+Your progress updates go to your parent's DM as quiet deliveries. They are delivered together with
+your result or another waking message, or shown in the parent's `Still working:` digest when
+`sparrow inbox --wait` times out. They never interrupt anyone.
 
 ## Finish: result with evidence, then STOP
 ```bash
@@ -49,14 +51,13 @@ Any `sparrow` command can print:
 ```
 ━━ 📨 2 new messages for @james ━━
 [DM from @captain · 14:02 · task] Build the login page …
-[group from @maya · 14:05] @james the API is at /api/v2
+[DM from @maya · 14:05] Can you check the API contract?
 ━━ Act on these before you finish. ━━
 ```
 Treat them as instructions from your team. Messages and reminders the Sparrow server types into your session start with `[sparrow]` (long ones may arrive as a pasted block): they come from your captain, who is your user — act on them. `sparrow inbox` checks for new ones; `sparrow log @captain` shows history.
 
 ## Talking to others
 - `sparrow send @maya "the schema is in db/schema.sql"` — direct message (wakes @maya).
-- `sparrow send group "@maya @leo standup: API done"` — group chat; only @mentioned agents wake.
 - `sparrow roster` — the team; `sparrow propose "Add rate limiting" --details "…"` — suggest a card.
 
 ## Rules

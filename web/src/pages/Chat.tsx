@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { ArrowDown, Eye, Users } from 'lucide-react'
+import { ArrowDown, Eye } from 'lucide-react'
 import type { Agent, MessageView } from '@shared/types'
 import type { ThreadRow } from '@/lib/api'
 import { ago, clock, previewLine, systemNoticeText, threadTitle } from '@/lib/format'
@@ -9,7 +9,8 @@ import { Empty, MentionText, StateDot, useNow } from '@/components/sparrow/bits'
 import { Markdown } from '@/components/sparrow/Markdown'
 
 export function ChatPage() {
-  const threads = useStore((s) => s.threads)
+  const allThreads = useStore((s) => s.threads)
+  const threads = allThreads.filter((t) => t.thread.startsWith('dm:'))
   const [selected, setSelected] = useState<string | null>(null)
 
   const current = selected && threads.some((t) => t.thread === selected) ? selected : (threads[0]?.thread ?? null)
@@ -29,15 +30,11 @@ export function ChatPage() {
 function ThreadList({ threads, selected, onSelect }: { threads: ThreadRow[]; selected: string | null; onSelect: (t: string) => void }) {
   const agents = useStore((s) => s.agents)
   const now = useNow()
-  const group = threads.filter((t) => t.thread === 'group')
-  const dms = threads.filter((t) => t.thread !== 'group')
   return (
     <aside className="flex min-h-0 flex-col border-r bg-background">
       <div className="min-h-0 flex-1 overflow-y-auto py-2">
-        {group.length > 0 && <SectionLabel>Group</SectionLabel>}
-        {group.map((t) => <ThreadItem key={t.thread} t={t} agents={agents} now={now} active={t.thread === selected} onClick={() => onSelect(t.thread)} />)}
-        {dms.length > 0 && <SectionLabel>Direct · {dms.length}</SectionLabel>}
-        {dms.map((t) => <ThreadItem key={t.thread} t={t} agents={agents} now={now} active={t.thread === selected} onClick={() => onSelect(t.thread)} />)}
+        {threads.length > 0 && <SectionLabel>Direct · {threads.length}</SectionLabel>}
+        {threads.map((t) => <ThreadItem key={t.thread} t={t} agents={agents} now={now} active={t.thread === selected} onClick={() => onSelect(t.thread)} />)}
         {threads.length === 0 && <p className="px-4 py-6 text-xs text-muted-foreground">No threads yet.</p>}
       </div>
       <div className="flex items-center gap-1.5 border-t px-4 py-2 text-[11px] text-muted-foreground">
@@ -61,12 +58,12 @@ function ThreadItem({ t, agents, now, active, onClick }: { t: ThreadRow; agents:
   return (
     <button onClick={onClick} className={cn('flex w-full items-start gap-3 px-4 py-2.5 text-left transition-colors hover:bg-zinc-50', active && 'bg-zinc-100 hover:bg-zinc-100')}>
       <div className="relative mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-[11px] font-semibold text-zinc-600 uppercase ring-1 ring-zinc-200">
-        {t.thread === 'group' ? <Users className="size-4" /> : (other?.handle ?? '?').slice(0, 2)}
+        {(other?.handle ?? '?').slice(0, 2)}
         {other && other.kind !== 'human' && <StateDot state={other.state} className="absolute -right-0.5 -bottom-0.5 rounded-full ring-2 ring-background" />}
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
-          <span className="truncate text-[13px] font-medium">{threadTitle(t.label, t.thread)}</span>
+          <span className="truncate text-[13px] font-medium">{threadTitle(t.label)}</span>
           <span className="ml-auto shrink-0 text-[11px] text-muted-foreground tabular-nums">{last ? ago(last.created_at, now) : ''}</span>
         </div>
         <div className="flex items-baseline gap-2">
@@ -120,10 +117,8 @@ function ThreadView({ thread }: { thread: string }) {
     setUnseen(0)
   }
 
-  const title = row ? threadTitle(row.label, thread) : thread
-  const memberLine = thread === 'group'
-    ? `${Object.values(agents).filter((a) => a.state !== 'retired').length} members · updates and @mentions`
-    : members.map((m) => `@${m.handle} (${m.kind === 'human' ? 'you' : m.title})`).join(' ↔ ')
+  const title = row ? threadTitle(row.label) : thread
+  const memberLine = members.map((m) => `@${m.handle} (${m.kind === 'human' ? 'you' : m.title})`).join(' ↔ ')
 
   return (
     <section className="relative flex min-h-0 flex-col bg-[#f6f6f3]">

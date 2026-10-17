@@ -108,7 +108,8 @@ describe('crash restart re-checks max_running (V1 #5)', () => {
     expect(agentOf(ctx, a.id).state).toBe('queued');
     expect(ctx.store.countWorking()).toBe(1);
     expect(ctx.store.countPending(a.id)).toBe(1);
-    expect(ctx.store.countPending(ctx.captain.id)).toBe(0); // FYI only
+    expect(ctx.store.countWaking(ctx.captain.id)).toBe(0); // FYI "restart queued" notice is quiet (A5)
+    expect(ctx.store.pendingFor(ctx.captain.id).map((m) => m.text)).toEqual([expect.stringContaining('restart queued')]);
     await ctx.req('POST', '/api/done', { summary: 'b done' }, bId, agentOf(ctx, bId).call_id);
     const ag = agentOf(ctx, a.id);
     expect(ag.state).toBe('working');
