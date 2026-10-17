@@ -121,7 +121,7 @@ Identity header `x-sparrow-agent`; hooks add `x-sparrow-call`. Every response to
 | POST `/api/ask` | `AskReq` | `EndCallRes` |
 | POST `/api/done` | `DoneReq` | `EndCallRes` |
 | POST `/api/wait` | `WaitReq` | `EndCallRes` |
-| GET `/api/inbox` | `?wait=<sec ≤600>` | `{inbox, team: TeamStatus[]}` — long-polls until ≥1 waking pending delivery or timeout; `team` lists the caller's non-retired children whose state is not `idle` |
+| GET `/api/inbox` | `?wait=<sec ≤600>` or `?last[=<N, 1..50>]` (default 10 when `last` is present) | `{inbox, team: TeamStatus[]}` — waits for ≥1 waking pending delivery or timeout; one long-poll per agent, with a newer wait superseding the older one and returning `{inbox:[], superseded:true}` without taking deliveries. `last` reads the newest already-delivered messages in seq order without changing delivery state. |
 | GET `/api/messages` | `?project=&thread=&after=<seq>&limit=100` | `MessageView[]` ascending |
 | GET `/api/threads` | `?project=` | `{thread, label, members: string[], last: MessageView, count}[]` |
 | POST `/api/propose` | `ProposeReq` | `{card}` + inbox (state `proposed`) |
@@ -154,7 +154,7 @@ sparrow update "<text>" [--card N]
 sparrow ask "<question>"
 sparrow done "<summary>" [--status ok|blocked|failed]
 sparrow wait ["<reason>"]
-sparrow inbox [--wait SEC]
+sparrow inbox [--wait SEC] [--last [N]]
 sparrow log [@handle] [-n 30]
 sparrow propose "<title>" [--details d] [--category c]
 sparrow card list | add "<title>" [--details d] [--state s] [--assignee @h] | move <N> <state> | assign <N> <@h|none> | note <N> "<text>"
@@ -183,7 +183,7 @@ sparrow hook <kind> [...]                          internal (harness hooks)
     @iris · verifier · working 3m · no update yet
   ```
   On timeout with no messages, it prints `No new messages (waited 600s).` followed by the digest; with no messages and no working children it prints only that first line. Calling `send` or `log` with the reserved `group` handle produces a usage error stating it was removed.
-- In captain mode, `inbox --wait` uses messages piggybacked during registration. It skips the long-poll only when that inbox contains a waking message; this immediate path prints no `Still working:` digest. Quiet messages alone do not skip the wait.
+- In captain mode, `inbox --wait` uses messages piggybacked during registration. It skips the long-poll only when that inbox contains a waking message; this immediate path prints no `Still working:` digest. Quiet messages alone do not skip the wait. A newer `inbox --wait` stops an older pending wait without taking its messages. `inbox --last [N]` (N 1–50, default 10) prints previously delivered messages for recovery; it does not take pending deliveries.
 - `done/ask/wait` with `ended:false` print (amended): `Not sent: new messages arrived (above). Handle them, then run sparrow done again with your complete report.` With `ended:true`: `Reported. This session will now close — stop here; you will be resumed with full memory when someone messages you.`
 - Exit code 0 on success, 1 on API error (print the server's error text), 2 on bad usage (print usage for that command).
 

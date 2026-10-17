@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { NUDGE_REPORT } from '../../src/server/prompts';
-import { agentOf, hire, setup } from './helpers';
+import { agentOf, flush, hire, setup } from './helpers';
 
 describe('send / update routing', () => {
   test('DM to a working agent: delivery pending (no new start); piggybacked on its next request', async () => {
@@ -382,6 +382,69 @@ describe('inbox long-poll', () => {
     const r = await ctx.req('GET', '/api/inbox?wait=1', undefined, ctx.captain.id);
     expect(r.body.inbox).toEqual([]);
     expect(Date.now() - t0).toBeGreaterThanOrEqual(950);
+  });
+
+  test('a newer wait supersedes the older one without taking deliveries', async () => {
+    const ctx = await setup();
+    const a = await hire(ctx, 'builder', 'x');
+    const call = agentOf(ctx, a.id).call_id;
+    const quiet = await ctx.req('POST', '/api/update', { text: 'progress before result' }, a.id, call);
+    const quietId = quiet.body.message.id;
+
+    const first = ctx.req('GET', '/api/inbox?wait=30', undefined, ctx.captain.id);
+    await flush();
+    const second = ctx.req('GET', '/api/inbox?wait=30', undefined, ctx.captain.id);
+    const older = await first;
+    expect(older.body).toMatchObject({ inbox: [], superseded: true });
+    expect(ctx.store.deliveriesFor(quietId)).toMatchObject([{ state: 'pending', delivered_at: null }]);
+
+    await ctx.req('POST', '/api/done', { summary: 'finished' }, a.id, call);
+    const newer = await second;
+    expect(newer.body.superseded).toBeUndefined();
+    expect(newer.body.inbox.map((m: any) => [m.kind, m.text])).toEqual([
+      ['update', 'progress before result'], ['result', 'finished'],
+    ]);
+    expect(ctx.store.deliveriesFor(quietId)).toMatchObject([{ state: 'delivered' }]);
+  });
+
+  test('last reads recent delivered messages in seq order and leaves pending deliveries alone', async () => {
+    const ctx = await setup();
+    const firstAgent = await hire(ctx, 'builder', 'first');
+    const secondAgent = await hire(ctx, 'builder', 'second');
+    await ctx.req('POST', '/api/done', { summary: 'first result' }, firstAgent.id, agentOf(ctx, firstAgent.id).call_id);
+    await ctx.req('POST', '/api/done', { summary: 'second result' }, secondAgent.id, agentOf(ctx, secondAgent.id).call_id);
+    const delivered = await ctx.req('GET', '/api/inbox', undefined, ctx.captain.id);
+    const deliveredSeqs = delivered.body.inbox.map((m: any) => m.seq);
+    expect(deliveredSeqs.length).toBe(2);
+
+    const pendingAgent = await hire(ctx, 'builder', 'third');
+    const pendingCall = agentOf(ctx, pendingAgent.id).call_id;
+    const quiet = await ctx.req('POST', '/api/update', { text: 'still pending' }, pendingAgent.id, pendingCall);
+    const quietId = quiet.body.message.id;
+
+    const recovered = await ctx.req('GET', '/api/inbox?last=2', undefined, ctx.captain.id);
+    expect(recovered.body.inbox.map((m: any) => m.seq)).toEqual(deliveredSeqs);
+    const newest = await ctx.req('GET', '/api/inbox?last=1', undefined, ctx.captain.id);
+    expect(newest.body.inbox.map((m: any) => m.text)).toEqual(['second result']);
+    const defaultCount = await ctx.req('GET', '/api/inbox?last=', undefined, ctx.captain.id);
+    expect(defaultCount.body.inbox.map((m: any) => m.seq)).toEqual(deliveredSeqs);
+    expect(ctx.store.deliveriesFor(quietId)).toMatchObject([{ state: 'pending', delivered_at: null }]);
+  });
+
+  test('last rejects counts outside 1..50', async () => {
+    const ctx = await setup();
+    const r = await ctx.req('GET', '/api/inbox?last=0', undefined, ctx.captain.id);
+    expect(r.status).toBe(400);
+    expect(r.body.error).toBe('last must be between 1 and 50');
+  });
+
+  test('captain registration for recovery does not piggyback pending messages', async () => {
+    const ctx = await setup();
+    const a = await hire(ctx, 'builder', 'x');
+    const quiet = await ctx.req('POST', '/api/update', { text: 'still pending' }, a.id, agentOf(ctx, a.id).call_id);
+    const r = await ctx.req('POST', '/api/captains/register?no_inbox=1', { cwd: ctx.root });
+    expect(r.body.inbox).toEqual([]);
+    expect(ctx.store.deliveriesFor(quiet.body.message.id)).toMatchObject([{ state: 'pending', delivered_at: null }]);
   });
 });
 

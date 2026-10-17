@@ -100,7 +100,7 @@ export class Core {
   private otherTimers = new Set<unknown>();
   private deadCounts = new Map<string, number>();         // callId -> consecutive dead checks
   private snapshots = new Map<string, { text: string; at: number }>();
-  private waiters = new Map<string, Set<() => void>>();   // agentId -> inbox long-poll resolvers
+  private waiters = new Map<string, { finish: (result: 'ready' | 'superseded') => void }>(); // one inbox long-poll per agent
   private stopped = false;
   private ticking = false;
 
@@ -203,8 +203,7 @@ export class Core {
     });
     this.emit({ type: 'message.created', project_id: m.project_id, message: this.view(m) });
     for (const id of to) {
-      const ws = this.waiters.get(id);
-      if (ws) for (const w of [...ws]) w();
+      this.waiters.get(id)?.finish('ready');
     }
     return m;
   }
@@ -649,22 +648,35 @@ export class Core {
     return pending.map((m) => this.view(m));
   }
 
+  /** Previously delivered messages for recovery; this read never changes delivery state. */
+  deliveredInbox(agentId: string, limit: number): MessageView[] {
+    return this.store.deliveredFor(agentId, limit).map((m) => this.view(m));
+  }
+
   /** Long-poll: resolves when the agent has ≥1 WAKING pending delivery or after `sec` seconds (quiet ones never end it). */
-  waitForPending(agentId: string, sec: number, signal?: AbortSignal): Promise<void> {
-    if (this.store.countWaking(agentId) > 0 || sec <= 0) return Promise.resolve();
-    return new Promise<void>((res) => {
-      let set = this.waiters.get(agentId);
-      if (!set) this.waiters.set(agentId, (set = new Set()));
+  waitForPending(agentId: string, sec: number, signal?: AbortSignal): Promise<'ready' | 'superseded'> {
+    // A new long-poll owns this agent's inbox. Resolve the old request without allowing its route
+    // to piggyback pending deliveries; the new request will decide what to take.
+    this.waiters.get(agentId)?.finish('superseded');
+    if (this.store.countWaking(agentId) > 0 || sec <= 0 || signal?.aborted) return Promise.resolve('ready');
+    return new Promise<'ready' | 'superseded'>((res) => {
       let timer: ReturnType<typeof setTimeout> | null = null;
-      const done = () => {
-        set!.delete(done);
-        if (!set!.size) this.waiters.delete(agentId);
+      let finished = false;
+      const onAbort = () => finish('ready');
+      let finish!: (result: 'ready' | 'superseded') => void;
+      const entry = { finish: (result: 'ready' | 'superseded') => finish(result) };
+      finish = (result: 'ready' | 'superseded') => {
+        if (finished) return;
+        finished = true;
+        if (this.waiters.get(agentId) === entry) this.waiters.delete(agentId);
         if (timer) clearTimeout(timer);
-        res();
+        signal?.removeEventListener('abort', onAbort);
+        res(result);
       };
-      set.add(done);
-      timer = setTimeout(done, sec * 1000); // real time on purpose: an HTTP request is waiting
-      signal?.addEventListener('abort', done, { once: true });
+      this.waiters.set(agentId, entry);
+      timer = setTimeout(() => finish('ready'), sec * 1000); // real time on purpose: an HTTP request is waiting
+      signal?.addEventListener('abort', onAbort, { once: true });
+      if (signal?.aborted) finish('ready');
     });
   }
 
@@ -1275,7 +1287,7 @@ export class Core {
     for (const t of this.otherTimers) this.clock.clearTimeout(t);
     this.closeTimers.clear();
     this.otherTimers.clear();
-    for (const set of this.waiters.values()) for (const w of [...set]) w();
+    for (const waiter of [...this.waiters.values()]) waiter.finish('ready');
     this.waiters.clear();
   }
 }

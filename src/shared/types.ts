@@ -272,7 +272,7 @@ export interface TeamStatus {
   last_update: string | null;
   last_update_at: number | null;
 }
-export interface InboxRes extends WithInbox { team: TeamStatus[] }
+export interface InboxRes extends WithInbox { team: TeamStatus[]; superseded?: boolean }
 
 // Hooks (sent by `sparrow hook ...` from inside an agent's session)
 export interface TurnEndReq { harness: HarnessName; session_id?: string; last_message?: string; stop_hook_active?: boolean }

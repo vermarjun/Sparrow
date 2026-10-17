@@ -77,6 +77,8 @@ export function createApi(core: Core, opts: ApiOpts = {}) {
   app.post('/api/captains/register', async (c) => {
     const res = core.registerCaptain(await body(c));
     c.set('caller', res.agent);
+    // Recovery inbox reads must not consume pending messages as a side effect of captain registration.
+    if (c.req.query('no_inbox') === '1') return c.json({ ...res, inbox: [] });
     return reply(c, res);
   });
 
@@ -222,8 +224,19 @@ export function createApi(core: Core, opts: ApiOpts = {}) {
 
   app.get('/api/inbox', async (c) => {
     const caller = need(c);
+    const last = c.req.query('last');
+    if (last !== undefined) {
+      const n = last === '' ? 10 : Number(last);
+      if ((last !== '' && !/^\d+$/.test(last)) || !Number.isInteger(n) || n < 1 || n > 50)
+        throw new HttpError(400, 'last must be between 1 and 50');
+      // Deliberately bypass reply(): recovery must never piggyback pending deliveries.
+      return c.json({ inbox: core.deliveredInbox(caller.id, n), team: core.team(caller.id) });
+    }
     const wait = Math.min(Math.max(Number(c.req.query('wait')) || 0, 0), 600);
-    if (wait > 0) await core.waitForPending(caller.id, wait, c.req.raw.signal);
+    if (wait > 0) {
+      const result = await core.waitForPending(caller.id, wait, c.req.raw.signal);
+      if (result === 'superseded') return c.json({ inbox: [], team: core.team(caller.id), superseded: true });
+    }
     // `team`: the caller's children that are still busy, so a timed-out wait shows each one's latest update.
     return reply(c, { team: core.team(caller.id) });
   });

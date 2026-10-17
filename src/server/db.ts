@@ -361,6 +361,11 @@ export class Store {
   pendingFor(agentId: string): Message[] {
     return (this.db.query("SELECT m.* FROM deliveries d JOIN messages m ON m.id = d.message_id WHERE d.to_id = ? AND d.state = 'pending' ORDER BY m.seq").all(agentId) as Row[]).map(rowToMessage);
   }
+  /** Most recent delivered messages for an agent, returned in seq order. */
+  deliveredFor(agentId: string, limit: number): Message[] {
+    return (this.db.query("SELECT m.* FROM deliveries d JOIN messages m ON m.id = d.message_id WHERE d.to_id = ? AND d.state = 'delivered' ORDER BY m.seq DESC LIMIT ?")
+      .all(agentId, limit) as Row[]).reverse().map(rowToMessage);
+  }
   /** All pending deliveries, waking and quiet. */
   countPending(agentId: string): number {
     return (this.db.query("SELECT COUNT(*) AS n FROM deliveries WHERE to_id = ? AND state = 'pending'").get(agentId) as Row).n;

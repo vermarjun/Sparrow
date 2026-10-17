@@ -38,7 +38,7 @@ const USAGE: Record<string, string> = {
   ask: 'sparrow ask "<question>"',
   done: 'sparrow done "<summary>" [--status ok|blocked|failed]',
   wait: 'sparrow wait ["<reason>"]',
-  inbox: 'sparrow inbox [--wait SEC]   (SEC ≤ 600)',
+  inbox: 'sparrow inbox [--wait SEC] [--last [N]]   (SEC ≤ 600; N 1–50, default 10)',
   log: 'sparrow log [@handle] [-n 30]',
   propose: 'sparrow propose "<title>" [--details d] [--category c]',
   card: 'sparrow card list | add "<title>" [--details d] [--state s] [--assignee @h] [--category c] | move <N> <state> | assign <N> <@h|none> | note <N> "<text>"',
@@ -76,6 +76,7 @@ interface Out {
   raw: unknown;             // printed with --json
   text?: string;            // printed before the inbox block
   trailer?: string;         // printed after the inbox block
+  alreadyDelivered?: boolean;
 }
 
 function collect(ctx: Ctx, res: any) {
@@ -98,7 +99,7 @@ function detectHarness(env = process.env): { harness?: string; session_id?: stri
 }
 
 /** Make sure we have an identity: SPARROW_AGENT_ID, or register as this project's human captain. */
-async function identify(ctx: Ctx): Promise<void> {
+async function identify(ctx: Ctx, opts: { noInbox?: boolean } = {}): Promise<void> {
   if (ctx.agentId) return;
   const envId = process.env.SPARROW_AGENT_ID;
   if (envId) { ctx.agentId = envId; return; }
@@ -106,8 +107,9 @@ async function identify(ctx: Ctx): Promise<void> {
   const det = detectHarness();
   if (det.harness) body.harness = det.harness;
   if (det.session_id) body.session_id = det.session_id;
-  const res = await api<RegisterCaptainRes>('POST', '/api/captains/register', body, { agentId: null });
-  collect(ctx, res);
+  const path = opts.noInbox ? '/api/captains/register?no_inbox=1' : '/api/captains/register';
+  const res = await api<RegisterCaptainRes>('POST', path, body, { agentId: null });
+  if (!opts.noInbox) collect(ctx, res);
   ctx.agentId = res.agent.id;
   ctx.me = res.agent;
   ctx.project = res.project;
@@ -368,14 +370,38 @@ const commands: Record<string, Handler> = {
   },
 
   async inbox(ctx, args) {
-    const { values } = parse('inbox', args, { wait: { type: 'string' } });
+    // parseArgs has no optional string value, so normalize `--last [N]` to its explicit form.
+    const normalized: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--last') {
+        const next = args[i + 1];
+        if (next !== undefined && /^\d+$/.test(next)) normalized.push(`--last=${args[++i]}`);
+        else normalized.push('--last=10');
+      } else normalized.push(args[i]);
+    }
+    const { values, positionals } = parse('inbox', normalized, { wait: { type: 'string' }, last: { type: 'string' } });
+    if (positionals.length) throw new UsageError('inbox', 'unexpected positional argument');
     const wait = intArg('inbox', values.wait as string | undefined, '--wait', 0, 600);
-    await identify(ctx);
+    const last = intArg('inbox', values.last as string | undefined, '--last', 1, 50);
+    await identify(ctx, { noInbox: last !== undefined });
+    if (last !== undefined) {
+      const res = await call<InboxRes>(ctx, 'GET', `/api/inbox?last=${last}`);
+      return {
+        raw: res,
+        text: ctx.inbox.length ? undefined : 'No previously delivered messages.',
+        trailer: teamDigest(res.team ?? []),
+        alreadyDelivered: true,
+      };
+    }
     // Captain mode: register already piggybacked (and consumed) pending messages. If one of them wakes, show them now
     // without long-polling. Quiet ones alone (updates, FYI notices) must not end the wait: they print with what arrives.
     if (ctx.inbox.some(wakes)) return { raw: { inbox: ctx.inbox } };
     const path = wait ? `/api/inbox?wait=${wait}` : '/api/inbox';
     const res = await call<InboxRes>(ctx, 'GET', path, undefined, { timeoutMs: ((wait ?? 0) + 30) * 1000 });
+    if (res.superseded) return {
+      raw: res,
+      text: 'Stopped: a newer `sparrow inbox --wait` took over. Nothing was taken from your inbox.',
+    };
     const digest = teamDigest(res.team ?? []);
     return {
       raw: res,
@@ -731,7 +757,7 @@ export async function main(argv: string[]): Promise<number> {
         try { handle = (await self(ctx)).me.handle; } catch {}
       }
       if (out.text) console.log('');
-      console.log(inboxBlock(ctx.inbox, handle, await projectAgents(ctx)));
+      console.log(inboxBlock(ctx.inbox, handle, await projectAgents(ctx), { alreadyDelivered: out.alreadyDelivered }));
     }
     if (out.trailer) console.log(out.trailer);
     return 0;
