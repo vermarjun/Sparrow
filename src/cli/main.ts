@@ -302,8 +302,12 @@ const commands: Record<string, Handler> = {
     const state = a.state === 'queued'
       ? 'queued (max_running reached; starts when a slot frees)'
       : a.state;
+    const override = res.message.meta.override as Partial<Record<'model' | 'effort', { resume: string | null; used: string }>> | undefined;
     const text = [
       `Hired @${a.handle} — ${a.title} (${a.resume}) · ${[a.harness, [a.model, a.effort].filter(Boolean).join('/')].filter(Boolean).join(' ')} · ${state}`,
+      ...(['model', 'effort'] as const).flatMap((field) => override?.[field]
+        ? [`Override: ${field} ${override[field]!.used} (resume says ${override[field]!.resume ?? 'default'}).`]
+        : []),
       `  id ${a.id} · cwd ${a.cwd}`,
       `  watch: ${tmuxAttach(a)}`,
       `  Its result arrives in your inbox (sparrow inbox --wait 600). Talk to it: sparrow send @${a.handle} "…"`,

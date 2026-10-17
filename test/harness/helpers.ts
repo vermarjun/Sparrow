@@ -1,4 +1,4 @@
-// Test isolation for T2 (CONTRACT §10): temp SPARROW_HOME, ports 4120–4129, private tmux socket.
+// Test isolation for T2 (CONTRACT §10): temp SPARROW_HOME, ports 4120–4129, private tmux socket per worker.
 // Import this FIRST in every harness test file.
 import { mkdtempSync, mkdirSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -7,7 +7,7 @@ import type { Agent, HarnessName } from '../../src/shared/types';
 
 export const TEST_HOME = realpathSync(mkdtempSync(join(tmpdir(), 'sparrow-t2-')));
 process.env.SPARROW_HOME = TEST_HOME;
-process.env.SPARROW_TMUX_SOCKET = process.env.SPARROW_TMUX_SOCKET_T2 ?? 'sparrow-test-t2';
+process.env.SPARROW_TMUX_SOCKET = process.env.SPARROW_TMUX_SOCKET_T2 ?? `sparrow-test-t2-${process.pid}`;
 process.env.SPARROW_TMUX_PREFIX = 'sptest-';
 process.env.SPARROW_PORT ??= '4120';
 

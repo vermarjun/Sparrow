@@ -35,7 +35,7 @@ A good brief = goal, files/context, acceptance checks (commands that prove it), 
 Flags:
 - `--cwd <dir>` — where the agent works (default: your cwd). Need isolation? Only when the user asks, create a git worktree yourself (`git worktree add ../proj-maya -b maya/rate-limit`) and pass `--cwd ../proj-maya`.
 - `--tmux-session <s>` / `--tmux-window <w>` — where its window opens (default `sparrow-<project>` / the handle). Respawns reuse them.
-- `--model`, `--effort` — override the resume. `--card N` — assign a board card (moves it to In progress).
+- Hire the resume as is; its model and effort are the user's choice (set in the UI). Pass `--model`/`--effort` only when the user explicitly asks for a specific model or effort. `--card N` — assign a board card (moves it to In progress).
 
 Hiring returns at once. Max concurrent agents is limited; extra hires show `queued` and start when a slot frees.
 

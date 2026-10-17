@@ -338,6 +338,9 @@ export class Core {
     }
     const model = req.model ?? resume.model;
     const effort = req.effort ?? resume.effort;
+    const override: { model?: { resume: string | null; used: string }; effort?: { resume: string | null; used: string } } = {};
+    if (req.model !== undefined && req.model !== resume.model) override.model = { resume: resume.model, used: req.model };
+    if (req.effort !== undefined && req.effort !== resume.effort) override.effort = { resume: resume.effort, used: req.effort };
     // Hire gate (U1): refuse before the row exists, so no window ever opens for a broken harness or a dead model.
     const refusal = this.gate(resume.harness, model, effort);
     if (refusal) {
@@ -358,6 +361,7 @@ export class Core {
     const msg = this.post({
       project_id: project, thread: this.dmThread(caller.id, agent.id), from_id: caller.id, kind: 'task',
       text: req.task, to: [agent.id], card_id: card?.id ?? null,
+      ...(Object.keys(override).length ? { meta: { override } } : {}),
     });
     if (card) {
       this.saveCard(card.id, {
@@ -366,7 +370,11 @@ export class Core {
         notes: [...card.notes, { at: now, by: caller.handle, text: `assigned to @${handle}` }],
       });
     }
-    this.say(`hire @${handle} ${resume.slug}/${resume.harness} by @${caller.handle} → ${agent.tmux_session}:${agent.tmux_window}`);
+    const overrides = [
+      ...(override.model ? [`OVERRIDE model ${override.model.resume ?? '(default)'}→${override.model.used} (resume ${resume.slug})`] : []),
+      ...(override.effort ? [`OVERRIDE effort ${override.effort.resume ?? '(default)'}→${override.effort.used} (resume ${resume.slug})`] : []),
+    ];
+    this.say(`hire @${handle} ${resume.slug}/${resume.harness} by @${caller.handle}${overrides.length ? ` ${overrides.join(' ')}` : ''} → ${agent.tmux_session}:${agent.tmux_window}`);
     this.bg(this.wake(agent.id));
     return { agent: this.store.getAgent(agent.id)!, message: this.view(msg) };
   }

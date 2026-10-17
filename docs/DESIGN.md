@@ -41,7 +41,7 @@ Code layout: `src/shared` (types, config), `src/server` (state, API, lifecycle),
 2. `depth = caller.depth + 1`; refuse when `> max_depth` (403, say why).
 3. Resume must exist (404 lists available slugs). Handle: `name` if given (lowercased, validated, must be unused in the project → 409), else the first unused name from a fixed friendly list (`james, maya, leo, iris, omar, nina, theo, zara, ravi, lena, ivan, mira, kai, ada, ben, cleo`) then `<resume>-<n>`.
 4. `cwd` default = caller's cwd (the CLI always sends `--cwd` resolved to an absolute path, else `process.cwd()`). `tmux_session` default `TMUX_PREFIX + project_id`; `tmux_window` default = handle.
-5. Insert agent (state `idle`), insert a DM message kind `task` from caller to new agent (text = task) with a pending delivery, assign card if `card_id` (→ `in_progress`, note "assigned to @x"). Then **wake** (3.4). Return immediately (`HireRes`).
+5. Use the resume's configured model and effort by default. The captain can set those choices in the UI; explicit `model` or `effort` request values override them. When an override differs from the resume, include it in the task message's `meta.override` and the server hire log. Insert the agent (state `idle`) and a DM message kind `task` from caller to new agent (text = task) with a pending delivery, assign card if `card_id` (→ `in_progress`, note "assigned to @x"). Then **wake** (3.4). Return immediately (`HireRes`).
 
 ### 3.3 Messages and wake rules
 - `send {to:'@h', text}` → DM thread between caller and target; waking delivery to target. Unknown handle → 404 listing the roster. Retired target → 409.
@@ -162,6 +162,7 @@ sparrow release <@handle>
 sparrow hook <kind> [...]                          internal (harness hooks)
 ```
 - Long text: any text argument may be `-` to read stdin, so agents can use a quoted heredoc: `sparrow done - <<'EOF' … EOF`.
+- `sparrow hire` uses the resume's configured model and effort. Pass `--model` or `--effort` only for an explicit user request; a value that differs from the resume is shown as an `Override:` line in the CLI output, recorded in the task message's `meta.override`, and included in the server hire log.
 - Every command prints its result, then, if `inbox` is non-empty, a block grouped by the agent the messages are about (sender, or `meta.about` for system notices), with messages in seq order and `hh:mm:ss` times. A group containing a result gets `── @handle · resume · done <status> · call <duration> ──` (duration comes from result `meta.call_ms`); a group containing only DMs, tasks, or questions gets `── @handle (DM) ──`; other groups get `── @handle · resume ──`:
   ```
   ━━ 📨 4 new messages for @james ━━

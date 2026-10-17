@@ -104,6 +104,36 @@ describe('hire guards', () => {
 });
 
 describe('hire → start call', () => {
+  test('different model and effort overrides are recorded in task metadata and server log', async () => {
+    const ctx = await setup();
+    const r = await ctx.req('POST', '/api/hire', {
+      resume: 'builder', task: 'Build it', model: 'opus', effort: 'high',
+    }, ctx.captain.id);
+    expect(r.status).toBe(200);
+    expect(r.body.message.meta.override).toEqual({
+      model: { resume: 'haiku', used: 'opus' },
+      effort: { resume: 'low', used: 'high' },
+    });
+    expect(ctx.logs.some((line) => line.includes('OVERRIDE model haiku→opus (resume builder)'))).toBe(true);
+    expect(ctx.logs.some((line) => line.includes('OVERRIDE effort low→high (resume builder)'))).toBe(true);
+  });
+
+  test('an explicitly passed resume model does not count as an override', async () => {
+    const ctx = await setup();
+    const r = await ctx.req('POST', '/api/hire', { resume: 'builder', task: 'Build it', model: 'haiku' }, ctx.captain.id);
+    expect(r.status).toBe(200);
+    expect(r.body.message.meta).not.toHaveProperty('override');
+    expect(ctx.logs.some((line) => line.includes('OVERRIDE'))).toBe(false);
+  });
+
+  test('omitting model and effort does not count as an override', async () => {
+    const ctx = await setup();
+    const r = await ctx.req('POST', '/api/hire', { resume: 'builder', task: 'Build it' }, ctx.captain.id);
+    expect(r.status).toBe(200);
+    expect(r.body.message.meta).not.toHaveProperty('override');
+    expect(ctx.logs.some((line) => line.includes('OVERRIDE'))).toBe(false);
+  });
+
   test('free slot: start once, resume:false, envelope has the task, working, call row, delivery delivered', async () => {
     const ctx = await setup();
     const r = await ctx.req('POST', '/api/hire', { resume: 'builder', task: 'Build the login page' }, ctx.captain.id);

@@ -29,8 +29,9 @@ export interface PromptVars {
 /** Amendment A2: {{can_hire}} as a full sentence. */
 export function canHireSentence(canHire: string[]): string {
   if (!canHire.length) return 'You may NOT hire anyone; never run `sparrow hire`.';
-  if (canHire.includes('*')) return 'You may hire any resume, only via `sparrow hire`.';
-  return `You may hire these resumes, only via \`sparrow hire\`: ${canHire.join(', ')}.`;
+  const guidance = 'Hire them with their configured model and effort; pass --model/--effort only if your task explicitly asks.';
+  if (canHire.includes('*')) return `You may hire any resume, only via \`sparrow hire\`. ${guidance}`;
+  return `You may hire these resumes, only via \`sparrow hire\`: ${canHire.join(', ')}. ${guidance}`;
 }
 
 export function fillTemplate(tpl: string, vars: PromptVars): string {

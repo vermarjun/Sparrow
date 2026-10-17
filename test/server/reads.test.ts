@@ -164,8 +164,8 @@ describe('prompts + resumes', () => {
 
   test('A2: can_hire sentence', () => {
     expect(canHireSentence([])).toBe('You may NOT hire anyone; never run `sparrow hire`.');
-    expect(canHireSentence(['*'])).toBe('You may hire any resume, only via `sparrow hire`.');
-    expect(canHireSentence(['builder', 'verifier'])).toBe('You may hire these resumes, only via `sparrow hire`: builder, verifier.');
+    expect(canHireSentence(['*'])).toBe('You may hire any resume, only via `sparrow hire`. Hire them with their configured model and effort; pass --model/--effort only if your task explicitly asks.');
+    expect(canHireSentence(['builder', 'verifier'])).toBe('You may hire these resumes, only via `sparrow hire`: builder, verifier. Hire them with their configured model and effort; pass --model/--effort only if your task explicitly asks.');
   });
 
   test('renderSystemPrompt falls back to the built-in protocol', () => {

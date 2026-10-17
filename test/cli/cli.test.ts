@@ -64,6 +64,21 @@ describe('identity', () => {
 });
 
 describe('hire', () => {
+  test('prints visible model and effort overrides returned by the server', async () => {
+    stub.on('POST', '/api/hire', {
+      agent: agent({ model: 'opus', effort: 'high' }),
+      message: msg({ meta: { override: {
+        model: { resume: 'sonnet', used: 'opus' },
+        effort: { resume: 'low', used: 'high' },
+      } } }),
+      inbox: [],
+    });
+    const r = await run(['hire', 'builder', 'Build it'], { url });
+    ok(r);
+    expect(r.stdout).toContain('Override: model opus (resume says sonnet).');
+    expect(r.stdout).toContain('Override: effort high (resume says low).');
+  });
+
   test('sends every flag and an absolute cwd', async () => {
     const cwd = tempDir();
     mkdirSync(join(cwd, 'wt'));
