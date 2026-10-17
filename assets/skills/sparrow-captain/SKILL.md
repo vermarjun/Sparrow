@@ -67,10 +67,13 @@ sparrow card note 4 "merged in a1b2c3"
 ```
 Agents `propose` cards (column Proposed); you accept (`move N todo`) or drop them.
 
-## 7. Release when merged
+## 7. Release when the job is done (permanent by design)
 ```bash
 sparrow release @maya               # closes its window for good; it never wakes again
 ```
+- An agent is hired for one job. Until you release it, it keeps its session id (its "number"): message it any time, even days later, and it resumes with full memory. Use that for follow-ups on the same job.
+- Release is permanent on purpose. Once the job is verified and merged, release the agent. New work goes to a fresh hire, so no agent carries stale context from an old job.
+- Order: build → verify → merge → release. Never release a builder before its verifier passes; a released agent can't take the fix.
 
 ## Watch
 - Agent windows: `tmux attach -t sparrow-<project>` (each agent is a window named after its handle). `sparrow status` prints exact attach lines.

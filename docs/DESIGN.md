@@ -94,6 +94,7 @@ For agents in `working`: window alive → keep (re-adopt, restart watchdog). Dea
 
 ### 3.10 Release (`POST /api/release {agent}`)
 Caller must be the agent's parent or the human captain. Stop the window, end any call `released`, state `retired`, drop pending deliveries.
+Permanent by design (owner decision, 17 Oct 2026): an agent is hired for one job. Before release it stays callable by its session id indefinitely, with full memory. After its job is verified and integrated, the captain releases it; new work goes to a fresh hire so no agent carries stale context. Do not add un-retire, rehire or number expiry unless the owner asks.
 
 ### 3.11 Limits
 `max_running` counts agents in state `working` across all projects (human captains excluded). `loadSettings()` gives all tunables.
