@@ -5,3 +5,4 @@ web/dist/
 .DS_Store
 .orchestra/
 test/.tmp/
+docs/*.html
