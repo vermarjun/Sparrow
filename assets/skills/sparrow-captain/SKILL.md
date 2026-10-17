@@ -41,6 +41,7 @@ Hiring returns at once. Max concurrent agents is limited; extra hires show `queu
 
 ## 4. Wait for results WITHOUT blocking the user
 - **In Claude Code:** run `sparrow inbox --wait 600` with the Bash tool and `run_in_background: true`. You get notified when it finishes (a message arrived, or 10 min passed). Read it, act, then **re-arm** the same background command. Keep talking to the user meanwhile.
+- Run only one `inbox --wait` at a time; a newer one stops the older. Think you missed a result? `sparrow inbox --last`.
 - **Inside an agent window** (a sub-captain, `SPARROW_AGENT_ID` set): never `inbox --wait`; run `sparrow wait "…"` and stop — results resume you.
 - **Elsewhere:** check `sparrow inbox` between other work, or after each user turn.
 - Every sparrow command you run also prints new messages (`━━ 📨 …`).

@@ -120,8 +120,8 @@ function groupHeader(group: MessageView[], me: string | null, agents: Map<string
   return `── @${handle}${resume ? ` · ${resume}` : ''} ──`;
 }
 
-/** New messages grouped by the agent they are about (sender, or meta.about for notices), seq order inside each group. */
-export function inboxBlock(inbox: MessageView[], handle: string | null, agents: Agent[] = []): string {
+/** Inbox messages grouped by the agent they are about (sender, or meta.about for notices), seq order inside each group. */
+export function inboxBlock(inbox: MessageView[], handle: string | null, agents: Agent[] = [], opts: { alreadyDelivered?: boolean } = {}): string {
   if (!inbox.length) return '';
   const n = inbox.length;
   const who = handle ? ` for @${handle}` : '';
@@ -133,7 +133,8 @@ export function inboxBlock(inbox: MessageView[], handle: string | null, agents: 
     if (g) g.push(m);
     else groups.set(k, [m]);
   }
-  const lines = [`━━ 📨 ${n} new message${n === 1 ? '' : 's'}${who} ━━`];
+  const description = opts.alreadyDelivered ? 'already delivered' : 'new';
+  const lines = [`━━ 📨 ${n} ${description} message${n === 1 ? '' : 's'}${who} ━━`];
   for (const g of groups.values()) lines.push(groupHeader(g, handle, byId), ...g.flatMap(inboxEntry));
   lines.push('━━ Act on these before you finish. ━━');
   return lines.join('\n');

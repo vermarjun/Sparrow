@@ -314,6 +314,37 @@ describe('inbox', () => {
     expect(r.code).toBe(2);
   });
 
+  test('superseded wait prints the stopped message and exits successfully', async () => {
+    stub.on('GET', '/api/inbox', { inbox: [], team: [], superseded: true });
+    const r = await run(['inbox', '--wait', '5'], { url, env: AGENT });
+    expect(r.code).toBe(0);
+    expect(r.stdout).toBe('Stopped: a newer `sparrow inbox --wait` took over. Nothing was taken from your inbox.\n');
+  });
+
+  test('--last prints a recovery block and defaults to 10', async () => {
+    stub.on('GET', '/api/agents', [agent(), captain]);
+    stub.on('GET', '/api/inbox', { inbox: [
+      msg({ seq: 1, id: 'old', text: 'already finished' }),
+    ], team: [] });
+    let r = await run(['inbox', '--last'], { url });
+    ok(r);
+    expect(stub.find('POST', '/api/captains/register')[0].path).toBe('/api/captains/register?no_inbox=1');
+    expect(stub.find('GET', '/api/inbox')[0].path).toBe('/api/inbox?last=10');
+    expect(r.stdout).toContain('━━ 📨 1 already delivered message for @captain ━━');
+    expect(r.stdout).toContain('  14:02:00  task  already finished');
+
+    stub.requests = [];
+    r = await run(['inbox', '--last', '2'], { url });
+    ok(r);
+    expect(stub.find('GET', '/api/inbox')[0].path).toBe('/api/inbox?last=2');
+  });
+
+  test('--last rejects counts outside 1..50', async () => {
+    const r = await run(['inbox', '--last', '51'], { url, env: AGENT });
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain('--last must be between 1 and 50');
+  });
+
   test('system notices are grouped under the agent they are about (meta.about), with its updates', async () => {
     stub.on('GET', '/api/agents', [agent({ id: 'ag_MAYA', handle: 'maya', resume: 'builder-codex' }), captain]);
     stub.on('GET', '/api/inbox', { inbox: [
