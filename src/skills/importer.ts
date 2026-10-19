@@ -366,9 +366,9 @@ function discoverDirectories(base: string, subpath?: string): { directories: str
   const problems: SkillProblem[] = [];
   const rootReal = realpathSync.native(base);
   const search = subpath ? join(base, ...subpath.split('/')) : base;
-  if (!existsSync(search)) fail('Source subpath does not exist: ' + subpath);
+  // lstat, not existsSync: a symlink source (even a dangling one) is reported as a symlink, never followed.
   let searchStat;
-  try { searchStat = lstatSync(search); } catch { fail('Source path does not exist: ' + (subpath || 'source')); }
+  try { searchStat = lstatSync(search); } catch { fail('Source subpath does not exist: ' + (subpath || 'source')); }
   if (searchStat!.isSymbolicLink()) {
     problems.push({ code: 'symlink-source', message: 'A symlink source path was skipped: ' + (subpath || '.') });
     return { directories: [], problems };

@@ -71,8 +71,8 @@ describe('the Doctor check', () => {
     const d = mkdtempSync(join(tmpdir(), 'sparrow-d1-res-'));
     const w = (slug: string, harness: string, model: string, desc: string) =>
       writeFileSync(join(d, `${slug}.md`), `---\nname: ${slug}\ntitle: ${slug}\ndescription: ${desc}\nharness: ${harness}\nmodel: ${model}\n---\nbody\n`);
-    w('builder', 'claude', 'sonnet', 'Implements one task (Claude Code, Opus).');
-    w('verifier', 'opencode', 'opencode-go/deepseek-v4.1-flash', 'Read-only reviewer (Codex).');
+    w('builder', 'claude', 'sonnet', 'Implements one task with Opus for speed.'); // prose mentions are not auto-templated
+    w('verifier', 'opencode', 'opencode-go/deepseek-v4.1-flash', 'Read-only reviewer for Codex users.');
     w('tidy', 'claude', 'opus', 'Tidy ({{runtime}}).');
     return d;
   };

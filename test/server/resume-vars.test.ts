@@ -1,10 +1,10 @@
 // Resume template variables: {{harness}} {{model}} {{effort}} {{runtime}}. web/test/resumeVars.test.ts has the same vectors.
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { renderSystemPrompt } from '../../src/server/prompts';
-import { renderResumeText } from '../../src/server/resumes';
+import { renderResumeText, Resumes, templateRuntime } from '../../src/server/resumes';
 import type { Agent, Project } from '../../src/shared/types';
 import { flush, hire, setup } from './helpers';
 
@@ -74,5 +74,40 @@ describe('system prompt', () => {
     await ctx.req('POST', '/api/send', { to: `@${a.handle}`, text: 'second' }, ctx.captain.id);
     await flush();
     expect(ctx.sp.startsFor(a.id).at(-1)!.prompt).toContain('Your role from now on:\n\nNow claude · opus · effort high.');
+  });
+});
+
+describe('templateRuntime: hard-coded runtimes in old descriptions follow the settings', () => {
+  const old: [string, string][] = [
+    ['Implements one task end to end in the given folder (Claude Code, Sonnet). Writes the code.', 'Implements one task end to end in the given folder ({{runtime}}). Writes the code.'],
+    ['Implements one task end to end on Codex (gpt-6-luna). Same job as builder.', 'Implements one task end to end ({{runtime}}). Same job as builder.'],
+    ['Web + codebase research on OpenCode (Kimi K3). Answers a question.', 'Web + codebase research ({{runtime}}). Answers a question.'],
+    ["Read-only, adversarial reviewer (OpenCode, DeepSeek V4.1 Flash). Checks someone else's work.", "Read-only, adversarial reviewer ({{runtime}}). Checks someone else's work."],
+  ];
+  test.each(old)('%s', (from, to) => expect(templateRuntime(from)).toBe(to));
+  test('left alone: already templated, or a parenthetical that names no harness', () => {
+    expect(templateRuntime('Builds things ({{model}}, Claude Code).')).toBe('Builds things ({{model}}, Claude Code).');
+    expect(templateRuntime('Writes docs (markdown, HTML).')).toBe('Writes docs (markdown, HTML).');
+  });
+
+  test('server start rewrites only the description line of the user resumes; renders the live model after a change', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'resumes-rt-'));
+    const body = '---\nname: researcher\ntitle: Researcher\ndescription: Web + codebase research on OpenCode (Kimi K3). Answers.\nharness: opencode\nmodel: opencode-go/kimi-k3\ncan_hire: []\n---\nRole body (Kimi K3 stays here)\n';
+    writeFileSync(join(dir, 'researcher.md'), body);
+    const resumes = new Resumes([dir], { quiet_minutes: 15, max_call_minutes: 60 });
+    expect(resumes.templateRuntimeDescriptions()).toEqual(['researcher']);
+    expect(readFileSync(join(dir, 'researcher.md'), 'utf8')).toBe(body.replace('description: Web + codebase research on OpenCode (Kimi K3). Answers.', 'description: "Web + codebase research ({{runtime}}). Answers."'));
+    expect(resumes.templateRuntimeDescriptions()).toEqual([]);
+    const r = resumes.get('researcher')!;
+    resumes.write('researcher', { title: r.title, description: r.description, harness: 'opencode', model: 'opencode-go/deepseek-v4-pro', effort: 'high', can_hire: [], body: r.body, limits: r.limits } as any);
+    const after = resumes.get('researcher')!;
+    expect(renderResumeText(after.description, after)).toBe('Web + codebase research (opencode · opencode-go/deepseek-v4-pro · effort high). Answers.');
+  });
+
+  test('saving a resume with a hard-coded runtime stores ({{runtime}})', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'resumes-rt-'));
+    const resumes = new Resumes([dir], { quiet_minutes: 15, max_call_minutes: 60 });
+    const r = resumes.write('b', { title: 'B', description: 'Builds (Claude Code, Opus).', harness: 'claude', model: 'opus', effort: null, can_hire: [], body: 'x', limits: { quiet_minutes: 15, max_call_minutes: 60 } } as any);
+    expect(r.description).toBe('Builds ({{runtime}}).');
   });
 });

@@ -52,6 +52,7 @@ export function createApp(deps: AppDeps) {
   const store = deps.store ?? new Store(deps.dbPath ?? ':memory:');
   const events = new EventBus();
   const resumes = new Resumes(deps.resumeDirs ?? [RESUMES_DIR, join(ASSETS, 'resumes')], settings);
+  resumes.templateRuntimeDescriptions();
   const core = new Core({
     store, spawner: deps.spawner, settings, resumes, events, clock: deps.clock ?? realClock, log: deps.log,
     tmuxPrefix: deps.tmuxPrefix ?? TMUX_PREFIX, protocolPath: deps.protocolPath ?? PROTOCOL_PATH,

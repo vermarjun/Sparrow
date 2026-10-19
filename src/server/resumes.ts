@@ -92,6 +92,17 @@ export function renderResumeText(text: string, s: { harness: string; model?: str
   return text.replace(/\{\{\s*(\w+)\s*\}\}/g, (all, k: string) => (Object.hasOwn(vars, k) ? vars[k] : all));
 }
 
+// A description that hard-codes the runtime ("on Codex (gpt-6-luna)", "(Claude Code, Sonnet)") goes stale when the
+// harness/model/effort change. Resumes written before the template variables existed carry such text; it is
+// replaced by ({{runtime}}) once, so the description always shows the resume's current settings.
+const HARNESS_WORD = /\b(?:claude(?: code)?|codex|open ?code)\b/i;
+export function templateRuntime(description: string): string {
+  if (/\{\{\s*(?:runtime|model|harness|effort)\s*\}\}/.test(description)) return description;
+  const onHarness = description.replace(/\s+on (?:claude(?: code)?|codex|open ?code)\s*\([^()]*\)/i, ' ({{runtime}})');
+  if (onHarness !== description) return onHarness;
+  return description.replace(/\(([^()]*)\)/, (m, inner: string) => (HARNESS_WORD.test(inner) ? '({{runtime}})' : m));
+}
+
 /** sha256 of the file content, first 12 hex (ResumeView.hash). */
 export const hashText = (text: string) => createHash('sha256').update(text).digest('hex').slice(0, 12);
 
@@ -247,10 +258,40 @@ export class Resumes {
     mkdirSync(this.writeDir, { recursive: true });
     const path = join(this.writeDir, `${slug}.md`);
     const tmp = `${path}.tmp-${process.pid}-${Math.random().toString(36).slice(2)}`;
-    writeFileSync(tmp, serializeResume(slug, req));
+    writeFileSync(tmp, serializeResume(slug, { ...req, description: templateRuntime(req.description) }));
     renameSync(tmp, path);
     if (this.isTombstoned(slug)) unlinkSync(this.tombstone(slug));
     return this.get(slug)!;
+  }
+
+  /**
+   * Rewrite a hard-coded runtime in the description line of the user's resumes to ({{runtime}}) (see templateRuntime).
+   * Only a single-line `description:` is edited; every other byte stays. Returns the slugs changed.
+   */
+  templateRuntimeDescriptions(): string[] {
+    if (!existsSync(this.writeDir)) return [];
+    const changed: string[] = [];
+    for (const f of readdirSync(this.writeDir).sort()) {
+      if (!f.endsWith('.md')) continue;
+      const path = join(this.writeDir, f);
+      try {
+        const text = readFileSync(path, 'utf8');
+        const r = parseResume(text, path, this.settings);
+        const next = templateRuntime(r.description);
+        if (next === r.description) continue;
+        const lines = text.split('\n');
+        const i = lines.findIndex((l) => /^description:\s*\S/.test(l));
+        if (i < 0 || /^description:\s*[|>]/.test(lines[i])) continue;
+        lines[i] = `description: ${yamlStr(next)}`;
+        const out = lines.join('\n');
+        if (parseResume(out, path, this.settings).description !== next) continue;
+        const tmp = `${path}.tmp-${process.pid}-${Math.random().toString(36).slice(2)}`;
+        writeFileSync(tmp, out);
+        renameSync(tmp, path);
+        changed.push(f.slice(0, -3));
+      } catch { /* leave unreadable files alone */ }
+    }
+    return changed;
   }
 
   /**
