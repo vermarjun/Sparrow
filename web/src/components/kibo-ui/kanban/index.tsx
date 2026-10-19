@@ -18,7 +18,7 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import { arrayMove, SortableContext, useSortable } from "@dnd-kit/sortable";
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
   createContext,
@@ -91,6 +91,8 @@ export const KanbanBoard = ({ id, children, className }: KanbanBoardProps) => {
 export type KanbanCardProps<T extends KanbanItemProps = KanbanItemProps> = T & {
   children?: ReactNode;
   className?: string;
+  // Sparrow edit: Enter on the focused card opens it (Space is what picks it up for a keyboard drag).
+  onActivate?: () => void;
 };
 
 export const KanbanCard = <T extends KanbanItemProps = KanbanItemProps>({
@@ -98,6 +100,7 @@ export const KanbanCard = <T extends KanbanItemProps = KanbanItemProps>({
   name,
   children,
   className,
+  onActivate,
 }: KanbanCardProps<T>) => {
   const {
     attributes,
@@ -118,7 +121,18 @@ export const KanbanCard = <T extends KanbanItemProps = KanbanItemProps>({
 
   return (
     <>
-      <div style={style} {...listeners} {...attributes} ref={setNodeRef}>
+      <div
+        style={style}
+        {...listeners}
+        {...attributes}
+        ref={setNodeRef}
+        data-kanban-item={id}
+        className="rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+        onKeyDown={(e) => {
+          listeners?.onKeyDown?.(e);
+          if (e.key === "Enter" && e.target === e.currentTarget) onActivate?.();
+        }}
+      >
         <Card
           className={cn(
             "cursor-grab gap-4 rounded-md p-3 shadow-sm",
@@ -148,7 +162,7 @@ export const KanbanCard = <T extends KanbanItemProps = KanbanItemProps>({
 
 export type KanbanCardsProps<T extends KanbanItemProps = KanbanItemProps> =
   Omit<HTMLAttributes<HTMLDivElement>, "children" | "id"> & {
-    children: (item: T) => ReactNode;
+    children: (item: T, index: number, list: T[]) => ReactNode; // Sparrow edit: index/list let a column insert the Later line
     id: string;
   };
 
@@ -195,6 +209,8 @@ export type KanbanProviderProps<
   // Sparrow edit: onDragEnd receives the final ordering (after the drop is applied).
   onDragEnd?: (event: DragEndEvent, data: T[]) => void;
   onDragOver?: (event: DragOverEvent) => void;
+  // Sparrow edit: droppables that are not a column or a card (the Later line) map to the column they belong to.
+  resolveZone?: (overId: string) => string | null;
 };
 
 export const KanbanProvider = <
@@ -209,6 +225,7 @@ export const KanbanProvider = <
   columns,
   data,
   onDataChange,
+  resolveZone,
   ...props
 }: KanbanProviderProps<T, C>) => {
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
@@ -216,7 +233,7 @@ export const KanbanProvider = <
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 4 } }), // Sparrow edit: clicks open the card
     useSensor(TouchSensor),
-    useSensor(KeyboardSensor)
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates, keyboardCodes: { start: ["Space"], cancel: ["Escape"], end: ["Space"] } })
   );
 
   const handleDragStart = (event: DragStartEvent) => {
@@ -245,6 +262,7 @@ export const KanbanProvider = <
     const overColumn =
       overItem?.column ||
       columns.find((col) => col.id === over.id)?.id ||
+      resolveZone?.(String(over.id)) ||
       columns[0]?.id;
 
     if (activeColumn !== overColumn) {

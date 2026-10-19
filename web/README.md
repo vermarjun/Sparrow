@@ -13,6 +13,7 @@ bun run mock             # mock server with seeded data + live events on :4140 (
 bun run dev:mock         # Vite with /api proxied to the mock
 bun test test/           # unit tests (helpers, event reducer, mock API)
 bun scripts/shots.ts     # screenshots + drag proof against the mock → ../.orchestra/shots/T4
+bun scripts/shots.ts --v2 --size 1440x900 --out ../.orchestra/shots/board-v2   # Board v2 pass: board, Later, list, filters, sheets, dialog + PATCH checks (restart the mock first: it keeps state)
 bun scripts/live-check.ts   # SSE live append, pinned scroll, reconnect (own mock on :4145)
 bun scripts/real-smoke.ts   # real server + fake harness, isolated (port 4144, tmux -L sparrow-test-T4)
 ```

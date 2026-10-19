@@ -195,3 +195,20 @@ export function tmuxSwitch(a: Pick<Agent, 'tmux_session' | 'tmux_window'>): stri
 }
 
 export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const p2 = (n: number) => String(n).padStart(2, '0')
+
+/** `17 Oct 2026, 05:39` in the viewer's time zone. */
+export function fullDate(at: number | null | undefined): string {
+  if (!at) return '—'
+  const d = new Date(at)
+  return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}, ${p2(d.getHours())}:${p2(d.getMinutes())}`
+}
+
+/** `17 Oct` (no year). */
+export function shortDate(at: number | null | undefined): string {
+  if (!at) return '—'
+  const d = new Date(at)
+  return `${d.getDate()} ${MONTHS[d.getMonth()]}`
+}

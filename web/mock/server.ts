@@ -9,8 +9,10 @@ import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import type {
-  Agent, Call, Card, CardCreateReq, CardPatchReq, CardState, MessageKind, MessageView, Project, ServerEvent,
+  Agent, Call, Card, CardCreateReq, CardPatchReq, MessageKind, MessageView, Project, ServerEvent,
 } from '../../src/shared/types'
+import { parseCardRef } from '../../src/shared/cards'
+import { createCard, patchCard, seedCards } from './cards'
 import { createU1 } from './u1'
 
 const { values: argv } = parseArgs({
@@ -137,24 +139,7 @@ export function seed(now = Date.now()) {
   msg('ag_cap2', dm('ag_cap2', 'ag_ada'), 'task', 'Write the README quickstart.', 30)
   msg('ag_ada', dm('ag_cap2', 'ag_ada'), 'result', 'Quickstart added (`README.md` §1). Took 4 commands end to end.', 20, { meta: { status: 'ok' } })
 
-  const C = (id: number, state: CardState, position: number, title: string, extra: Partial<Card> = {}): Card => ({
-    id, project_id: 'plutus', title, details: '', category: null, state, position, assignee_id: null, created_by: 'ag_cap', notes: [], created_at: t(200 - id * 5), updated_at: t(100 - id * 3), ...extra,
-  })
-  const cards: Card[] = [
-    C(1, 'done', 1, 'Ledger schema: amounts in minor units', { category: 'db', assignee_id: 'ag_james', notes: [{ at: t(190), by: 'ag_james', text: 'migration 0007 applied' }] }),
-    C(2, 'done', 2, 'Research: CSV library for Bun', { category: 'research', assignee_id: 'ag_omar', notes: [{ at: t(88), by: 'ag_omar', text: 'papaparse — see notes/csv.md' }] }),
-    C(3, 'in_progress', 1, 'CSV export for the ledger', { category: 'export', assignee_id: 'ag_james', details: 'Stream rows, RFC 4180 quoting.\n\n**Acceptance**\n- 50k rows export in < 3 s\n- commas, quotes, newlines round-trip\n- `GET /api/export?from=&to=`', notes: [{ at: t(150), by: 'ag_maya', text: 'assigned to @james' }, { at: t(75), by: 'ag_james', text: 'writer + 9 tests passing' }, { at: t(8), by: 'ag_james', text: 'endpoint streams; 14/14 tests' }] }),
-    C(4, 'review', 1, 'PR #41 review: export quoting + memory', { category: 'export', assignee_id: 'ag_iris', notes: [{ at: t(58), by: 'ag_maya', text: 'assigned to @iris' }, { at: t(19), by: 'system', text: '@iris crashed: out of memory on 50k rows' }] }),
-    C(5, 'todo', 1, 'Date-range picker on the ledger page', { category: 'ui' }),
-    C(6, 'in_progress', 2, 'Download CSV button', { category: 'ui', assignee_id: 'ag_leo', notes: [{ at: t(12), by: 'ag_maya', text: 'assigned to @leo (queued)' }] }),
-    C(7, 'todo', 2, 'Rate-limit /api/export', { category: 'server' }),
-    C(8, 'proposed', 1, 'Export as XLSX too', { category: 'export', created_by: 'ag_omar', details: 'papaparse can’t, but SheetJS streams. Users asked twice.' }),
-    C(9, 'proposed', 2, 'Progress header for long exports', { category: 'export', created_by: 'ag_james' }),
-    C(10, 'todo', 3, 'Docs: export API in README', { category: 'docs' }),
-    C(11, 'dropped', 1, 'PDF statements (out of scope for v1)', { category: 'export' }),
-    { ...C(12, 'todo', 1, 'README quickstart', { assignee_id: 'ag_ada' }), project_id: 'sparrow' },
-  ]
-
+  const cards: Card[] = seedCards(now)
 
   return { projects, agents, calls, messages, cards, nextSeq: () => ++seq }
 }
@@ -266,31 +251,34 @@ async function handle(req: Request): Promise<Response> {
     return json(list.slice(-limit))
   }
   if (p === '/api/cards' && req.method === 'GET') return json(db.cards.filter((c) => !project || c.project_id === project))
+  const ctx = () => ({
+    cards: db.cards,
+    agentHandle: (ref: string) => {
+      const h = ref.replace(/^@/, '')
+      const a = db.agents.find((x) => x.id === ref || x.handle === h)
+      return a ? { id: a.id, handle: a.handle } : null
+    },
+  })
   if (p === '/api/cards' && req.method === 'POST') {
     const b = body as CardCreateReq & { project?: string }
     if (!b?.title || !b.project) return err(400, 'title and project are required')
-    const inCol = db.cards.filter((c) => c.project_id === b.project && c.state === (b.state ?? 'todo'))
-    const card: Card = {
-      id: Math.max(...db.cards.map((c) => c.id)) + 1, project_id: b.project, title: b.title, details: b.details ?? '', category: b.category ?? null,
-      state: b.state ?? 'todo', position: Math.max(0, ...inCol.map((c) => c.position)) + 1, assignee_id: null, created_by: 'user', notes: [],
-      created_at: Date.now(), updated_at: Date.now(),
-    }
-    db.cards.push(card)
-    emit({ type: 'card.updated', project_id: card.project_id, card })
-    return json({ card })
+    const made = createCard(ctx(), b.project, b)
+    if (typeof made === 'string') return err(400, made)
+    db.cards.push(made)
+    emit({ type: 'card.updated', project_id: made.project_id, card: made })
+    return json({ card: made })
   }
-  if ((m = p.match(/^\/api\/cards\/(\d+)$/)) && req.method === 'PATCH') {
-    const card = db.cards.find((c) => c.id === Number(m![1]))
+  if ((m = p.match(/^\/api\/cards\/([^/]+)$/))) {
+    const id = parseCardRef(decodeURIComponent(m[1]))
+    const card = id == null ? undefined : db.cards.find((c) => c.id === id)
     if (!card) return err(404, 'no such card')
-    const b = (body ?? {}) as CardPatchReq
-    if (b.state) card.state = b.state
-    if (typeof b.position === 'number') card.position = b.position
-    if (b.title) card.title = b.title
-    if (typeof b.details === 'string') card.details = b.details
-    if (b.note) card.notes.push({ at: Date.now(), by: 'user', text: b.note })
-    card.updated_at = Date.now()
-    emit({ type: 'card.updated', project_id: card.project_id, card })
-    return json({ card })
+    if (req.method === 'GET') return json(card)
+    if (req.method === 'PATCH') {
+      const fail = patchCard({ ...ctx(), cards: db.cards }, card, (body ?? {}) as CardPatchReq)
+      if (fail) return err(400, fail)
+      emit({ type: 'card.updated', project_id: card.project_id, card })
+      return json({ card })
+    }
   }
   if (p === '/api/events') {
     let sub: Sub

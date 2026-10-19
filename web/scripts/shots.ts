@@ -1,6 +1,8 @@
 #!/usr/bin/env bun
 // Screenshots + drag proof against a running server that serves web/dist (the mock by default).
 //   bun scripts/shots.ts [--url http://127.0.0.1:4140] [--out ../.orchestra/shots/T4] [--project plutus] [--u1 | --u1-only]
+// --v2 runs only the Board v2 pass (compact/detailed board, Later, list, filters, sheets, new-ticket dialog + interaction checks);
+//   shots land in --out (use ../.orchestra/shots/board-v2 with --size 1440x900 / 1280x800 and --prefix).
 // --u1 adds the U1 pages (Doctor empty → running → results, Resumes, editor, test, Start captain); the mock must
 // start with no doctor run (no --doctor-done). --u1-only skips the board/chat/agents shots.
 // Prints a JSON summary: console errors, page errors, and the requests a drag produced.
@@ -13,7 +15,7 @@ const { values } = parseArgs({
   args: Bun.argv.slice(2),
   options: {
     url: { type: 'string' }, out: { type: 'string' }, project: { type: 'string' }, 'no-drag': { type: 'boolean' }, prefix: { type: 'string' },
-    card: { type: 'string' }, u1: { type: 'boolean' }, 'u1-only': { type: 'boolean' }, dm: { type: 'string' }, dm2: { type: 'string' }, agent: { type: 'string' }, agent2: { type: 'string' }, dm3: { type: 'string' }, size: { type: 'string' },
+    card: { type: 'string' }, v2: { type: 'boolean' }, u1: { type: 'boolean' }, 'u1-only': { type: 'boolean' }, dm: { type: 'string' }, dm2: { type: 'string' }, agent: { type: 'string' }, agent2: { type: 'string' }, dm3: { type: 'string' }, size: { type: 'string' },
   },
 })
 const URL_ = values.url ?? 'http://127.0.0.1:4140'
@@ -66,7 +68,7 @@ const clickText = async (text: string) => {
 let drag: unknown = 'skipped'
 const u1: Record<string, unknown> = {}
 
-if (!values['u1-only']) {
+if (!values['u1-only'] && !values.v2) {
 // Board
 await go('board')
 await page.waitForSelector('[data-card-id]', { timeout: 8000 })
@@ -149,6 +151,180 @@ await sleep(900)
 await shot('agents-peek-crashed')
 }
 
+const v2: Record<string, unknown> = {}
+if (values.v2) {
+  const isMock = await fetch(`${URL_}/__log`).then((r) => r.ok).catch(() => false)
+  const writes = async () => (isMock ? ((await fetch(`${URL_}/__log`).then((r) => r.json())) as { method: string; path: string; body?: unknown }[]).filter((l) => l.method !== 'GET') : [])
+  const reset = () => (isMock ? fetch(`${URL_}/__log/reset`, { method: 'POST' }) : Promise.resolve())
+  const click = (sel: string) => page.evaluate((x) => { const e = document.querySelector(x) as HTMLElement | null; e?.click(); return !!e }, sel)
+  const closeOverlays = async () => { await page.keyboard.press('Escape'); await sleep(250); await page.keyboard.press('Escape'); await sleep(350) }
+  const openCard = async (id: number | string) => { await page.click(`[data-card-id="${id}"]`); await sleep(800) }
+  const count = (sel: string) => page.$$eval(sel, (e) => e.length)
+
+  await go('board')
+  await page.waitForSelector('[data-card-id]', { timeout: 8000 })
+  await sleep(300)
+  await shot('board-compact')
+  await click('[data-seg=detailed]')
+  await sleep(400)
+  await shot('board-detailed')
+  await click('[data-seg=compact]')
+  // Later expanded (To do and Proposed)
+  await click('[data-testid=later-todo]')
+  await click('[data-testid=later-proposed]')
+  await sleep(400)
+  await page.evaluate(() => document.querySelectorAll('[data-later-line]').forEach((e) => e.scrollIntoView({ block: 'center' })))
+  await sleep(300)
+  await shot('board-later-expanded')
+  v2.laterRows = await count('[data-later=true]')
+  await click('[data-testid=later-todo]')
+  await click('[data-testid=later-proposed]')
+  // List view
+  await click('[data-seg=list]')
+  await sleep(500)
+  await shot('list-view')
+  await click('[data-seg=board]')
+  await sleep(300)
+  // Insights popover and the Dropped column
+  await click('[data-testid=insights]')
+  await sleep(500)
+  await shot('insights')
+  await page.keyboard.press('Escape')
+  await sleep(300)
+  await click('[data-testid=toggle-dropped]')
+  await sleep(400)
+  await shot('board-dropped')
+  v2.droppedCards = await page.$$eval('[data-column="dropped"]', (e) => e.length)
+  await click('[data-testid=toggle-dropped]')
+  await sleep(300)
+  // Filters: urgent + category, with a search term
+  await click('[data-filter=urgent]')
+  await sleep(300)
+  await shot('filters-urgent')
+  v2.urgentCards = await count('[data-card-id]')
+  await click('[data-filter=urgent]')
+  await page.focus('[data-testid=search]').catch(() => {})
+  await page.keyboard.press('Escape')
+  await page.keyboard.press('/')
+  await page.keyboard.type('export')
+  await sleep(300)
+  await click('[data-filter=category]')
+  await sleep(300)
+  await shot('filters-active')
+  v2.searchExport = await count('[data-card-id]')
+  await page.keyboard.press('Escape')
+  await sleep(200)
+  await click('[data-testid=clear-filters]')
+  await sleep(300)
+  // Sheets
+  await openCard(13)
+  await shot('sheet-proposed')
+  await page.$eval('[data-sheet-body]', (e) => { e.scrollTop = 99999 }).catch(() => {})
+  await sleep(300)
+  await shot('sheet-proposed-bottom')
+  await closeOverlays()
+  await openCard(21)
+  await shot('sheet-blocked')
+  await closeOverlays()
+  await openCard(27)
+  await shot('sheet-done')
+  await page.$eval('[data-sheet-body]', (e) => { e.scrollTop = 99999 }).catch(() => {})
+  await sleep(300)
+  await shot('sheet-done-bottom')
+  await closeOverlays()
+  // New ticket dialog (shortcut n)
+  await page.keyboard.press('n')
+  await sleep(700)
+  await shot('new-ticket-dialog')
+  await closeOverlays()
+
+  // Interactions that PATCH: each must produce exactly one write.
+  const checks: Record<string, unknown> = {}
+  // 1. drag To do -> Review
+  const dragTo = async (from: string, to: { x: number; y: number }) => {
+    const a = await center(page, from)
+    await page.mouse.move(a.x, a.y)
+    await page.mouse.down()
+    for (let i = 1; i <= 25; i++) { await page.mouse.move(a.x + ((to.x - a.x) * i) / 25, a.y + ((to.y - a.y) * i) / 25); await sleep(16) }
+    await sleep(150)
+  }
+  const drop = async () => { await page.mouse.up(); await sleep(1000) }
+  const colBox = (id: string) => page.$eval(`[data-column="${id}"]`, (e) => { const r = e.getBoundingClientRect(); return { x: r.x, w: r.width, y: r.y, h: r.height } })
+  await reset()
+  const review = await colBox('review')
+  await dragTo('[data-card-id="7"]', { x: review.x + review.w / 2, y: review.y + 300 })
+  await drop()
+  checks.dragWrites = await writes()
+  await shot('board-after-drag')
+  // 1b. drag a To do card onto the Later line (shelves it, one PATCH)
+  await reset()
+  const line = await page.$eval('[data-later-line="todo"]', (e) => { const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 } })
+  await dragTo('[data-card-id="10"]', line)
+  await shot('board-drag-to-later')
+  await drop()
+  checks.dragToLaterWrites = await writes()
+  // 1c. a shelved card can be dragged out of Later into another column
+  await click('[data-testid=later-todo]')
+  await sleep(400)
+  await reset()
+  const inprog = await colBox('in_progress')
+  await dragTo('[data-card-id="22"]', { x: inprog.x + inprog.w / 2, y: inprog.y + 200 })
+  await drop()
+  checks.dragOutOfLaterWrites = await writes()
+  await click('[data-testid=later-todo]')
+  // 1d. same-column reorder under a non-manual sort is a no-op (no write)
+  await click('[data-testid=sort]')
+  await sleep(300)
+  const opt = await page.evaluateHandle(() => [...document.querySelectorAll('[role=option]')].find((o) => o.textContent?.includes('Newest first')) ?? null)
+  await (opt.asElement() as import('puppeteer-core').ElementHandle<Element> | null)?.click()
+  await sleep(500)
+  await reset()
+  const todoBox = await colBox('todo')
+  const ids = await page.evaluate((x0: number, x1: number) => [...document.querySelectorAll('[data-card-id]')].filter((el) => { const r = el.getBoundingClientRect(); return r.x >= x0 && r.x < x1 }).slice(0, 3).map((el) => el.getAttribute('data-card-id')), todoBox.x, todoBox.x + todoBox.w)
+  const third = await page.$eval(`[data-card-id="${ids[2]}"]`, (e) => { const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 } })
+  await dragTo(`[data-card-id="${ids[0]}"]`, third)
+  await drop()
+  checks.sameColumnNonManualWrites = await writes()
+  await click('[data-testid=sort]')
+  await sleep(300)
+  const manual = await page.evaluateHandle(() => [...document.querySelectorAll('[role=option]')].find((o) => o.textContent?.includes('Manual order')) ?? null)
+  await (manual.asElement() as import('puppeteer-core').ElementHandle<Element> | null)?.click()
+  await sleep(400)
+  // 2. hover Accept on a proposed card
+  await reset()
+  await page.hover('[data-card-id="13"]')
+  await sleep(250)
+  await shot('card-hover-actions')
+  await click('[data-card-id="13"] [data-action="Accept to To do"]')
+  await sleep(800)
+  checks.acceptWrites = await writes()
+  // 3. hover Later on a to-do card
+  await reset()
+  await click('[data-card-id="24"] [data-action="Move to Later"]')
+  await sleep(800)
+  checks.laterWrites = await writes()
+  await sleep(200)
+  // 4. Enter on a focused card opens it
+  await page.focus('[data-kanban-item="5"]')
+  await page.keyboard.press('Enter')
+  await sleep(700)
+  checks.enterOpensSheet = !!(await page.$('[data-ticket-sheet]'))
+  await closeOverlays()
+  // 5. view / density / sort persisted across a reload
+  await click('[data-seg=detailed]')
+  await click('[data-seg=list]')
+  await sleep(300)
+  await page.reload({ waitUntil: 'networkidle2' })
+  await sleep(700)
+  checks.persisted = await page.evaluate(() => ({
+    list: !!document.querySelector('[data-testid=board-list], [data-testid=list]'),
+    detailed: document.querySelector('[data-seg=detailed]')?.getAttribute('aria-pressed'),
+  }))
+  await click('[data-seg=board]')
+  await click('[data-seg=compact]')
+  v2.checks = checks
+}
+
 if (values.u1 || values['u1-only']) {
   const text = (sel: string) => page.$eval(sel, (e) => e.textContent ?? '').catch(() => null)
   const hash = async (h: string) => { await page.goto(`${URL_}/#/${h}`, { waitUntil: 'networkidle2' }).catch(() => {}); await sleep(700) }
@@ -229,4 +405,4 @@ if (values.u1 || values['u1-only']) {
 }
 
 await browser.close()
-console.log(JSON.stringify({ out: OUT, consoleErrors, pageErrors, drag, u1 }, null, 2))
+console.log(JSON.stringify({ out: OUT, consoleErrors, pageErrors, drag, u1, v2 }, null, 2))
