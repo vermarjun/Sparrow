@@ -233,8 +233,8 @@ export function Toolbar({ prefs, update, categories, agents, captains, summary, 
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 px-4 pt-3 pb-3" data-testid="toolbar">
       <Title summary={summary} prefs={prefs} update={update} captains={captains} />
-      <div className="ml-auto flex shrink-0 items-center gap-2">
-        <div className="relative">
+      <div className="ml-auto flex max-w-full min-w-0 flex-wrap items-center gap-2">
+        <div className="relative max-sm:basis-full">
           <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground/70" />
           <input
             ref={searchRef}
@@ -244,7 +244,7 @@ export function Toolbar({ prefs, update, categories, agents, captains, summary, 
             placeholder="Search"
             aria-label="Search tickets"
             data-testid="search"
-            className="h-7 w-36 rounded-lg border border-border bg-background pr-8 pl-7 text-xs outline-none placeholder:text-muted-foreground/70 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/40"
+            className="h-7 w-36 max-sm:w-full rounded-lg border border-border bg-background pr-8 pl-7 text-xs outline-none placeholder:text-muted-foreground/70 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/40"
           />
           {f.q ? (
             <button type="button" aria-label="Clear search" onClick={() => setF({ q: '' })} className="absolute top-1/2 right-1.5 grid size-4 -translate-y-1/2 place-items-center rounded text-muted-foreground/70 hover:text-foreground/80"><X className="size-3" /></button>
@@ -257,7 +257,7 @@ export function Toolbar({ prefs, update, categories, agents, captains, summary, 
 
         {prefs.view === 'board' && (
           <Select value={prefs.sort} onValueChange={(v) => update((p) => ({ ...p, sort: v as CardSort }))}>
-            <SelectTrigger size="sm" aria-label="Sort" data-testid="sort" className="h-7 w-auto gap-1.5 bg-background text-xs [&_svg:not([class*='size-'])]:size-3.5">
+            <SelectTrigger size="sm" aria-label="Sort" data-testid="sort" className="h-7 w-auto gap-1.5 bg-background text-xs max-sm:hidden [&_svg:not([class*='size-'])]:size-3.5">
               <ArrowUpDown className="text-muted-foreground/70" />
               <SelectValue />
             </SelectTrigger>
@@ -274,7 +274,7 @@ export function Toolbar({ prefs, update, categories, agents, captains, summary, 
           options={[{ id: 'board', label: 'Board', icon: <Columns3 className="size-3.5" /> }, { id: 'list', label: 'List', icon: <List className="size-3.5" /> }]}
         />
         <Button size="sm" data-testid="new-ticket" onClick={onNew}>
-          <Plus /> New ticket
+          <Plus /> <span className="max-sm:sr-only">New ticket</span>
         </Button>
       </div>
     </div>
