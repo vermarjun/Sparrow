@@ -12,7 +12,7 @@ import { useStore } from '@/lib/store'
 import { cn } from '@/lib/utils'
 import { focusRing } from './pickers'
 
-const VERDICT = { ok: 'text-emerald-700', warn: 'text-amber-700', bad: 'text-amber-800', none: 'text-zinc-500' } as const
+const VERDICT = { ok: 'text-emerald-700 dark:text-emerald-300', warn: 'text-amber-700 dark:text-amber-300', bad: 'text-amber-800 dark:text-amber-300', none: 'text-muted-foreground' } as const
 
 function dayAndTime(at: number) {
   const full = fullDate(at) // 17 Oct 2026, 05:39
@@ -35,14 +35,14 @@ export function Timing({ card, now }: { card: Card; now: number }) {
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
-        className={cn('-mx-1.5 flex w-[calc(100%+0.75rem)] items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-[13px] text-zinc-500 transition-colors hover:bg-zinc-900/[0.04]', focusRing)}
+        className={cn('-mx-1.5 flex w-[calc(100%+0.75rem)] items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-[13px] text-muted-foreground transition-colors hover:bg-foreground/[0.04]', focusRing)}
       >
-        <ChevronRight className={cn('size-3.5 shrink-0 text-zinc-400 transition-transform', open && 'rotate-90')} aria-hidden />
+        <ChevronRight className={cn('size-3.5 shrink-0 text-muted-foreground/70 transition-transform', open && 'rotate-90')} aria-hidden />
         <span className="min-w-0 truncate" data-timing-line>
-          {card.estimate_min ? <>Est <b className="font-medium text-zinc-800">{v.estimate}</b> · </> : null}
-          Build <b className="font-medium text-zinc-800">{v.build}</b>
+          {card.estimate_min ? <>Est <b className="font-medium text-foreground">{v.estimate}</b> · </> : null}
+          Build <b className="font-medium text-foreground">{v.build}</b>
           {v.verdict && <span className={cn('font-medium', VERDICT[v.tone])}> ({v.verdict})</span>}
-          {v.review !== '—' && <> · Review <b className="font-medium text-zinc-800">{v.review}</b></>}
+          {v.review !== '—' && <> · Review <b className="font-medium text-foreground">{v.review}</b></>}
           {v.reopened > 0 && <span data-reopened> · reopened {v.reopened}×</span>}
         </span>
       </button>
@@ -56,16 +56,16 @@ export function Timing({ card, now }: { card: Card; now: number }) {
               return (
                 <li key={m.key} data-milestone={m.key} data-reached={on} className="relative min-w-0">
                   <div className="flex items-center">
-                    <span className={cn('relative z-10 size-2.5 shrink-0 rounded-full', on ? COLUMN_BY_STATE[DOT[m.key]].dot : 'border border-zinc-300 bg-white')} aria-hidden />
-                    {i < v.milestones.length - 1 && <span className={cn('h-px flex-1', i + 1 < reached ? 'bg-zinc-300' : 'border-t border-dashed border-zinc-300')} aria-hidden />}
+                    <span className={cn('relative z-10 size-2.5 shrink-0 rounded-full', on ? COLUMN_BY_STATE[DOT[m.key]].dot : 'border border-border bg-background')} aria-hidden />
+                    {i < v.milestones.length - 1 && <span className={cn('h-px flex-1', i + 1 < reached ? 'bg-muted-foreground/30' : 'border-t border-dashed border-border')} aria-hidden />}
                   </div>
-                  <div className={cn('mt-1.5 text-[12px] font-medium', on ? 'text-zinc-800' : 'text-zinc-400')}>{m.label}</div>
+                  <div className={cn('mt-1.5 text-[12px] font-medium', on ? 'text-foreground' : 'text-muted-foreground/70')}>{m.label}</div>
                   {t ? (
-                    <div className="text-[11.5px] leading-snug text-zinc-500 tabular-nums">
+                    <div className="text-[11.5px] leading-snug text-muted-foreground tabular-nums">
                       <div>{t.day}</div>
-                      <div>{t.time}{m.by && m.by !== 'user' ? <span className="text-zinc-400"> · {who(m.by)}</span> : null}</div>
+                      <div>{t.time}{m.by && m.by !== 'user' ? <span className="text-muted-foreground/70"> · {who(m.by)}</span> : null}</div>
                     </div>
-                  ) : <div className="text-[11.5px] text-zinc-400">not yet</div>}
+                  ) : <div className="text-[11.5px] text-muted-foreground/70">not yet</div>}
                 </li>
               )
             })}
@@ -73,7 +73,7 @@ export function Timing({ card, now }: { card: Card; now: number }) {
 
           {v.segments.length > 0 && (
             <div className="mt-3.5">
-              <div className="flex h-2 w-full gap-px overflow-hidden rounded-full bg-zinc-100" role="img" aria-label={`Time in each stage: ${v.segments.map((s) => s.label).join(', ')}`} data-timing-bar>
+              <div className="flex h-2 w-full gap-px overflow-hidden rounded-full bg-muted" role="img" aria-label={`Time in each stage: ${v.segments.map((s) => s.label).join(', ')}`} data-timing-bar>
                 {v.segments.map((s) => (
                   <Tip key={s.state} label={s.label}>
                     <span className={cn('block h-full min-w-[3px]', COLUMN_BY_STATE[s.state].bar)} style={{ width: `${s.pct}%` }} data-segment={s.state} />
@@ -82,7 +82,7 @@ export function Timing({ card, now }: { card: Card; now: number }) {
               </div>
               <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
                 {v.segments.map((s) => (
-                  <li key={s.state} className="inline-flex items-center gap-1.5 text-[12px] text-zinc-600">
+                  <li key={s.state} className="inline-flex items-center gap-1.5 text-[12px] text-muted-foreground">
                     <span className={cn('size-2 rounded-[3px]', COLUMN_BY_STATE[s.state].bar)} aria-hidden />
                     {s.label}
                   </li>

@@ -53,7 +53,7 @@ export function TicketSheet({ cardId, onClose, categories, mode = 'sheet' }: { c
   if (mode === 'pane') {
     if (!card) return null
     return (
-      <div data-ticket-sheet data-mode="pane" className="flex h-full min-h-0 w-full flex-col bg-white">
+      <div data-ticket-sheet data-mode="pane" className="flex h-full min-h-0 w-full flex-col bg-background">
         <SheetInner key={card.id} card={card} now={now} categories={categories} />
       </div>
     )
@@ -71,7 +71,7 @@ export function TicketSheet({ cardId, onClose, categories, mode = 'sheet' }: { c
           const a = document.activeElement
           if (a instanceof HTMLElement && (a.matches('input, textarea') || a.isContentEditable) && content.current?.contains(a)) e.preventDefault()
         }}
-        className="gap-0 bg-white p-0 data-[side=right]:w-[min(720px,100vw)] data-[side=right]:sm:max-w-[720px]"
+        className="gap-0 bg-background p-0 data-[side=right]:w-[min(720px,100vw)] data-[side=right]:sm:max-w-[720px]"
       >
         {card && (
           <>

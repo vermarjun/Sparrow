@@ -8,9 +8,9 @@ describe('sanitizePrefs', () => {
     expect(sanitizePrefs({ sort: 'bogus', view: [], list: { key: 'nope', dir: 3 }, filters: { categories: [1, 'UI'] } }).sort).toBe('manual')
   })
   test('valid values survive; categories are lowercased; q is dropped', () => {
-    const p = sanitizePrefs({ sort: 'roi', view: 'list', showDropped: true, laterOpen: { todo: true }, filters: { q: 'abc', urgent: true, categories: ['UI', 5], assignee: 'ag_1' }, list: { key: 'age', dir: 'desc' } })
+    const p = sanitizePrefs({ sort: 'roi', view: 'list', showDropped: true, laterOpen: { todo: true }, filters: { q: 'abc', urgent: true, categories: ['UI', 5], assignee: 'ag_1', captain: 7 }, list: { key: 'age', dir: 'desc' } })
     expect(p).toMatchObject({ sort: 'roi', view: 'list', showDropped: true, laterOpen: { proposed: false, todo: true }, list: { key: 'age', dir: 'desc' } })
-    expect(p.filters).toEqual({ q: '', urgent: true, blocked: false, quick: false, categories: ['ui'], assignee: 'ag_1', state: null })
+    expect(p.filters).toEqual({ q: '', urgent: true, blocked: false, quick: false, categories: ['ui'], assignee: 'ag_1', captain: null, state: null })
   })
 })
 

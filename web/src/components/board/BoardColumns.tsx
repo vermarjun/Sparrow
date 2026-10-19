@@ -37,19 +37,19 @@ const typingIn = (el: EventTarget | null) => {
 function LaterLine({ state, count, oldest, open, dragging, onToggle }: { state: CardState; count: number; oldest: string; open: boolean; dragging: boolean; onToggle: () => void }) {
   const { setNodeRef, isOver } = useDroppable({ id: laterZoneId(state) })
   return (
-    <div ref={setNodeRef} className={cn('mx-0.5 my-1.5 rounded-md transition-colors', isOver && 'bg-slate-300/50 ring-2 ring-slate-400/60')} data-later-line={state}>
+    <div ref={setNodeRef} className={cn('mx-0.5 my-1.5 rounded-md transition-colors', isOver && 'bg-foreground/10 ring-2 ring-ring/60')} data-later-line={state}>
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={open}
         data-testid={`later-${state}`}
-        className="flex w-full items-center gap-2 rounded-md px-1 py-1.5 text-[11px] font-medium text-slate-500 hover:text-slate-700 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+        className="flex w-full items-center gap-2 rounded-md px-1 py-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground/75 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
       >
-        <span className="h-px flex-1 border-t border-dashed border-slate-300" />
+        <span className="h-px flex-1 border-t border-dashed border-border" />
         <ChevronRight className={cn('size-3 transition-transform', open && 'rotate-90')} />
         <Moon className="size-3" />
         {dragging && count === 0 ? 'Drop here to shelve' : `Later · ${count}${oldest ? ` · ${oldest}` : ''}`}
-        <span className="h-px flex-1 border-t border-dashed border-slate-300" />
+        <span className="h-px flex-1 border-t border-dashed border-border" />
       </button>
     </div>
   )
@@ -57,12 +57,12 @@ function LaterLine({ state, count, oldest, open, dragging, onToggle }: { state: 
 
 /** Column header count: plain number, the planning numbers live in its tooltip. On Proposed it opens Triage mode. */
 function HeaderCount({ column, count, lines, onClick }: { column: CardState; count: number; lines: string[]; onClick?: () => void }) {
-  const cls = 'min-w-4 text-[12px] font-medium text-zinc-400 tabular-nums outline-none focus-visible:rounded focus-visible:ring-2 focus-visible:ring-ring/50'
+  const cls = 'min-w-4 text-[12px] font-medium text-muted-foreground/70 tabular-nums outline-none focus-visible:rounded focus-visible:ring-2 focus-visible:ring-ring/50'
   const tip = <span className="flex flex-col">{lines.map((l) => <span key={l}>{l}</span>)}{onClick && <span className="mt-0.5 opacity-70">Click to triage</span>}</span>
   return (
     <Tip label={tip}>
       {onClick
-        ? <button type="button" onClick={onClick} className={cn(cls, 'cursor-pointer hover:text-zinc-700')} data-count={column} data-testid="triage-count">{count}</button>
+        ? <button type="button" onClick={onClick} className={cn(cls, 'cursor-pointer hover:text-foreground/80')} data-count={column} data-testid="triage-count">{count}</button>
         : <span tabIndex={0} className={cls} data-count={column}>{count}</span>}
     </Tip>
   )
@@ -230,8 +230,8 @@ export function BoardColumns({ groups, columns, prefs, sort, agents, now, act, o
                         <KanbanCard<DragItem>
                           {...item}
                           onActivate={() => onOpen(card.id)}
-                          overlayClassName="scale-[1.02] rotate-[0.6deg] border-zinc-300 shadow-xl"
-                          className={cn('gap-0 rounded-lg border border-zinc-200 bg-white p-0 shadow-none ring-0 transition-colors hover:border-zinc-300', item.later && 'border-dashed bg-zinc-50 hover:bg-white', item.cardId === focusId && 'kb-focus ring-2 ring-indigo-500 ring-offset-1 ring-offset-white')}
+                          overlayClassName="scale-[1.02] rotate-[0.6deg] border-border shadow-xl"
+                          className={cn('gap-0 rounded-lg border border-border bg-card p-0 shadow-none ring-0 transition-colors hover:border-border', item.later && 'border-dashed bg-muted/50 hover:bg-background', item.cardId === focusId && 'kb-focus ring-2 ring-indigo-500 ring-offset-1 ring-offset-background')}
                         >
                           <CardFace card={card} agents={agents} now={now} act={act} onOpen={() => onOpen(card.id)} peekPinned={pinnedId === card.id} onPeekClose={() => setPeekFor(null)} peekDisabled={dragging} />
                         </KanbanCard>
@@ -240,7 +240,7 @@ export function BoardColumns({ groups, columns, prefs, sort, agents, now, act, o
                   }}
                 </KanbanCards>
                 {colItems.length === 0 && g.later.length === 0 && (
-                  <p className="px-4 pt-2 pb-4 text-center text-[12px] leading-relaxed text-zinc-400" data-empty={column.id}>{emptyText ?? EMPTY_TEXT[state]}</p>
+                  <p className="px-4 pt-2 pb-4 text-center text-[12px] leading-relaxed text-muted-foreground/70" data-empty={column.id}>{emptyText ?? EMPTY_TEXT[state]}</p>
                 )}
                 {hasLater && !inlineLine && (
                   <div className="px-2 pb-2">
@@ -252,7 +252,7 @@ export function BoardColumns({ groups, columns, prefs, sort, agents, now, act, o
                     type="button"
                     onClick={onShowOlderDone}
                     data-testid="done-older"
-                    className="mx-auto mt-1 mb-2.5 flex items-center gap-1 rounded-md px-2 py-1 text-[11.5px] font-medium text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                    className="mx-auto mt-1 mb-2.5 flex items-center gap-1 rounded-md px-2 py-1 text-[11.5px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
                   >
                     {older} older<ChevronRight className="size-3" />
                   </button>

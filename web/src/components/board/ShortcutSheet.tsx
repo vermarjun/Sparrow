@@ -13,12 +13,12 @@ export function ShortcutSheet({ open, onOpenChange }: { open: boolean; onOpenCha
         <div className="grid gap-4">
           {SHORTCUT_GROUPS.map((g) => (
             <section key={g.title} aria-label={g.title}>
-              <h3 className="mb-1.5 text-[11px] font-medium text-zinc-400">{g.title}</h3>
+              <h3 className="mb-1.5 text-[11px] font-medium text-muted-foreground/70">{g.title}</h3>
               <dl className="grid grid-cols-[8.5rem_1fr] items-center gap-y-1.5 text-xs">
                 {g.keys.map(([keys, what]) => (
                   <div key={keys} className="contents">
-                    <dt><kbd className="rounded border border-zinc-200 bg-zinc-50 px-1.5 py-px font-mono text-[11px] whitespace-nowrap text-zinc-600">{keys}</kbd></dt>
-                    <dd className="text-zinc-700">{what}</dd>
+                    <dt><kbd className="rounded border border-border bg-muted/50 px-1.5 py-px font-mono text-[11px] whitespace-nowrap text-muted-foreground">{keys}</kbd></dt>
+                    <dd className="text-foreground/80">{what}</dd>
                   </div>
                 ))}
               </dl>

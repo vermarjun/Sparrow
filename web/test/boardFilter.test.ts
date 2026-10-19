@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { NO_FILTERS, cardMatches, categoriesOf, filterCards, groupColumns, hasFilters, isShelved, matchesQuery, orderColumn, popoverFilterCount, summarize, summaryCounts, summaryText } from '../src/lib/boardFilter'
+import { NO_FILTERS, cardMatches, fleetResolver, categoriesOf, filterCards, groupColumns, hasFilters, isShelved, matchesQuery, orderColumn, popoverFilterCount, summarize, summaryCounts, summaryText } from '../src/lib/boardFilter'
 import { DAY, mkCard } from './cardFixtures'
 
 describe('search', () => {
@@ -144,6 +144,39 @@ describe('state filter ("N older" opens the List on Done)', () => {
     const f = { ...NO_FILTERS, state: 'done' as const }
     expect(filterCards(cards, f).map((c) => c.id)).toEqual([1, 3])
     expect(hasFilters(f)).toBe(true)
+  })
+})
+
+describe('captain filter', () => {
+  // cap1 and its hires h1, h2 are one fleet; cap2 and h3 another. Card 5 is assigned to the captain itself.
+  const agents = {
+    cap1: { id: 'cap1', fleet_id: 'cap1' }, h1: { id: 'h1', fleet_id: 'cap1' }, h2: { id: 'h2', fleet_id: 'cap1' },
+    cap2: { id: 'cap2', fleet_id: 'cap2' }, h3: { id: 'h3', fleet_id: 'cap2' },
+  }
+  const fleetOf = fleetResolver(agents)
+  const cards = [
+    mkCard(1, { assignee_id: 'h1' }), mkCard(2, { assignee_id: 'h2' }), mkCard(3, { assignee_id: 'h3' }),
+    mkCard(4), mkCard(5, { assignee_id: 'cap1' }), mkCard(6, { assignee_id: 'gone' }),
+  ]
+  const ids = (f: Partial<typeof NO_FILTERS>, fl?: typeof fleetOf) => filterCards(cards, { ...NO_FILTERS, ...f }, fl).map((c) => c.id)
+  test('keeps tickets assigned to anyone in that captain\'s fleet, the captain included', () => {
+    expect(ids({ captain: 'cap1' }, fleetOf)).toEqual([1, 2, 5])
+    expect(ids({ captain: 'cap2' }, fleetOf)).toEqual([3])
+  })
+  test('unassigned tickets and unknown assignees never match', () => {
+    expect(ids({ captain: 'cap1' }, fleetOf)).not.toContain(4)
+    expect(ids({ captain: 'cap1' }, fleetOf)).not.toContain(6)
+  })
+  test('anyone (null) keeps everything', () => { expect(ids({ captain: null }, fleetOf)).toEqual([1, 2, 3, 4, 5, 6]) })
+  test('without a resolver only the captain\'s own tickets match', () => { expect(ids({ captain: 'cap1' })).toEqual([5]) })
+  test('combines with the other filters, counts as one popover setting, and is a filter', () => {
+    expect(ids({ captain: 'cap1', assignee: 'h2' }, fleetOf)).toEqual([2])
+    expect(ids({ captain: 'cap2', assignee: 'h2' }, fleetOf)).toEqual([])
+    expect(hasFilters({ ...NO_FILTERS, captain: 'cap1' })).toBe(true)
+    expect(popoverFilterCount({ ...NO_FILTERS, captain: 'cap1' }, false)).toBe(1)
+  })
+  test('summary counts follow the captain filter', () => {
+    expect(summaryCounts(cards, { ...NO_FILTERS, captain: 'cap1' }, fleetOf)).toMatchObject({ total: 6, shown: 3 })
   })
 })
 

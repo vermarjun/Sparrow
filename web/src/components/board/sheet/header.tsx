@@ -64,11 +64,11 @@ function CopySplit({ card }: { card: Card }) {
     setDone(true)
     setTimeout(() => setDone(false), 1400)
   }
-  const edge = 'h-8 border border-zinc-300 bg-white text-zinc-700 transition-colors hover:bg-zinc-50'
+  const edge = 'h-8 border border-border bg-background text-foreground/80 transition-colors hover:bg-muted/50'
   return (
     <span className="inline-flex" data-copy-split>
       <button type="button" onClick={copyBrief} className={cn(edge, 'inline-flex items-center gap-1.5 rounded-l-lg px-2.5 text-[12.5px] font-medium', focusRing)}>
-        {done ? <Check className="size-3.5 text-emerald-600" aria-hidden /> : <ClipboardCopy className="size-3.5" aria-hidden />}
+        {done ? <Check className="size-3.5 text-emerald-600 dark:text-emerald-300" aria-hidden /> : <ClipboardCopy className="size-3.5" aria-hidden />}
         <span className="max-sm:hidden">Copy for agent</span>
       </button>
       <DropdownMenu>
@@ -94,7 +94,7 @@ function MoreMenu({ card, onAskBlock }: { card: Card; onAskBlock: () => void }) 
     <DropdownMenu>
       <Tip label="More actions">
         <DropdownMenuTrigger asChild>
-          <button type="button" aria-label="More actions" data-more-menu className={cn('inline-flex size-8 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-800 data-[state=open]:bg-zinc-100', focusRing)}><Ellipsis className="size-4" aria-hidden /></button>
+          <button type="button" aria-label="More actions" data-more-menu className={cn('inline-flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground data-[state=open]:bg-muted', focusRing)}><Ellipsis className="size-4" aria-hidden /></button>
         </DropdownMenuTrigger>
       </Tip>
       <DropdownMenuContent
@@ -110,7 +110,7 @@ function MoreMenu({ card, onAskBlock }: { card: Card; onAskBlock: () => void }) 
       >
         {live && (
           <DropdownMenuItem data-menu="urgent" onSelect={() => void patchCard(card.id, { urgent: !card.urgent })}>
-            <Flame className={card.urgent ? 'text-red-600' : undefined} />{card.urgent ? 'Remove urgent' : 'Mark urgent'}
+            <Flame className={card.urgent ? 'text-red-600 dark:text-red-300' : undefined} />{card.urgent ? 'Remove urgent' : 'Mark urgent'}
           </DropdownMenuItem>
         )}
         {live && (
@@ -140,9 +140,9 @@ function KeyCopy({ text }: { text: string }) {
         type="button"
         aria-label="Copy key"
         onClick={async () => { if (await copyText(text)) { setDone(true); setTimeout(() => setDone(false), 1200) } }}
-        className={cn('rounded-md p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700', focusRing)}
+        className={cn('rounded-md p-1 text-muted-foreground/70 hover:bg-muted hover:text-foreground/80', focusRing)}
       >
-        {done ? <Check className="size-3.5 text-emerald-600" /> : <Copy className="size-3.5" />}
+        {done ? <Check className="size-3.5 text-emerald-600 dark:text-emerald-300" /> : <Copy className="size-3.5" />}
       </button>
     </Tip>
   )
@@ -152,10 +152,10 @@ function KeyCopy({ text }: { text: string }) {
 export function SheetHeader({ card, onClose, onAskBlock }: { card: Card; onClose?: () => void; onAskBlock: () => void }) {
   const key = cardKey(card)
   return (
-    <header className="shrink-0 border-b border-zinc-200/80 bg-white px-6 py-3">
+    <header className="shrink-0 border-b border-border/80 bg-background px-6 py-3">
       <div className="flex items-center gap-2">
         <span className="inline-flex items-center gap-0.5">
-          <span className="font-mono text-[13px] font-semibold tracking-tight whitespace-nowrap text-zinc-700" data-card-key>{key}</span>
+          <span className="font-mono text-[13px] font-semibold tracking-tight whitespace-nowrap text-foreground/80" data-card-key>{key}</span>
           <KeyCopy text={key} />
         </span>
         <StateMenu card={card} />
@@ -164,7 +164,7 @@ export function SheetHeader({ card, onClose, onAskBlock }: { card: Card; onClose
           <MoreMenu card={card} onAskBlock={onAskBlock} />
           {onClose && (
             <Tip label="Close (Esc)">
-              <Button type="button" variant="ghost" size="icon-sm" aria-label="Close" onClick={onClose} className="size-8 text-zinc-500"><X /></Button>
+              <Button type="button" variant="ghost" size="icon-sm" aria-label="Close" onClick={onClose} className="size-8 text-muted-foreground"><X /></Button>
             </Tip>
           )}
         </span>
@@ -175,14 +175,14 @@ export function SheetHeader({ card, onClose, onAskBlock }: { card: Card; onClose
 
 export function Title({ card }: { card: Card }) {
   return (
-    <InlineText value={card.title} label="title" onSave={(title) => patchCard(card.id, { title })} className="text-[22px] leading-[1.25] font-semibold tracking-tight text-zinc-900" placeholder="Untitled ticket" />
+    <InlineText value={card.title} label="title" onSave={(title) => patchCard(card.id, { title })} className="text-[22px] leading-[1.25] font-semibold tracking-tight text-foreground" placeholder="Untitled ticket" />
   )
 }
 
 /** Orange banner with the hatched rail, only while blocked (or while being asked "blocked on…"). The one place "blocked" is written. */
 export function BlockedBanner({ card, now, asking, onDoneAsking }: { card: Card; now: number; asking: boolean; onDoneAsking: () => void }) {
   if (!card.blocked_on && !asking) return null
-  const shell = 'relative flex items-center gap-3 overflow-hidden rounded-lg border border-orange-200 bg-orange-50/70 py-2.5 pr-3 pl-5 text-orange-950'
+  const shell = 'relative flex items-center gap-3 overflow-hidden rounded-lg border border-orange-200 dark:border-orange-500/30 bg-orange-50/70 py-2.5 pr-3 pl-5 text-orange-950'
   const rail = <span className="absolute inset-y-0 left-0 w-1.5" style={railStyle('blocked')} aria-hidden />
   if (!card.blocked_on) {
     return (
@@ -216,7 +216,7 @@ export function BlockedBanner({ card, now, asking, onDoneAsking }: { card: Card;
         </span>
         {since && <span className="whitespace-nowrap text-orange-800/70"> · {since}</span>}
       </div>
-      <Button type="button" size="sm" variant="outline" onClick={() => patchCard(card.id, { blocked_on: null })} className="h-7 border-orange-300 bg-white text-[12.5px] font-medium text-orange-800 hover:bg-orange-100">
+      <Button type="button" size="sm" variant="outline" onClick={() => patchCard(card.id, { blocked_on: null })} className="h-7 border-orange-300 dark:border-orange-500/30 bg-background text-[12.5px] font-medium text-orange-800 dark:text-orange-300 hover:bg-orange-100">
         Unblock
       </Button>
     </div>

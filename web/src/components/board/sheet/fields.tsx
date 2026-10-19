@@ -55,7 +55,7 @@ export function InlineText({ value, onSave, className, inputClassName, placehold
         onChange={(e) => setDraft(e.target.value.replace(/\n/g, ' '))}
         onKeyDown={key}
         onBlur={() => finish(true)}
-        className={cn('block w-full resize-none rounded-md bg-white px-1.5 py-0.5 -mx-1.5 ring-2 ring-sky-400/60 outline-none', className, inputClassName)}
+        className={cn('block w-full resize-none rounded-md bg-background px-1.5 py-0.5 -mx-1.5 ring-2 ring-sky-400/60 outline-none', className, inputClassName)}
       />
     )
   }
@@ -64,9 +64,9 @@ export function InlineText({ value, onSave, className, inputClassName, placehold
       type="button"
       onClick={open}
       aria-label={`Edit ${label}`}
-      className={cn('group/inline relative -mx-1.5 block w-[calc(100%+0.75rem)] cursor-text rounded-md px-1.5 py-0.5 text-left transition-colors hover:bg-zinc-900/[0.045]', focusRing, className)}
+      className={cn('group/inline relative -mx-1.5 block w-[calc(100%+0.75rem)] cursor-text rounded-md px-1.5 py-0.5 text-left transition-colors hover:bg-foreground/[0.045]', focusRing, className)}
     >
-      {value || <span className="text-zinc-400">{placeholder}</span>}
+      {value || <span className="text-muted-foreground/70">{placeholder}</span>}
     </button>
   )
 }
@@ -108,13 +108,13 @@ export function MarkdownEditor({ value, onSave, onClose, placeholder, label }: {
           if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); finish(true) }
           else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(false) }
         }}
-        className="block min-h-[5.5rem] w-full resize-none rounded-lg border border-sky-300 bg-white px-3 py-2 text-[14px] leading-relaxed text-zinc-900 shadow-[0_0_0_3px_rgba(14,165,233,0.12)] outline-none placeholder:text-zinc-400"
+        className="block min-h-[5.5rem] w-full resize-none rounded-lg border border-sky-300 dark:border-sky-500/30 bg-background px-3 py-2 text-[14px] leading-relaxed text-foreground shadow-[0_0_0_3px_rgba(14,165,233,0.12)] outline-none placeholder:text-muted-foreground/70"
       />
-      <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px] text-zinc-500">
-        <span>Markdown works. <kbd className="rounded border border-zinc-300 bg-white px-1 font-sans">⌘ Enter</kbd> saves, <kbd className="rounded border border-zinc-300 bg-white px-1 font-sans">Esc</kbd> cancels.</span>
+      <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+        <span>Markdown works. <kbd className="rounded border border-border bg-background px-1 font-sans">⌘ Enter</kbd> saves, <kbd className="rounded border border-border bg-background px-1 font-sans">Esc</kbd> cancels.</span>
         <span className="flex gap-1">
-          <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => finish(false)} className={cn('rounded-md px-2 py-0.5 font-medium text-zinc-600 hover:bg-zinc-200/70', focusRing)}>Cancel</button>
-          <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => finish(true)} className={cn('rounded-md bg-zinc-900 px-2.5 py-0.5 font-medium text-white hover:bg-zinc-700', focusRing)}>Save</button>
+          <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => finish(false)} className={cn('rounded-md px-2 py-0.5 font-medium text-muted-foreground hover:bg-muted-foreground/15', focusRing)}>Cancel</button>
+          <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => finish(true)} className={cn('rounded-md bg-foreground px-2.5 py-0.5 font-medium text-background hover:bg-foreground/75', focusRing)}>Save</button>
         </span>
       </div>
     </div>
@@ -138,9 +138,9 @@ export function EditableMarkdown({ value, onSave, placeholder, label, editing, s
       aria-label={`Edit ${label}`}
       onClick={(e) => { if (!(e.target as HTMLElement).closest('a')) setEditing(true) }}
       onKeyDown={(e) => { if (e.key === 'Enter' && e.target === e.currentTarget) setEditing(true) }}
-      className={cn('-mx-2 cursor-text rounded-lg px-2 py-1 transition-colors hover:bg-zinc-900/[0.035]', focusRing)}
+      className={cn('-mx-2 cursor-text rounded-lg px-2 py-1 transition-colors hover:bg-foreground/[0.035]', focusRing)}
     >
-      <Markdown text={value} className="text-[14px] leading-[1.65] text-zinc-800" />
+      <Markdown text={value} className="text-[14px] leading-[1.65] text-foreground" />
     </div>
   )
 }

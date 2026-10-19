@@ -34,11 +34,11 @@ export function StatePill({ state, className }: { state: CardState; className?: 
 
 const PAYOFF_ICON: Record<PayoffId, LucideIcon> = { quick: Zap, worth: Gem, bet: Rocket, steady: Equal, heavy: Mountain, filler: Minus, lowvalue: ArrowDown, pit: Anchor }
 const PAYOFF_TEXT: Record<PayoffTone, string> = {
-  good: 'text-emerald-700',
-  invest: 'text-indigo-700',
-  neutral: 'text-zinc-500',
+  good: 'text-emerald-700 dark:text-emerald-300',
+  invest: 'text-indigo-700 dark:text-indigo-300',
+  neutral: 'text-muted-foreground',
   costly: 'text-amber-900/65',
-  dim: 'text-zinc-400',
+  dim: 'text-muted-foreground/70',
 }
 
 /** Return x effort as one plain word with a small icon ("Quick win", "Big bet"). `face`: only the words that change a decision (the board card); otherwise every word, and a quiet grey half-answer when only one of the two is set. */
@@ -47,7 +47,7 @@ export function PayoffLabel({ card, face, className }: { card: Pick<Card, 'impac
   const partial = payoff ? null : partialOf(card)
   if (face ? !payoff?.face : !payoff && !partial) return null
   if (!payoff) {
-    return <Tip label={payoffTip(card)}><span className={cn('shrink-0 text-[11px] text-zinc-400', className)} data-payoff="partial">{partial}</span></Tip>
+    return <Tip label={payoffTip(card)}><span className={cn('shrink-0 text-[11px] text-muted-foreground/70', className)} data-payoff="partial">{partial}</span></Tip>
   }
   const Icon = PAYOFF_ICON[payoff.id]
   return (
@@ -63,7 +63,7 @@ export function PayoffLabel({ card, face, className }: { card: Pick<Card, 'impac
 /** Category as a coloured dot and quiet lowercase text. */
 export function CategoryLabel({ name, className }: { name: string; className?: string }) {
   return (
-    <span className={cn('inline-flex min-w-0 items-center gap-1 text-[11px] leading-4 text-zinc-500 lowercase', className)}>
+    <span className={cn('inline-flex min-w-0 items-center gap-1 text-[11px] leading-4 text-muted-foreground lowercase', className)}>
       <span className={cn('size-1.5 shrink-0 rounded-full', categoryDot(name))} aria-hidden />
       <span className="truncate">{name}</span>
     </span>
@@ -75,7 +75,7 @@ export function Avatar({ agent, className }: { agent: Agent; className?: string 
   return (
     <Tip label={assigneeTip(agent)}>
       <span
-        className={cn('relative inline-flex size-[18px] shrink-0 items-center justify-center rounded-full text-[8.5px] leading-none font-semibold tracking-tight', AVATAR_TONE, agent.kind === 'human' && 'ring-1 ring-zinc-400', className)}
+        className={cn('relative inline-flex size-[18px] shrink-0 items-center justify-center rounded-full text-[8.5px] leading-none font-semibold tracking-tight', AVATAR_TONE, agent.kind === 'human' && 'ring-1 ring-ring', className)}
         data-avatar={agent.handle}
         aria-label={`@${agent.handle}`}
       >
@@ -88,7 +88,7 @@ export function Avatar({ agent, className }: { agent: Agent; className?: string 
 
 export function UrgentFlag({ short, className }: { short?: boolean; className?: string }) {
   return (
-    <span className={cn('inline-flex items-center gap-0.5 text-[11px] font-semibold text-red-600', className)} data-flag="urgent">
+    <span className={cn('inline-flex items-center gap-0.5 text-[11px] font-semibold text-red-600 dark:text-red-300', className)} data-flag="urgent">
       <Flame className="size-3.5" />
       {!short && 'Urgent'}
     </span>
@@ -97,7 +97,7 @@ export function UrgentFlag({ short, className }: { short?: boolean; className?: 
 
 export function BlockedFlag({ on, short, className }: { on?: string | null; short?: boolean; className?: string }) {
   const el = (
-    <span className={cn('inline-flex min-w-0 items-center gap-0.5 text-[11px] font-semibold text-orange-600', className)} data-flag="blocked">
+    <span className={cn('inline-flex min-w-0 items-center gap-0.5 text-[11px] font-semibold text-orange-600 dark:text-orange-300', className)} data-flag="blocked">
       <Ban className="size-3.5 shrink-0" />
       {!short && <span className="min-w-0 truncate">Blocked{on ? <span className="font-medium text-orange-700/90"> · {on}</span> : null}</span>}
     </span>
@@ -108,7 +108,7 @@ export function BlockedFlag({ on, short, className }: { on?: string | null; shor
 export function QuickWinFlag({ short, className }: { short?: boolean; className?: string }) {
   return (
     <Tip label="Quick win: good return for low effort">
-      <span className={cn('inline-flex items-center gap-0.5 text-[11px] font-semibold text-green-700', className)} data-flag="quick">
+      <span className={cn('inline-flex items-center gap-0.5 text-[11px] font-semibold text-green-700 dark:text-green-300', className)} data-flag="quick">
         <Zap className="size-3.5 fill-green-600/20" />
         {!short && 'Quick win'}
       </span>
@@ -118,7 +118,7 @@ export function QuickWinFlag({ short, className }: { short?: boolean; className?
 
 export function LaterFlag({ className }: { className?: string }) {
   return (
-    <span className={cn('inline-flex items-center gap-0.5 text-[11px] font-medium text-slate-500', className)} data-flag="later">
+    <span className={cn('inline-flex items-center gap-0.5 text-[11px] font-medium text-muted-foreground', className)} data-flag="later">
       <Moon className="size-3" />Later
     </span>
   )
@@ -127,7 +127,7 @@ export function LaterFlag({ className }: { className?: string }) {
 /** A segmented toggle (density, view). */
 export function Segmented<T extends string>({ value, onChange, options, label }: { value: T; onChange: (v: T) => void; options: { id: T; label: string; icon?: ReactNode }[]; label: string }) {
   return (
-    <div role="group" aria-label={label} className="inline-flex h-7 items-center gap-px rounded-lg bg-zinc-200/70 p-0.5">
+    <div role="group" aria-label={label} className="inline-flex h-7 items-center gap-px rounded-lg bg-muted-foreground/15 p-0.5">
       {options.map((o) => (
         <button
           key={o.id}
@@ -136,8 +136,8 @@ export function Segmented<T extends string>({ value, onChange, options, label }:
           data-seg={o.id}
           onClick={() => onChange(o.id)}
           className={cn(
-            'inline-flex h-6 items-center gap-1 rounded-md px-2 text-xs font-medium text-zinc-600 transition-colors hover:text-zinc-900 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none',
-            value === o.id && 'bg-white text-zinc-900 shadow-sm',
+            'inline-flex h-6 items-center gap-1 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none',
+            value === o.id && 'bg-background text-foreground shadow-sm',
           )}
         >
           {o.icon}

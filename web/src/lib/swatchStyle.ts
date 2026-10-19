@@ -11,7 +11,7 @@ const HATCH = 'repeating-linear-gradient(45deg, #f97316 0 2px, transparent 2px 4
 export function swatchStyle(kind: SwatchKind): CSSProperties {
   switch (kind) {
     case 'urgent': return { backgroundColor: '#ef4444' } // red-500
-    case 'blocked': return { backgroundColor: '#fff7ed', backgroundImage: HATCH, boxShadow: 'inset 0 0 0 1px #f97316' }
+    case 'blocked': return { backgroundColor: 'rgb(249 115 22 / 0.12)', backgroundImage: HATCH, boxShadow: 'inset 0 0 0 1px #f97316' }
     case 'quick': return { backgroundColor: QUICK_COLOR }
     case 'later': return { backgroundColor: 'rgb(148 163 184 / 0.25)', boxShadow: 'inset 0 0 0 1px #94a3b8' } // slate-400
   }

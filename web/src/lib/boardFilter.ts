@@ -1,5 +1,5 @@
 // Pure board logic: search + filters, column grouping, summary line (unit-tested in web/test/boardFilter.test.ts).
-import type { Card, CardState } from '@shared/types'
+import type { Agent, Card, CardState } from '@shared/types'
 import { cardKey, cardTimings, isQuickWin, parseCardRef, sortCardsBy, type CardSort } from '@shared/cards'
 
 export interface BoardFilters {
@@ -11,18 +11,24 @@ export interface BoardFilters {
   categories: string[]
   /** Agent id, 'none' (unassigned) or null (anyone). */
   assignee: string | null
+  /** Captain id: only tickets assigned to someone in that captain's fleet (the captain included); null = anyone. */
+  captain: string | null
   /** Only this column's tickets (set by the Done column's "N older" link; never persisted, like `q`). */
   state: CardState | null
 }
 
-export const NO_FILTERS: BoardFilters = { q: '', urgent: false, blocked: false, quick: false, categories: [], assignee: null, state: null }
+export const NO_FILTERS: BoardFilters = { q: '', urgent: false, blocked: false, quick: false, categories: [], assignee: null, captain: null, state: null }
 
 export const hasFilters = (f: BoardFilters) =>
-  !!f.q.trim() || f.urgent || f.blocked || f.quick || f.categories.length > 0 || f.assignee !== null || f.state !== null
+  !!f.q.trim() || f.urgent || f.blocked || f.quick || f.categories.length > 0 || f.assignee !== null || f.captain !== null || f.state !== null
 
-/** How many of the Filter popover's four settings are on (category, assignee, quick wins, show dropped): the badge on its button. */
+/** How many of the Filter popover's settings are on (category, captain, assignee, quick wins, show dropped): the badge on its button. */
 export const popoverFilterCount = (f: BoardFilters, showDropped: boolean) =>
-  (f.categories.length ? 1 : 0) + (f.assignee ? 1 : 0) + (f.quick ? 1 : 0) + (showDropped ? 1 : 0)
+  (f.categories.length ? 1 : 0) + (f.captain ? 1 : 0) + (f.assignee ? 1 : 0) + (f.quick ? 1 : 0) + (showDropped ? 1 : 0)
+
+/** Which fleet (captain id) an agent belongs to; null when unknown. Built from the store's agents. */
+export type FleetOf = (agentId: string) => string | null
+export const fleetResolver = (agents: Record<string, Pick<Agent, 'id' | 'fleet_id'>>): FleetOf => (id) => agents[id]?.fleet_id ?? null
 
 /** The text a search runs over: key, title, every section, checks, tags, category. */
 export function searchText(c: Card): string {
@@ -49,7 +55,8 @@ export function matchesQuery(c: Card, q: string): boolean {
   return terms.every((t) => hay.includes(t))
 }
 
-export function cardMatches(c: Card, f: BoardFilters): boolean {
+/** `fleetOf` resolves assignees to captains; without it a captain filter only matches tickets assigned to that captain itself. */
+export function cardMatches(c: Card, f: BoardFilters, fleetOf?: FleetOf): boolean {
   if (f.urgent && !(c.urgent && isLive(c))) return false
   if (f.blocked && !(c.blocked_on && isLive(c))) return false
   if (f.quick && !(isQuickWin(c) && isLive(c))) return false
@@ -57,10 +64,11 @@ export function cardMatches(c: Card, f: BoardFilters): boolean {
   if (f.categories.length && !(c.category && f.categories.includes(c.category.toLowerCase()))) return false
   if (f.assignee === 'none' && c.assignee_id) return false
   if (f.assignee && f.assignee !== 'none' && c.assignee_id !== f.assignee) return false
+  if (f.captain && !(c.assignee_id && (c.assignee_id === f.captain || fleetOf?.(c.assignee_id) === f.captain))) return false
   return matchesQuery(c, f.q)
 }
 
-export const filterCards = (cards: Card[], f: BoardFilters) => (hasFilters(f) ? cards.filter((c) => cardMatches(c, f)) : cards)
+export const filterCards = (cards: Card[], f: BoardFilters, fleetOf?: FleetOf) => (hasFilters(f) ? cards.filter((c) => cardMatches(c, f, fleetOf)) : cards)
 
 /** Distinct categories (original casing of the first spelling), sorted. */
 export function categoriesOf(cards: Card[]): string[] {
@@ -127,7 +135,7 @@ export function summaryText(s: Summary): string {
  * The numbers behind the title line. The urgent / blocked / later counts ignore the urgent and blocked toggles themselves
  * (so switching one on does not zero the others); they still follow search, category, assignee, quick wins and state.
  */
-export function summaryCounts(scope: Card[], f: BoardFilters): Summary {
-  const base = filterCards(scope, { ...f, urgent: false, blocked: false })
+export function summaryCounts(scope: Card[], f: BoardFilters, fleetOf?: FleetOf): Summary {
+  const base = filterCards(scope, { ...f, urgent: false, blocked: false }, fleetOf)
   return { ...summarize(base, base), total: scope.length, shown: filterCards(base, { ...NO_FILTERS, urgent: f.urgent, blocked: f.blocked }).length }
 }

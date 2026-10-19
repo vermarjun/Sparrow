@@ -41,6 +41,7 @@ export function sanitizePrefs(raw: unknown): BoardPrefs {
       urgent: bool(f.urgent, false), blocked: bool(f.blocked, false), quick: bool(f.quick, false),
       categories: Array.isArray(f.categories) ? f.categories.filter((c): c is string => typeof c === 'string').map((c) => c.toLowerCase()) : [],
       assignee: typeof f.assignee === 'string' && f.assignee ? f.assignee : null,
+      captain: typeof f.captain === 'string' && f.captain ? f.captain : null,
       state: null,
     },
     laterOpen: { proposed: bool(lo.proposed, false), todo: bool(lo.todo, false) },

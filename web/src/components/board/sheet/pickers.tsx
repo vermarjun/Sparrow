@@ -14,8 +14,8 @@ import { cn } from '@/lib/utils'
 
 export const focusRing = 'focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none'
 
-const row = 'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] text-zinc-800 transition-colors hover:bg-zinc-100 focus-visible:bg-zinc-100 focus-visible:outline-none'
-const field = 'h-8 w-full rounded-md border border-zinc-200 bg-white px-2 text-[13px] outline-none placeholder:text-zinc-400 focus:border-sky-300 focus:ring-2 focus:ring-sky-200/70'
+const row = 'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] text-foreground transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none'
+const field = 'h-8 w-full rounded-md border border-border bg-background px-2 text-[13px] outline-none placeholder:text-muted-foreground/70 focus:border-sky-300 focus:ring-2 focus:ring-sky-200/70'
 
 function Pop({ name, width = 'w-52', children, content, open, setOpen }: {
   name: string; width?: string; children: ReactElement; content: ReactNode; open: boolean; setOpen: (o: boolean) => void
@@ -47,7 +47,7 @@ function Bars({ level }: { level: CardLevel }) {
   const i = CARD_LEVELS.indexOf(level)
   return (
     <span className="flex items-end gap-px" aria-hidden>
-      {[0, 1, 2].map((b) => <span key={b} className={cn('w-[3px] rounded-[1px]', b === 0 ? 'h-1.5' : b === 1 ? 'h-2' : 'h-2.5', b <= i ? 'bg-zinc-700' : 'bg-zinc-300')} />)}
+      {[0, 1, 2].map((b) => <span key={b} className={cn('w-[3px] rounded-[1px]', b === 0 ? 'h-1.5' : b === 1 ? 'h-2' : 'h-2.5', b <= i ? 'bg-foreground/75' : 'bg-muted-foreground/30')} />)}
     </span>
   )
 }
@@ -60,15 +60,15 @@ export function LevelPopover({ label, value, onChange, children }: { label: 'Ret
       name={label.toLowerCase()} width="w-44" open={open} setOpen={setOpen}
       content={
         <div role="listbox" aria-label={label} onKeyDown={(e) => { const i = Number(e.key) - 1; if (i >= 0 && i < 3) { e.preventDefault(); pick(CARD_LEVELS[i]) } }}>
-          <p className="px-2 pt-0.5 pb-1 text-[11px] font-medium text-zinc-400">{label === 'Return' ? 'Return: how much it is worth' : 'Effort: how much work it takes'}</p>
+          <p className="px-2 pt-0.5 pb-1 text-[11px] font-medium text-muted-foreground/70">{label === 'Return' ? 'Return: how much it is worth' : 'Effort: how much work it takes'}</p>
           {CARD_LEVELS.map((l, i) => (
             <button key={l} type="button" role="option" aria-selected={value === l} data-level={l} onClick={() => pick(l)} className={row}>
               <Bars level={l} />
               {WORD[l]}
-              {value === l ? <Check className="ml-auto size-3.5 text-zinc-700" aria-hidden /> : <kbd className="ml-auto font-sans text-[11px] text-zinc-300">{i + 1}</kbd>}
+              {value === l ? <Check className="ml-auto size-3.5 text-foreground/80" aria-hidden /> : <kbd className="ml-auto font-sans text-[11px] text-muted-foreground/45">{i + 1}</kbd>}
             </button>
           ))}
-          {value && <button type="button" data-clear onClick={() => pick(null)} className={cn(row, 'mt-0.5 border-t border-zinc-100 text-[12px] text-zinc-500')}><X className="size-3" aria-hidden />Clear</button>}
+          {value && <button type="button" data-clear onClick={() => pick(null)} className={cn(row, 'mt-0.5 border-t border-border/50 text-[12px] text-muted-foreground')}><X className="size-3" aria-hidden />Clear</button>}
         </div>
       }
     >
@@ -103,9 +103,9 @@ export function EstimatePopover({ minutes, onSave, children }: { minutes: number
             onChange={(e) => { setText(e.target.value); setError('') }}
             onFocus={(e) => e.currentTarget.select()}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commit() } }}
-            className={cn(field, 'tabular-nums', error && 'border-red-300 focus:border-red-300 focus:ring-red-200')}
+            className={cn(field, 'tabular-nums', error && 'border-red-300 dark:border-red-500/30 focus:border-red-300 focus:ring-red-200')}
           />
-          <p className={cn('px-0.5 pt-1 text-[11px]', error ? 'font-medium text-red-600' : 'text-zinc-400')} role={error ? 'alert' : undefined}>{error || 'Enter to save. Empty clears it.'}</p>
+          <p className={cn('px-0.5 pt-1 text-[11px]', error ? 'font-medium text-red-600 dark:text-red-300' : 'text-muted-foreground/70')} role={error ? 'alert' : undefined}>{error || 'Enter to save. Empty clears it.'}</p>
         </div>
       }
     >
@@ -153,15 +153,15 @@ export function CategoryPopover({ category, cards, projectId, known, onSave, chi
                 aria-selected={r.name === category}
                 onMouseEnter={() => setActive(i)}
                 onClick={() => pick(r.name)}
-                className={cn(row, 'justify-between', i === active && 'bg-zinc-100')}
+                className={cn(row, 'justify-between', i === active && 'bg-muted')}
               >
-                {r.create ? <span className="flex items-center gap-1.5"><Plus className="size-3.5 text-zinc-500" aria-hidden />Create <b className="font-semibold">{r.name}</b></span> : <CategoryLabel name={r.name} className="text-[13px] text-zinc-800" />}
-                {r.name === category ? <Check className="size-3.5 text-zinc-700" aria-hidden /> : r.count ? <span className="text-[11px] text-zinc-400 tabular-nums">{r.count}</span> : null}
+                {r.create ? <span className="flex items-center gap-1.5"><Plus className="size-3.5 text-muted-foreground" aria-hidden />Create <b className="font-semibold">{r.name}</b></span> : <CategoryLabel name={r.name} className="text-[13px] text-foreground" />}
+                {r.name === category ? <Check className="size-3.5 text-foreground/80" aria-hidden /> : r.count ? <span className="text-[11px] text-muted-foreground/70 tabular-nums">{r.count}</span> : null}
               </button>
             ))}
-            {!rows.length && <p className="px-2 py-2 text-[12px] text-zinc-500">No categories yet. Type a name to create one.</p>}
+            {!rows.length && <p className="px-2 py-2 text-[12px] text-muted-foreground">No categories yet. Type a name to create one.</p>}
           </div>
-          {category && <button type="button" data-clear onClick={() => pick(null)} className={cn(row, 'mt-0.5 border-t border-zinc-100 text-[12px] text-zinc-500')}><X className="size-3" aria-hidden />Clear category</button>}
+          {category && <button type="button" data-clear onClick={() => pick(null)} className={cn(row, 'mt-0.5 border-t border-border/50 text-[12px] text-muted-foreground')}><X className="size-3" aria-hidden />Clear category</button>}
         </>
       }
     >
@@ -183,15 +183,15 @@ export function AssigneePopover({ assigneeId, agents, onSave, children }: { assi
       name="assignee" width="w-60" open={open} setOpen={setOpen}
       content={
         <div role="listbox" aria-label="Assignee" className="max-h-64 overflow-y-auto">
-          <button type="button" role="option" aria-selected={!assigneeId} data-assignee="none" onClick={() => pick(null)} className={cn(row, 'text-zinc-500')}>
-            Unassigned{!assigneeId && <Check className="ml-auto size-3.5 text-zinc-700" aria-hidden />}
+          <button type="button" role="option" aria-selected={!assigneeId} data-assignee="none" onClick={() => pick(null)} className={cn(row, 'text-muted-foreground')}>
+            Unassigned{!assigneeId && <Check className="ml-auto size-3.5 text-foreground/80" aria-hidden />}
           </button>
           {list.map((a) => (
             <button key={a.id} type="button" role="option" aria-selected={a.id === assigneeId} data-assignee={a.handle} onClick={() => pick(a.id)} className={row}>
               <StateDot state={a.kind === 'human' ? 'human' : a.state} />
               <span className="font-medium">@{a.handle}</span>
-              <span className="min-w-0 truncate text-[12px] text-zinc-400">{a.kind === 'human' ? 'you' : a.title}</span>
-              {a.id === assigneeId && <Check className="ml-auto size-3.5 shrink-0 text-zinc-700" aria-hidden />}
+              <span className="min-w-0 truncate text-[12px] text-muted-foreground/70">{a.kind === 'human' ? 'you' : a.title}</span>
+              {a.id === assigneeId && <Check className="ml-auto size-3.5 shrink-0 text-foreground/80" aria-hidden />}
             </button>
           ))}
         </div>
@@ -222,9 +222,9 @@ export function TagsPopover({ tags, onSave, children }: { tags: string[]; onSave
           {tags.length > 0 && (
             <div className="mb-1.5 flex flex-wrap gap-1">
               {tags.map((t) => (
-                <span key={t} data-tag={t} className="inline-flex items-center gap-0.5 rounded-md bg-zinc-100 py-px pr-0.5 pl-1.5 text-[12px] leading-5 text-zinc-700">
+                <span key={t} data-tag={t} className="inline-flex items-center gap-0.5 rounded-md bg-muted py-px pr-0.5 pl-1.5 text-[12px] leading-5 text-foreground/80">
                   {t}
-                  <button type="button" aria-label={`Remove tag ${t}`} onClick={() => onSave(removeTag(tags, t))} className={cn('rounded p-0.5 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700', focusRing)}><X className="size-3" aria-hidden /></button>
+                  <button type="button" aria-label={`Remove tag ${t}`} onClick={() => onSave(removeTag(tags, t))} className={cn('rounded p-0.5 text-muted-foreground/70 hover:bg-muted-foreground/20 hover:text-foreground/80', focusRing)}><X className="size-3" aria-hidden /></button>
                 </span>
               ))}
             </div>
@@ -261,7 +261,7 @@ export function StatePopover({ value, options, onChange, children }: { value: Ca
             <button key={s} type="button" role="option" aria-selected={s === value} data-state-option={s} onClick={() => { setOpen(false); onChange(s) }} className={row}>
               <span className={cn('size-2 rounded-full', COLUMN_BY_STATE[s].dot)} aria-hidden />
               {STATE_LABEL[s]}
-              {s === value && <Check className="ml-auto size-3.5 text-zinc-700" aria-hidden />}
+              {s === value && <Check className="ml-auto size-3.5 text-foreground/80" aria-hidden />}
             </button>
           ))}
         </div>

@@ -35,7 +35,7 @@ function HoverButton({ label, onClick, children, tone }: { label: string; onClic
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={(e) => e.stopPropagation()}
         className={cn(
-          'inline-flex size-6 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-zinc-100 focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none [&_svg]:size-3.5',
+          'inline-flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none [&_svg]:size-3.5',
           tone === 'good' && 'hover:bg-emerald-50 hover:text-emerald-700',
           tone === 'bad' && 'hover:bg-red-50 hover:text-red-600',
         )}
@@ -52,7 +52,7 @@ function QuickActions({ card, act }: { card: Card; act: FaceActions }) {
   const canShelve = card.state === 'proposed' || card.state === 'todo'
   if (card.state !== 'proposed' && !canShelve) return null
   return (
-    <div className="absolute top-1 right-1.5 z-10 flex items-center gap-px rounded-md bg-white/95 p-0.5 opacity-0 shadow-sm ring-1 ring-zinc-200 transition-opacity group-focus-within/card:opacity-100 group-hover/card:opacity-100" data-quick-actions>
+    <div className="absolute top-1 right-1.5 z-10 flex items-center gap-px rounded-md bg-background/95 p-0.5 opacity-0 shadow-sm ring-1 ring-border transition-opacity group-focus-within/card:opacity-100 group-hover/card:opacity-100" data-quick-actions>
       {card.state === 'proposed' && <HoverButton label="Accept to To do" tone="good" onClick={() => act.accept(card)}><Check /></HoverButton>}
       {canShelve && (shelved
         ? <HoverButton label="Bring back from Later" onClick={() => act.bringBack(card)}><ArrowUpFromLine /></HoverButton>
@@ -108,34 +108,34 @@ export function CardFace({ card, agents, now, act, onOpen, peekPinned, onPeekClo
         data-later={shelved || undefined}
         className={cn(
           'relative flex min-w-0 cursor-pointer flex-col gap-1.5 overflow-hidden rounded-[7px] py-2.5 pr-3 pl-3.5',
-          rail === 'urgent' || rail === 'both' ? 'bg-linear-to-r from-red-50/70 to-transparent to-45%' : rail === 'blocked' && 'bg-linear-to-r from-orange-50/70 to-transparent to-45%',
-          shelved && 'text-slate-500',
+          rail === 'urgent' || rail === 'both' ? 'bg-linear-to-r from-red-50/70 dark:from-red-500/12 to-transparent to-45%' : rail === 'blocked' && 'bg-linear-to-r from-orange-50/70 dark:from-orange-500/12 to-transparent to-45%',
+          shelved && 'text-muted-foreground',
           dropped && 'opacity-70',
         )}
       >
         {rail && <RailBar rail={rail} lines={railTip(card, now)} />}
         <div className="flex min-w-0 items-center gap-1.5">
-          {done && <Check className="-ml-0.5 size-3.5 shrink-0 text-emerald-600" strokeWidth={3} aria-label="Done" />}
-          <span className={cn('shrink-0 font-mono text-[11px] tracking-tight tabular-nums', done ? 'text-emerald-700' : 'text-zinc-400')}>{cardKey(card)}</span>
+          {done && <Check className="-ml-0.5 size-3.5 shrink-0 text-emerald-600 dark:text-emerald-300" strokeWidth={3} aria-label="Done" />}
+          <span className={cn('shrink-0 font-mono text-[11px] tracking-tight tabular-nums', done ? 'text-emerald-700 dark:text-emerald-300' : 'text-muted-foreground/70')}>{cardKey(card)}</span>
           {card.category && <CategoryLabel name={card.category} className={cn('max-w-[7rem]', shelved && 'opacity-70')} />}
           {shelved && (
             <Tip label="Later: parked">
-              <Moon className="size-3 shrink-0 text-slate-400" data-flag="later" aria-label="Later" />
+              <Moon className="size-3 shrink-0 text-muted-foreground/70" data-flag="later" aria-label="Later" />
             </Tip>
           )}
           <Tip label={ageTip}>
-            <span className={cn('shrink-0 text-[11px] tabular-nums', done ? 'text-emerald-700/70' : 'text-zinc-400')} data-age>
-              <span aria-hidden className="mr-1.5 text-zinc-300">·</span>{done ? `done ${ago(stamp, now)}` : ago(card.created_at, now)}
+            <span className={cn('shrink-0 text-[11px] tabular-nums', done ? 'text-emerald-700/70' : 'text-muted-foreground/70')} data-age>
+              <span aria-hidden className="mr-1.5 text-muted-foreground/45">·</span>{done ? `done ${ago(stamp, now)}` : ago(card.created_at, now)}
             </span>
           </Tip>
         </div>
-        <div className={cn('line-clamp-2 text-[14px] leading-snug font-medium text-zinc-900', shelved && 'text-slate-600', done && 'text-zinc-500')}>{card.title}</div>
+        <div className={cn('line-clamp-2 text-[14px] leading-snug font-medium text-foreground', shelved && 'text-muted-foreground', done && 'text-muted-foreground')}>{card.title}</div>
         {hasFooter && (
           <div className="flex min-h-[18px] min-w-0 items-center gap-2.5">
             {facePayoff && <PayoffLabel card={card} face className={shelved ? 'opacity-80' : undefined} />}
             <span className="ml-auto flex shrink-0 items-center gap-2">
               {comments > 0 && (
-                <span className="inline-flex items-center gap-0.5 text-[11px] text-zinc-400 tabular-nums" title={`${comments} comment${comments === 1 ? '' : 's'}`}>
+                <span className="inline-flex items-center gap-0.5 text-[11px] text-muted-foreground/70 tabular-nums" title={`${comments} comment${comments === 1 ? '' : 's'}`}>
                   <MessageSquareText className="size-3" aria-hidden />{comments}
                 </span>
               )}

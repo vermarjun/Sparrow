@@ -128,9 +128,9 @@ export function TriageView({ cards, agents, onExit }: { cards: Card[]; agents: R
   const empty = rows.length === 0
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-zinc-50" data-triage data-pass={pass}>
-      <header className="relative flex h-12 shrink-0 items-center gap-3 border-b border-zinc-200 bg-white px-4">
-        <h2 className="text-sm font-semibold tracking-tight text-zinc-900 tabular-nums" data-triage-count>{headerText(pass, queue.length)}</h2>
+    <div className="flex min-h-0 flex-1 flex-col bg-muted/50" data-triage data-pass={pass}>
+      <header className="relative flex h-12 shrink-0 items-center gap-3 border-b border-border bg-background px-4">
+        <h2 className="text-sm font-semibold tracking-tight text-foreground tabular-nums" data-triage-count>{headerText(pass, queue.length)}</h2>
         <Segmented
           label="Order"
           value={order}
@@ -140,11 +140,11 @@ export function TriageView({ cards, agents, onExit }: { cards: Card[]; agents: R
         <div className="ml-auto flex items-center gap-1.5">
           {pass === 'inbox' && laterCount > 0 && <HeaderButton onClick={() => switchPass('later')} data-triage-switch="later"><Moon className="size-3.5" aria-hidden />Review Later ({laterCount})</HeaderButton>}
           {pass === 'later' && <HeaderButton onClick={() => switchPass('inbox')} data-triage-switch="inbox"><ArrowLeft className="size-3.5" aria-hidden />Triage{inboxCount > 0 && ` (${inboxCount})`}</HeaderButton>}
-          <HeaderButton onClick={onExit} data-triage-exit>Exit<kbd className="rounded border border-zinc-200 bg-zinc-50 px-1 font-sans text-[10px] text-zinc-500">Esc</kbd></HeaderButton>
+          <HeaderButton onClick={onExit} data-triage-exit>Exit<kbd className="rounded border border-border bg-muted/50 px-1 font-sans text-[10px] text-muted-foreground">Esc</kbd></HeaderButton>
         </div>
         <div className="absolute inset-x-0 -bottom-px h-[3px] bg-transparent" aria-hidden>
           <div
-            className={cn('h-full origin-left transition-[width,background-color] duration-300 ease-out', empty ? 'bg-emerald-500' : 'bg-zinc-800')}
+            className={cn('h-full origin-left transition-[width,background-color] duration-300 ease-out', empty ? 'bg-emerald-500' : 'bg-foreground')}
             style={{ width: `${Math.round(progress.done * 100)}%` }}
             data-triage-progress={Math.round(progress.done * 100)}
           />
@@ -155,7 +155,7 @@ export function TriageView({ cards, agents, onExit }: { cards: Card[]; agents: R
         <Done pass={pass} laterCount={laterCount} onLater={() => switchPass('later')} onBack={() => switchPass('inbox')} onExit={onExit} />
       ) : (
         <div className="flex min-h-0 flex-1">
-          <section className="relative flex w-[27rem] shrink-0 flex-col border-r border-zinc-200 bg-white xl:w-[30rem]" aria-label="Queue">
+          <section className="relative flex w-[27rem] shrink-0 flex-col border-r border-border bg-background xl:w-[30rem]" aria-label="Queue">
             <div ref={list} tabIndex={-1} className="min-h-0 flex-1 overflow-y-auto outline-none" data-triage-list role="listbox" aria-label={pass === 'inbox' ? 'Proposed tickets' : 'Tickets under Later'}>
               {rows.map(({ card, ghost }) => ghost
                 ? <Ghost key={card.id} card={card} agents={agents} now={now} pass={pass} onGone={() => dropGhost(card.id)} />
@@ -173,7 +173,7 @@ export function TriageView({ cards, agents, onExit }: { cards: Card[]; agents: R
 }
 
 function HeaderButton({ className, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  return <button type="button" className={cn('inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none', className)} {...props} />
+  return <button type="button" className={cn('inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none', className)} {...props} />
 }
 
 function Row({ card, agents, now, pass, focused, onFocus }: { card: Card; agents: Record<string, Agent>; now: number; pass: TriagePass; focused: boolean; onFocus: () => void }) {
@@ -188,17 +188,17 @@ function Row({ card, agents, now, pass, focused, onFocus }: { card: Card; agents
       data-focused={focused || undefined}
       data-triage-row
       onClick={onFocus}
-      className={cn('flex h-10 cursor-default items-center gap-2.5 border-b border-zinc-100 pr-3.5 pl-2 text-[13px] transition-colors', focused ? 'bg-violet-50 shadow-[inset_0_0_0_1px_rgb(221_214_254)]' : 'hover:bg-zinc-50')}
+      className={cn('flex h-10 cursor-default items-center gap-2.5 border-b border-border/50 pr-3.5 pl-2 text-[13px] transition-colors', focused ? 'bg-violet-50 dark:bg-violet-500/15 shadow-[inset_0_0_0_1px_rgb(221_214_254)]' : 'hover:bg-muted/50')}
     >
       <span className="flex w-1.5 shrink-0 gap-px" data-rail={rail ?? 'none'}>
         {(rail === 'urgent' || rail === 'both') && <Swatch kind="urgent" className="h-6 w-1.5" />}
         {(rail === 'blocked' || rail === 'both') && <Tip label={`Blocked on ${card.blocked_on}`}><Swatch kind="blocked" className="h-6 w-1.5" /></Tip>}
       </span>
-      <span className="w-14 shrink-0 font-mono text-[11px] text-zinc-400 tabular-nums">{cardKey(card)}</span>
-      <span className={cn('min-w-0 flex-1 truncate font-medium', focused ? 'text-zinc-950' : 'text-zinc-800')}>{card.title}</span>
+      <span className="w-14 shrink-0 font-mono text-[11px] text-muted-foreground/70 tabular-nums">{cardKey(card)}</span>
+      <span className={cn('min-w-0 flex-1 truncate font-medium', focused ? 'text-foreground' : 'text-foreground')}>{card.title}</span>
       <PayoffLabel card={card} />
       <Tip label={`${pass === 'later' ? 'Shelved' : 'Proposed'} ${fullDate(at ?? card.created_at)}${pass === 'inbox' ? ` by ${by}` : ''}`}>
-        <span className="w-8 shrink-0 text-right font-mono text-[11px] text-zinc-400 tabular-nums">{ago(at ?? card.created_at, now)}</span>
+        <span className="w-8 shrink-0 text-right font-mono text-[11px] text-muted-foreground/70 tabular-nums">{ago(at ?? card.created_at, now)}</span>
       </Tip>
     </div>
   )
@@ -229,21 +229,21 @@ function Done({ pass, laterCount, onLater, onBack, onExit }: { pass: TriagePass;
   return (
     <div className="flex flex-1 items-center justify-center" data-triage-done={pass}>
       <div className="flex max-w-sm animate-in flex-col items-center gap-3 text-center duration-500 fade-in-0 zoom-in-95">
-        <div className="flex size-12 items-center justify-center rounded-full bg-emerald-50 ring-1 ring-emerald-200"><Check className="size-6 text-emerald-600" strokeWidth={2.5} aria-hidden /></div>
-        <h2 className="text-lg font-semibold tracking-tight text-zinc-900">{inbox ? 'Triage done' : 'Later is clear'}</h2>
-        <p className="text-sm text-zinc-500">{inbox ? 'Nothing left to decide. Captains’ new proposals will land here.' : 'Nothing is parked under Later.'}</p>
+        <div className="flex size-12 items-center justify-center rounded-full bg-emerald-50 dark:bg-emerald-500/15 ring-1 ring-emerald-200"><Check className="size-6 text-emerald-600 dark:text-emerald-300" strokeWidth={2.5} aria-hidden /></div>
+        <h2 className="text-lg font-semibold tracking-tight text-foreground">{inbox ? 'Triage done' : 'Later is clear'}</h2>
+        <p className="text-sm text-muted-foreground">{inbox ? 'Nothing left to decide. Captains’ new proposals will land here.' : 'Nothing is parked under Later.'}</p>
         <div className="mt-2 flex items-center gap-2">
           {inbox && laterCount > 0 && (
-            <button type="button" onClick={onLater} data-triage-review-later className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-zinc-900 px-3.5 text-[13px] font-semibold text-white shadow-sm transition-colors hover:bg-zinc-700 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none">
+            <button type="button" onClick={onLater} data-triage-review-later className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-foreground px-3.5 text-[13px] font-semibold text-background shadow-sm transition-colors hover:bg-foreground/75 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none">
               <Moon className="size-4" aria-hidden />Review Later ({laterCount})
             </button>
           )}
           {!inbox && (
-            <button type="button" onClick={onBack} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-3.5 text-[13px] font-semibold text-zinc-700 transition-colors hover:bg-zinc-50">
+            <button type="button" onClick={onBack} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-background px-3.5 text-[13px] font-semibold text-foreground/80 transition-colors hover:bg-muted/50">
               <ArrowLeft className="size-4" aria-hidden />Back to Triage
             </button>
           )}
-          <button type="button" onClick={onExit} data-triage-exit-done className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-3.5 text-[13px] font-semibold text-zinc-700 transition-colors hover:bg-zinc-50 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none">
+          <button type="button" onClick={onExit} data-triage-exit-done className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-background px-3.5 text-[13px] font-semibold text-foreground/80 transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none">
             <X className="size-4" aria-hidden />Back to board
           </button>
         </div>

@@ -28,25 +28,25 @@ export function PeekBody({ card, agents, now }: { card: Card; agents: Record<str
   const done = card.state === 'done'
   return (
     <div className="flex flex-col gap-2 text-xs" data-peek={card.id}>
-      <p className={cn('line-clamp-5 text-[12.5px] leading-relaxed', brief ? 'text-zinc-700' : 'text-zinc-400')}>{brief || 'No description yet.'}</p>
-      {!done && card.urgent && <p className="flex items-center gap-1.5 font-medium text-red-600"><Swatch kind="urgent" />Urgent</p>}
+      <p className={cn('line-clamp-5 text-[12.5px] leading-relaxed', brief ? 'text-foreground/80' : 'text-muted-foreground/70')}>{brief || 'No description yet.'}</p>
+      {!done && card.urgent && <p className="flex items-center gap-1.5 font-medium text-red-600 dark:text-red-300"><Swatch kind="urgent" />Urgent</p>}
       {!done && card.blocked_on && (
-        <p className="flex items-start gap-1.5 font-medium text-orange-700"><Swatch kind="blocked" className="mt-px" /><span>Blocked on {card.blocked_on}{card.blocked_at ? ` · ${ago(card.blocked_at, now)}` : ''}</span></p>
+        <p className="flex items-start gap-1.5 font-medium text-orange-700 dark:text-orange-300"><Swatch kind="blocked" className="mt-px" /><span>Blocked on {card.blocked_on}{card.blocked_at ? ` · ${ago(card.blocked_at, now)}` : ''}</span></p>
       )}
       {(payoff || card.estimate_min) && (
-        <p className="text-zinc-600">
+        <p className="text-muted-foreground">
           {payoff}{payoff && card.estimate_min ? ' · ' : ''}{card.estimate_min ? `~${formatEstimate(card.estimate_min)}` : ''}
         </p>
       )}
       {checks.length > 0 && (
         <div className="flex flex-col gap-0.5" data-peek-checks>
-          <p className="text-zinc-600"><span className="font-medium tabular-nums">{checks.length - open.length}/{checks.length}</span> done when</p>
-          {open.slice(0, 3).map((c, i) => <p key={i} className="flex items-start gap-1.5 text-zinc-500"><Circle className="mt-[3px] size-2.5 shrink-0" /><span className="line-clamp-1">{c.text}</span></p>)}
-          {open.length === 0 && <p className="flex items-center gap-1.5 text-emerald-700"><Check className="size-3" />All checks done</p>}
-          {open.length > 3 && <p className="pl-4 text-zinc-400">+{open.length - 3} more</p>}
+          <p className="text-muted-foreground"><span className="font-medium tabular-nums">{checks.length - open.length}/{checks.length}</span> done when</p>
+          {open.slice(0, 3).map((c, i) => <p key={i} className="flex items-start gap-1.5 text-muted-foreground"><Circle className="mt-[3px] size-2.5 shrink-0" /><span className="line-clamp-1">{c.text}</span></p>)}
+          {open.length === 0 && <p className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-300"><Check className="size-3" />All checks done</p>}
+          {open.length > 3 && <p className="pl-4 text-muted-foreground/70">+{open.length - 3} more</p>}
         </div>
       )}
-      <p className="border-t border-zinc-100 pt-1.5 text-[11px] text-zinc-400">
+      <p className="border-t border-border/50 pt-1.5 text-[11px] text-muted-foreground/70">
         {originLabel(card)} {fullDate(card.created_at)} by {who(card.created_by)}{assignee ? ` · @${assignee.handle}` : ''}
       </p>
     </div>
@@ -76,7 +76,7 @@ export function Peek({ card, agents, now, pinned, onPinnedClose, disabled, child
           align="start"
           sideOffset={10}
           collisionPadding={12}
-          className="z-50 w-72 rounded-lg bg-white p-3 shadow-lg ring-1 ring-zinc-200 outline-hidden data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95"
+          className="z-50 w-72 rounded-lg bg-background p-3 shadow-lg ring-1 ring-border outline-hidden data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95"
         >
           <PeekBody card={card} agents={agents} now={now} />
         </HoverCard.Content>

@@ -10,8 +10,9 @@ import { TriageView } from '@/components/board/TriageView'
 import { useBoardPrefs } from '@/components/board/usePrefs'
 import type { FaceActions } from '@/components/board/CardFace'
 import { useNow } from '@/components/sparrow/bits'
-import { categoriesOf, filterCards, groupColumns, hasFilters, isLive, isShelved, summaryCounts } from '@/lib/boardFilter'
+import { categoriesOf, filterCards, fleetResolver, groupColumns, hasFilters, isLive, isShelved, summaryCounts } from '@/lib/boardFilter'
 import { capDone } from '@/lib/boardView'
+import { compareCaptains } from '@/lib/captains'
 import { COLUMNS } from '@/lib/boardStyle'
 import { quickMove, setLater } from '@/lib/cardActions'
 import { patchWithUndo } from '@/lib/keyActions'
@@ -27,6 +28,7 @@ export function BoardPage() {
   const project = useStore((s) => s.project)
   const cards = useStore((s) => s.cards)
   const agents = useStore((s) => s.agents)
+  const captains = useStore((s) => s.captains)
   const now = useNow(60_000)
   const [prefs, update] = useBoardPrefs(project)
   const [open, setOpen] = useState<number | null>(null)
@@ -38,12 +40,14 @@ export function BoardPage() {
 
   const all = useMemo(() => Object.values(cards), [cards])
   const scope = useMemo(() => (prefs.showDropped ? all : all.filter((c) => c.state !== 'dropped')), [all, prefs.showDropped])
-  const filtered = useMemo(() => filterCards(scope, prefs.filters), [scope, prefs.filters])
+  const fleetOf = useMemo(() => fleetResolver(agents), [agents])
+  const filtered = useMemo(() => filterCards(scope, prefs.filters, fleetOf), [scope, prefs.filters, fleetOf])
   const groups = useMemo(() => groupColumns(filtered, prefs.sort), [filtered, prefs.sort])
-  const summary = useMemo(() => summaryCounts(scope, prefs.filters), [scope, prefs.filters])
+  const summary = useMemo(() => summaryCounts(scope, prefs.filters, fleetOf), [scope, prefs.filters, fleetOf])
   const quickCount = useMemo(() => scope.filter((c) => isLive(c) && isQuickWin(c)).length, [scope])
   const categories = useMemo(() => categoriesOf(all), [all])
   const agentList = useMemo(() => Object.values(agents).filter((a) => a.state !== 'retired'), [agents])
+  const sortedCaptains = useMemo(() => [...captains].sort(compareCaptains), [captains])
   const droppedCount = useMemo(() => all.filter((c) => c.state === 'dropped').length, [all])
   const columns = prefs.showDropped ? COLUMNS : COLUMNS.filter((c) => c.id !== 'dropped')
 
@@ -119,6 +123,7 @@ export function BoardPage() {
         update={update}
         categories={categories}
         agents={agentList}
+        captains={sortedCaptains}
         summary={summary}
         quickCount={quickCount}
         droppedCount={droppedCount}
