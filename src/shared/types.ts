@@ -118,7 +118,14 @@ export interface Delivery {
   delivered_at: number | null;
 }
 
-export interface CardNote { at: number; by: string; text: string }
+// Board v2 (.orchestra/BOARD-CONTRACT.md). Notes are the card's timeline: 'comment' = written by a person or agent,
+// 'event' = written by the server (moves, assignment, flags, edits). Notes from before v2 have no kind: treat as 'comment'.
+export type CardNoteKind = 'comment' | 'event';
+export interface CardNote { at: number; by: string; text: string; kind?: CardNoteKind }
+export type CardLevel = 'low' | 'medium' | 'high';
+export const CARD_LEVELS: CardLevel[] = ['low', 'medium', 'high'];
+export interface CardCheck { text: string; done: boolean }                       // one "Done when" item
+export interface CardTransition { at: number; by: string; from: CardState | null; to: CardState } // from=null: creation
 
 export interface Card {
   id: number;                    // global autoincrement, shown as #12
@@ -131,8 +138,22 @@ export interface Card {
   assignee_id: string | null;
   created_by: string;            // agent id, or 'user' (web UI)
   notes: CardNote[];
-  created_at: number;
+  created_at: number;            // = proposed/created date
   updated_at: number;
+  // ---- Board v2. The four brief sections (markdown; '' when empty). `details` stays as free-form "More details".
+  context: string;               // why it exists: who asked, where it came from (a meeting, a chat), what it unblocks
+  problem: string;               // what is wrong right now (observed vs expected)
+  approach: string;              // plain-English proposal of the fix. NEVER code.
+  checks: CardCheck[];           // "Done when": verifiable acceptance checks
+  tags: string[];                // free labels (lowercase, trimmed, unique); `category` is the one primary bucket
+  urgent: boolean;
+  impact: CardLevel | null;      // the "return" of doing it
+  effort: CardLevel | null;
+  estimate_min: number | null;   // proposer's estimate of time to done, minutes
+  blocked_on: string | null;     // who/what we are waiting on ("IT: NetSuite sandbox access"); null = not blocked
+  blocked_at: number | null;     // when it became blocked
+  later_at: number | null;       // shelved under the "Later" line of its column; null = not shelved
+  history: CardTransition[];     // every state change, oldest first (creation included)
 }
 
 export interface Resume {
@@ -307,9 +328,27 @@ export interface UpdateReq { text: string; card_id?: number }
 export interface AskReq { question: string }
 export interface DoneReq { summary: string; status?: DoneStatus }
 export interface WaitReq { reason?: string }
-export interface ProposeReq { title: string; details?: string; category?: string }
-export interface CardCreateReq { title: string; details?: string; category?: string; state?: CardState; assignee?: string }
-export interface CardPatchReq { state?: CardState; position?: number; assignee?: string | null; title?: string; details?: string; note?: string }
+// Board v2 card fields shared by propose / create / patch. On patch, omitted = unchanged; null clears a nullable field.
+export interface CardFields {
+  details?: string; category?: string | null;
+  context?: string; problem?: string; approach?: string;
+  checks?: (CardCheck | string)[];  // a bare string = an unticked check
+  tags?: string[];
+  urgent?: boolean;
+  impact?: CardLevel | null; effort?: CardLevel | null;
+  estimate_min?: number | null;
+  blocked_on?: string | null;       // non-empty string blocks (sets blocked_at if it was not blocked); null/'' unblocks
+  later?: boolean;                  // true shelves (sets later_at), false unshelves
+}
+export interface ProposeReq extends CardFields { title: string }
+export interface CardCreateReq extends CardFields { title: string; state?: CardState; assignee?: string }
+export interface CardPatchReq extends CardFields {
+  state?: CardState; position?: number;
+  assignee?: string | null;         // '@handle' | agent id | 'me' (the caller) | null/'none'
+  title?: string;
+  note?: string;                    // appends a 'comment'
+  check?: { index: number; done: boolean }; // tick/untick one check (0-based); the assignee may do this
+}
 export interface ReleaseReq { agent: string } // '@handle' or agent id
 
 // Every response to an identified agent carries `inbox`: messages newly delivered to it
