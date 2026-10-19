@@ -13,5 +13,8 @@
     "strict": true,
     "paths": { "@/*": ["./src/*"], "@shared/*": ["../src/shared/*"] }
   },
-  "include": ["mock", "scripts", "test"]
+  "include": ["mock", "scripts", "test"],
+  // real-smoke boots the real server (src/server): it is typechecked with the server, not here, so a server-side
+  // contract change in flight (multi-captain) cannot break the web build.
+  "exclude": ["scripts/real-smoke.ts"]
 }

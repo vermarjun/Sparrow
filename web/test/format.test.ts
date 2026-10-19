@@ -6,7 +6,7 @@ const agent = (id: string, parent: string | null, extra: Partial<Agent> = {}): A
   id, project_id: 'p', handle: id, kind: 'agent', resume: 'builder', title: 'Builder', harness: 'claude', model: null, effort: null,
   can_hire: [], parent_id: parent, depth: 0, cwd: '/x', tmux_session: 's', tmux_window: id, tmux_window_id: null, session_id: null,
   state: 'idle', call_id: null, last_end_reason: null, last_update: null, last_update_at: null, last_seen_at: null,
-  resume_hash: null, last_run: null, created_at: 0, updated_at: 0, ...extra,
+  resume_hash: null, last_run: null, fleet_id: 'ag_0', captain: null, created_at: 0, updated_at: 0, ...extra,
 })
 
 describe('midpoint / moveFor', () => {

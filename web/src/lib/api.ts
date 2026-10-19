@@ -4,7 +4,7 @@ import type { SkillMatrix } from './skillMatrix'
 import type { MigApplyResult, MigBackupInfo, MigPlan, MigRollbackResult } from './migration'
 import type { GitState, Harness, LibrarySkill, LinkAction, SkillDetail, SkillUpdate, SkillsState, StagedImport } from './skills'
 import type {
-  Agent, CaptainStartReq, CaptainStartRes, Call, Card, CardCreateReq, CardPatchReq, DoctorCheck, DoctorRun, HarnessCatalog,
+  Agent, CaptainDetail, CaptainPatchReq, CaptainStartReq, CaptainStartRes, CaptainSummary, Call, Card, CardCreateReq, CardPatchReq, DoctorCheck, DoctorRun, HarnessCatalog,
   HarnessHealth, MessageView, Project, ProviderHealth, ResumeView, ResumeWriteReq, SettingsView, SettingsWriteReq,
 } from '@shared/types'
 
@@ -92,6 +92,15 @@ export const api = {
   commitSkills: (message: string, push: boolean) => req<GitState>('POST', '/api/skills/git/commit', { message, push }),
   captainRecent: () => req<string[]>('GET', '/api/captain/recent'),
   startCaptain: (body: CaptainStartReq) => req<CaptainStartRes>('POST', '/api/captain/start', body),
+  /** Multi-captain (§5). `archived` includes archived captains (the UI always asks for them; it filters itself). */
+  captains: (project: string, archived = true) => req<CaptainSummary[]>('GET', `/api/captains${q({ project, archived: archived ? 1 : undefined })}`),
+  captain: (id: string, project?: string) => req<CaptainDetail>('GET', `/api/captains/${encodeURIComponent(id)}${q({ project })}`),
+  patchCaptain: (id: string, body: CaptainPatchReq) => req<{ agent: Agent }>('PATCH', `/api/captains/${encodeURIComponent(id)}`, body),
+  /** 409 when its window is open (the error carries the attach line); 400 for non-Claude captains (carries the manual command). */
+  resumeCaptain: (id: string) => req<CaptainStartRes>('POST', `/api/captains/${encodeURIComponent(id)}/resume`),
+  /** Every message whose thread has a member of this captain's fleet on either side, oldest first. */
+  fleetMessages: (project: string, fleet: string, after?: number, limit = 2000) =>
+    req<MessageView[]>('GET', `/api/messages${q({ project, fleet, after, limit })}`),
   agents: (project: string) => req<Agent[]>('GET', `/api/agents${q({ project })}`),
   agent: (id: string) => req<AgentDetail>('GET', `/api/agents/${encodeURIComponent(id)}`),
   screen: (id: string, lines = 200) => req<Screen>('GET', `/api/agents/${encodeURIComponent(id)}/screen${q({ lines })}`),

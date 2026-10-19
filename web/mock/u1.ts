@@ -135,7 +135,12 @@ const STEPS: Step[] = [
 const LOGIN_FIX = 'Run `OPENCODE_CONFIG_DIR=~/.sparrow/opencode opencode auth login`, then Run doctor again.'
 
 // ---------------------------------------------------------------- state
-export interface U1Ctx { agents: Agent[]; emit: (ev: ServerEvent) => void }
+export interface U1Ctx {
+  agents: Agent[]
+  emit: (ev: ServerEvent) => void
+  /** Multi-captain: create the captain row before "launching" (mock/captains.ts). Returns the response or an error. */
+  startCaptain?: (b: CaptainStartReq, cwd: string, project: string) => CaptainStartRes | string | undefined
+}
 
 export function createU1(ctx: U1Ctx, opts: { now?: number; doctorMs?: number; doctorDone?: boolean } = {}) {
   const now = opts.now ?? Date.now()
@@ -298,7 +303,9 @@ export function createU1(ctx: U1Ctx, opts: { now?: number; doctorMs?: number; do
       const claude = catalogs.find((c) => c.harness === 'claude')!
       if (b.model && !claude.models.some((m) => m.id === b.model || m.resolves_to === b.model)) return err(400, `model: ${b.model} is not offered by claude`)
       const project = cwd.split('/').pop()!
-      const res: CaptainStartRes = { session: `sparrow-${project}`, window: 'captain', window_id: '@41', cwd, attach: `tmux attach -t sparrow-${project} \\; select-window -t @41` }
+      const made = ctx.startCaptain?.(b, cwd, /plutus/.test(cwd) ? 'plutus' : /sparrow/.test(cwd) ? 'sparrow' : project)
+      if (typeof made === 'string') return err(400, made)
+      const res: CaptainStartRes = made ?? { session: `sparrow-${project}`, window: 'captain', window_id: '@41', cwd, attach: `tmux attach -t sparrow-${project} \\; select-window -t @41` }
       const i = recent.indexOf(cwd)
       if (i !== -1) recent.splice(i, 1)
       recent.unshift(cwd)

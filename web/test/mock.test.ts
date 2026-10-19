@@ -26,7 +26,7 @@ describe('mock server', () => {
     const states = new Set(agents.map((a: { state: string }) => a.state))
     for (const s of ['working', 'queued', 'crashed', 'waiting', 'idle']) expect(states.has(s)).toBe(true)
     const threads = await fetch(`${U}/api/threads?project=plutus`).then((r) => r.json())
-    expect(threads[0].thread).toBe('group')
+    expect(threads.every((t: { thread: string }) => t.thread.startsWith('dm:'))).toBe(true)
     const kinds = new Set<string>()
     for (const t of threads) for (const m of await fetch(`${U}/api/messages?project=plutus&thread=${encodeURIComponent(t.thread)}`).then((r) => r.json())) kinds.add(m.kind)
     expect([...kinds].sort()).toEqual(['chat', 'question', 'result', 'system', 'task', 'update'])
@@ -156,5 +156,77 @@ describe('mock server: U1 endpoints', () => {
     const res = await J('POST', '/api/captain/start', { cwd: '~/code/notes', model: 'haiku' }).then((r) => r.json())
     expect(res.attach).toBe('tmux attach -t sparrow-notes \\; select-window -t @41')
     expect((await fetch(`${U}/api/captain/recent`).then((r) => r.json()))[0]).toBe('/Users/vermarjun/code/notes')
+  })
+})
+
+describe('mock server: captains (multi-captain §5)', () => {
+  type S = { agent: { id: string; handle: string; fleet_id: string; captain: { title: string | null } }; status: string; unread: number; questions: number; fleet: { total: number; working: number }; resume: { command: string | null; attach: string | null } }
+  const list = async (q = '') => (await fetch(`${U}/api/captains?project=plutus${q}`).then((r) => r.json())) as S[]
+
+  test('plutus has captains in every status; archived only with ?archived=1; newest activity first', async () => {
+    const live = await list()
+    const all = await list('&archived=1')
+    expect(all.length).toBe(live.length + 1)
+    expect(new Set(all.map((s) => s.status))).toEqual(new Set(['working', 'attention', 'idle', 'archived']))
+    expect(live.filter((s) => s.status === 'working').length).toBeGreaterThanOrEqual(2)
+    expect(live.some((s) => s.questions > 0)).toBe(true)
+    expect(live.some((s) => s.status === 'attention' && s.questions === 0 && s.unread > 0)).toBe(true)
+    expect(live.some((s) => s.agent.captain.title === null)).toBe(true)
+    for (const s of live) expect(s.agent.fleet_id).toBe(s.agent.id)
+    const at = live.map((s) => (s as unknown as { last_activity_at: number }).last_activity_at)
+    expect([...at].sort((a, b) => b - a)).toEqual(at)
+    expect((await fetch(`${U}/api/captains`)).status).toBe(400)
+  })
+
+  test('detail: the fleet incl. a sub-captain with its own hires, all carrying fleet_id', async () => {
+    const d = await fetch(`${U}/api/captains/cap-orion?project=plutus`).then((r) => r.json()) as { agents: { id: string; depth: number; fleet_id: string; parent_id: string | null }[]; summary: S }
+    expect(d.agents.every((a) => a.fleet_id === d.summary.agent.id)).toBe(true)
+    expect(Math.max(...d.agents.map((a) => a.depth))).toBe(2)
+    const agents = await fetch(`${U}/api/agents?project=plutus`).then((r) => r.json()) as { fleet_id: string; captain: unknown; kind: string }[]
+    expect(agents.every((a) => typeof a.fleet_id === 'string' && (a.kind === 'human') === (a.captain !== null))).toBe(true)
+  })
+
+  test('messages ?fleet= returns only that fleet', async () => {
+    const msgs = await fetch(`${U}/api/messages?project=plutus&fleet=ag_vega`).then((r) => r.json()) as { thread: string; kind: string }[]
+    expect(msgs.length).toBeGreaterThan(3)
+    expect(msgs.every((m) => m.thread.includes('ag_vega') || m.thread.includes('ag_mia') || m.thread.includes('ag_theo'))).toBe(true)
+    expect(new Set(msgs.map((m) => m.kind))).toContain('question')
+  })
+
+  test('PATCH title/name/archived, name validation, agent.updated on SSE', async () => {
+    const ctrl = new AbortController()
+    const reader = (await fetch(`${U}/api/events?project=plutus`, { signal: ctrl.signal })).body!.getReader()
+    const r = await J('PATCH', '/api/captains/cap-rigel?project=plutus', { title: 'Dark mode everywhere' }).then((x) => x.json())
+    expect(r.agent.captain.title).toBe('Dark mode everywhere')
+    const ev = await nextEvent(reader, 'agent.updated')
+    ctrl.abort()
+    expect((ev as { agent: { handle: string } }).agent.handle).toBe('cap-rigel')
+    expect((await J('PATCH', '/api/captains/cap-rigel?project=plutus', { name: 'Bad Name' })).status).toBe(400)
+    expect((await J('PATCH', '/api/captains/cap-rigel?project=plutus', { name: 'cap-vega' })).status).toBe(400)
+    await J('PATCH', '/api/captains/cap-rigel?project=plutus', { archived: true })
+    expect((await list()).some((s) => s.agent.handle === 'cap-rigel')).toBe(false)
+    await J('PATCH', '/api/captains/cap-rigel?project=plutus', { archived: false })
+    expect((await list()).some((s) => s.agent.handle === 'cap-rigel')).toBe(true)
+  })
+
+  test('resume: 409 with the attach line when open, 400 for codex with the manual command, else a window', async () => {
+    const open = await J('POST', '/api/captains/cap-orion/resume?project=plutus')
+    expect(open.status).toBe(409)
+    expect((await open.json()).error).toContain('tmux attach')
+    const codex = await J('POST', '/api/captains/cap-lyra/resume?project=plutus')
+    expect(codex.status).toBe(400)
+    expect((await codex.json()).error).toContain('codex resume')
+    const ok = await J('POST', '/api/captains/cap-sirius/resume?project=plutus').then((x) => x.json())
+    expect(ok.attach).toContain('tmux attach')
+    expect(ok.agent_id).toBe('ag_sirius')
+  })
+
+  test('start with name + title creates the captain row first and returns agent_id', async () => {
+    const res = await J('POST', '/api/captain/start', { cwd: '~/Desktop/plutus-wt/audit', title: 'Audit log for ledger edits', name: 'cap-audit' }).then((x) => x.json())
+    expect(res.agent_id).toMatch(/^ag_/)
+    const s = (await list()).find((x) => x.agent.id === res.agent_id)!
+    expect(s.agent.handle).toBe('cap-audit')
+    expect(s.agent.captain.title).toBe('Audit log for ledger edits')
+    expect((await J('POST', '/api/captain/start', { cwd: '~/Desktop/plutus', name: 'cap-audit' })).status).toBe(400)
   })
 })

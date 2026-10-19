@@ -1,11 +1,10 @@
 import { create } from 'zustand'
-import type { HarnessHealth, ServerEvent } from '@shared/types'
+import type { CaptainInfo, CaptainPatchReq, CaptainStartRes, HarnessHealth, ServerEvent } from '@shared/types'
 import { api, type ProjectRow } from './api'
 import type { SkillsState } from './skills'
 import { emptyData, reduce, reduceGlobal, sortThreads, type Data, type GlobalData } from './reduce'
 
 export type Conn = 'connecting' | 'live' | 'down'
-export type Tab = 'board' | 'chat' | 'agents' | 'doctor' | 'resumes' | 'skills' | 'settings'
 
 interface Store extends Data, GlobalData {
   projects: ProjectRow[]
@@ -29,10 +28,21 @@ interface Store extends Data, GlobalData {
   selectProject: (id: string) => void
   loadProject: () => Promise<void>
   loadThread: (thread: string) => Promise<void>
+  /** GET /api/captains (archived included). */
+  loadCaptains: () => Promise<void>
+  /** Debounced loadCaptains (~400 ms), called on agent/message/call events of the current project (§5). */
+  scheduleCaptains: () => void
+  /** Load (or refresh) one fleet's activity into fleetMessages[captainId]. */
+  loadFleet: (captainId: string) => Promise<void>
+  /** PATCH /api/captains/:id, applied optimistically to the summary; rolls back and rethrows on error. */
+  patchCaptain: (id: string, patch: CaptainPatchReq) => Promise<void>
+  /** POST /api/captains/:id/resume; refreshes the list. Errors (409 open window, 400 non-Claude) are rethrown as HttpError. */
+  resumeCaptain: (id: string) => Promise<CaptainStartRes>
   apply: (ev: ServerEvent) => void
 }
 
 const LS_KEY = 'sparrow.project'
+let captainsTimer: ReturnType<typeof setTimeout> | null = null
 
 export const useStore = create<Store>((set, get) => ({
   ...emptyData(),
@@ -95,17 +105,25 @@ export const useStore = create<Store>((set, get) => ({
     if (!project) return
     set({ loading: true, error: null })
     try {
-      const [agents, cards, threads] = await Promise.all([api.agents(project), api.cards(project), api.threads(project)])
+      const [agents, cards, threads, captains] = await Promise.all([
+        api.agents(project), api.cards(project), api.threads(project), api.captains(project).catch(() => null),
+      ])
       if (get().project !== project) return
-      // Keep already-open threads fresh too (missed events while disconnected).
+      // Keep already-open threads and fleets fresh too (missed events while disconnected).
       const loaded = Object.keys(get().messages)
-      const msgs = await Promise.all(loaded.map((t) => api.messages(project, t).then((m) => [t, m] as const)))
+      const fleets = Object.keys(get().fleetMessages)
+      const [msgs, fleetMsgs] = await Promise.all([
+        Promise.all(loaded.map((t) => api.messages(project, t).then((m) => [t, m] as const))),
+        Promise.all(fleets.map((f) => api.fleetMessages(project, f).then((m) => [f, m] as const).catch(() => [f, get().fleetMessages[f]] as const))),
+      ])
       if (get().project !== project) return
       set({
         agents: Object.fromEntries(agents.map((a) => [a.id, a])),
         cards: Object.fromEntries(cards.map((c) => [c.id, c])),
         threads: sortThreads(threads),
         messages: Object.fromEntries(msgs),
+        fleetMessages: Object.fromEntries(fleetMsgs),
+        ...(captains ? { captains, captainsLoaded: true } : {}),
         loading: false,
       })
     } catch (e) {
@@ -118,6 +136,55 @@ export const useStore = create<Store>((set, get) => ({
     const list = await api.messages(project, thread)
     if (get().project !== project) return
     set({ messages: { ...get().messages, [thread]: list } })
+  },
+  async loadCaptains() {
+    const project = get().project
+    if (!project) return
+    try {
+      const captains = await api.captains(project)
+      if (get().project === project) set({ captains, captainsLoaded: true })
+    } catch { /* keep the last list; the conn dot shows trouble */ }
+  },
+  scheduleCaptains() {
+    if (captainsTimer) clearTimeout(captainsTimer)
+    captainsTimer = setTimeout(() => { captainsTimer = null; void get().loadCaptains() }, 400)
+  },
+  async loadFleet(captainId) {
+    const project = get().project
+    if (!project) return
+    const list = await api.fleetMessages(project, captainId)
+    if (get().project !== project) return
+    set({ fleetMessages: { ...get().fleetMessages, [captainId]: list } })
+  },
+  async patchCaptain(id, patch) {
+    const before = get().captains
+    const agentBefore = get().agents[id]
+    const edit = <T extends { handle: string; captain: CaptainInfo | null }>(a: T): T => ({
+      ...a,
+      ...(patch.name !== undefined ? { handle: patch.name } : {}),
+      captain: a.captain && {
+        ...a.captain,
+        ...(patch.title !== undefined ? { title: patch.title } : {}),
+        ...(patch.archived !== undefined ? { archived_at: patch.archived ? Date.now() : null } : {}),
+      },
+    })
+    set({
+      captains: before.map((c) => (c.agent.id === id ? { ...c, agent: edit(c.agent), ...(patch.archived ? { status: 'archived' as const } : {}) } : c)),
+      ...(agentBefore ? { agents: { ...get().agents, [id]: edit(agentBefore) } } : {}),
+    })
+    try {
+      const { agent } = await api.patchCaptain(id, patch)
+      set({ agents: { ...get().agents, [id]: { ...agent, last_result: agent.last_result ?? null } } })
+      get().scheduleCaptains()
+    } catch (e) {
+      set({ captains: before, ...(agentBefore ? { agents: { ...get().agents, [id]: agentBefore } } : {}) })
+      throw e
+    }
+  },
+  async resumeCaptain(id) {
+    const res = await api.resumeCaptain(id)
+    get().scheduleCaptains()
+    return res
   },
   apply(ev) {
     const s = get()
@@ -138,6 +205,9 @@ export const useStore = create<Store>((set, get) => ({
     }
     const next = reduce(s, ev)
     if (next !== s) set(next)
+    if (ev.project_id === s.project && (ev.type === 'agent.updated' || ev.type === 'message.created' || ev.type === 'call.started' || ev.type === 'call.ended')) {
+      get().scheduleCaptains()
+    }
   },
 }))
 
