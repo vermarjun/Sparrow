@@ -1,6 +1,6 @@
 ---
 name: sparrow-captain
-description: Run a team of AI agents with Sparrow from your own session (you are the captain). Use when the user asks to hire, delegate to, or coordinate agents / builders / verifiers / researchers, or explicitly names Sparrow. Not for sessions where SPARROW_AGENT_ID is set (those are workers: use sparrow-worker).
+description: "Run a team of AI agents with Sparrow from your own session (you are the captain). Use when the user asks to hire, delegate to, or coordinate agents / builders / verifiers / researchers, or explicitly names Sparrow. Not for sessions where SPARROW_AGENT_ID is set (those are workers: use sparrow-worker)."
 ---
 
 # Sparrow captain
@@ -34,6 +34,7 @@ A good brief = goal, files/context, acceptance checks (commands that prove it), 
 
 Flags:
 - `--cwd <dir>` — where the agent works (default: your cwd). Need isolation? Only when the user asks, create a git worktree yourself (`git worktree add ../proj-maya -b maya/rate-limit`) and pass `--cwd ../proj-maya`.
+  - A git worktree is its own Sparrow project. The project is the git root of the directory you run `sparrow` from, and a worktree has its own root: running `sparrow` inside `../proj-maya` registers a separate `@captain` there, with its own board, roster, inbox and tmux session `sparrow-<worktree-dir>` (`sparrow-proj-maya`), and cards on the main checkout's board are not visible. `--cwd` only sets where the hired agent works; it never changes the project. To keep one board and one roster, run `sparrow` from the main checkout and pass `--cwd <worktree>`. Work the other way round (captain inside the worktree) only when you want that isolated project.
 - `--tmux-session <s>` / `--tmux-window <w>` — where its window opens (default `sparrow-<project>` / the handle). Respawns reuse them.
 - `--model`, `--effort` — don't. Hire the resume as is; its model and effort are the user's choice (set in the UI). Pass them only when the user explicitly asks for a specific model or effort.
 - `--card N` — assign a board card (moves it to In progress).

@@ -2,12 +2,16 @@
 // T2 implements createSpawner() in ./spawner.ts and re-exports it here.
 import type { Agent } from '../shared/types';
 
+// A skill folder exposed to one spawn (absolute path; `name` = link name = library folder name).
+export interface SkillGrant { name: string; path: string }
+
 export interface StartSpec {
   agent: Agent;          // cwd, tmux_session, tmux_window, harness, model, effort, session_id
   call_id: string;
   system_prompt: string; // full text: protocol + resume body (rendered by the server)
   prompt: string;        // the envelope = first user message of this call
   resume: boolean;       // true ⇒ resume agent.session_id; false ⇒ start a new harness session
+  skills?: SkillGrant[]; // exactly the skill folders this spawn may see, Sparrow's included; undefined ⇒ Sparrow's only
 }
 
 export interface StartResult {

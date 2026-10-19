@@ -173,11 +173,11 @@ describe('input validation (V1 #2, #3, #4, #6)', () => {
     const call = agentOf(ctx, a.id).call_id;
     for (const raw of ['null', '[]', '42', '"s"']) {
       for (const [path, as] of [['/api/hooks/exit', a.id], ['/api/release', ctx.captain.id], ['/api/hooks/session', a.id], ['/api/send', ctx.captain.id]] as const) {
-        const res = await ctx.app.request(path, { method: 'POST', headers: { 'x-sparrow-agent': as, 'x-sparrow-call': call! }, body: raw });
+        const res = await ctx.app.request(path, { method: 'POST', headers: { 'content-type': 'application/json', 'x-sparrow-agent': as, 'x-sparrow-call': call! }, body: raw });
         expect(res.status).toBe(400);
       }
     }
-    const te = await ctx.app.request('/api/hooks/turn-end', { method: 'POST', headers: { 'x-sparrow-agent': a.id, 'x-sparrow-call': call! }, body: 'null' });
+    const te = await ctx.app.request('/api/hooks/turn-end', { method: 'POST', headers: { 'content-type': 'application/json', 'x-sparrow-agent': a.id, 'x-sparrow-call': call! }, body: 'null' });
     expect(te.status).toBe(200);
     expect(agentOf(ctx, a.id).state).toBe('working');
     expect(ctx.sp.starts.length).toBe(1);

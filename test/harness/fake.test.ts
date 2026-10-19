@@ -208,4 +208,26 @@ describe('fake harness through the spawner', () => {
     await expect(spawner.deliver({ ...a, tmux_window_id: null }, 'hello')).rejects.toThrow(/no open window/);
     await spawner.stop(b);
   }, 30_000);
+
+  test('D2 directives: provider_error reports through the provider-error hook, api_error ends the turn on an "API Error" last message; done_failed passes --status', async () => {
+    const a = makeAgent({ harness: 'fake', tmux_session: 'sptest-fk-d2', tmux_window: 'pe' });
+    const r = await start(a, 'FAKE:provider_error HTTP 500 Internal Server Error', 'call_pe1');
+    const pe = await stub.waitFor('/api/hooks/provider-error', byCall('call_pe1'));
+    expect(pe.body).toMatchObject({ message: 'HTTP 500 Internal Server Error', session_id: r.session_id });
+    const te = await stub.waitFor('/api/hooks/turn-end', byCall('call_pe1'));
+    expect(te.body.last_message).toBeUndefined();
+    await spawner.stop(a);
+
+    const b = makeAgent({ harness: 'fake', tmux_session: 'sptest-fk-d2', tmux_window: 'ae' });
+    await start(b, 'FAKE:api_error 529 overloaded_error', 'call_ae1');
+    const te2 = await stub.waitFor('/api/hooks/turn-end', byCall('call_ae1'));
+    expect(te2.body.last_message).toBe('API Error: 529 overloaded_error');
+    await spawner.stop(b);
+
+    const c = makeAgent({ harness: 'fake', tmux_session: 'sptest-fk-d2', tmux_window: 'df' });
+    await start(c, 'FAKE:done_failed it broke', 'call_df1');
+    const done = await stub.waitFor('/api/done', byCall('call_df1'));
+    expect(done.body).toMatchObject({ summary: 'it broke', status: 'failed' });
+    await spawner.stop(c);
+  }, 30_000);
 });

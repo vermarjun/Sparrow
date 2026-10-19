@@ -2,13 +2,15 @@
 // added through OPENCODE_CONFIG_CONTENT `instructions`, and Sparrow's plugin (session id + session.idle →
 // turn-end) loaded from OPENCODE_CONFIG_DIR=<SPARROW_HOME>/opencode. The plugin is inert without SPARROW_AGENT_ID.
 import { Database } from 'bun:sqlite';
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, realpathSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, parse, resolve } from 'node:path';
 import type { Agent } from '../../shared/types';
 import type { StartSpec } from '../index';
 import { OPENCODE_BIN, agentDir, repoRoot, sparrowHome } from '../env';
 import { writeAtomic, type Arg, type CallFiles } from '../launch';
+import { frontmatterName, launchGrants, materializeLinks, withSparrow } from '../../skills/grant';
+import { validSkillName } from '../../skills/frontmatter';
 import * as tmux from '../tmux';
 import type { Driver, PreparedLaunch } from './types';
 
@@ -30,11 +32,107 @@ export function ensurePlugin(): boolean {
 // ("· max" in the footer, message.model.variant = "max") — while `agent.build.variant` and the -m flag alone don't
 // carry a variant. The system prompt is added via `instructions` (appended to OpenCode's own prompt).
 export const OPENCODE_AGENT = 'sparrow';
-export function opencodeConfig(spec: StartSpec, systemPath: string): Record<string, unknown> {
+// Skills: `skills.paths` adds the per-agent grants and project .claude/.agents roots to discovery; native project
+// .opencode skills are discovered by OpenCode. Global XDG config and MCP settings stay inherited; the permission
+// allowlist filters ungranted global skills out of <available_skills> (debug skill ignores it).
+// Rules are wildcard, last match wins, so "*": "deny" must be the first key. Names are FRONTMATTER names.
+export interface OpencodeSkills { dir: string; paths: string[]; names: string[] }
+export const OPENCODE_BUILTIN_SKILLS = ['customize-opencode'];
+export function opencodeConfig(spec: StartSpec, systemPath: string, skills?: OpencodeSkills): Record<string, unknown> {
   const agent: Record<string, unknown> = { mode: 'primary', description: 'Sparrow-managed agent' };
   if (spec.agent.model) agent.model = spec.agent.model;
   if (spec.agent.effort) agent.variant = spec.agent.effort;
-  return { instructions: [systemPath], agent: { [OPENCODE_AGENT]: agent } };
+  const top: Record<string, unknown> = {};
+  if (skills) {
+    const allow = Object.fromEntries([...OPENCODE_BUILTIN_SKILLS, ...skills.names].map((n) => [n, 'allow']));
+    // JS (and so OpenCode, which parses the JSON) enumerates integer-like keys first, so an all-digit skill name
+    // ("123" is a valid spec name) would land BEFORE "*" and be denied by it. Then the deny goes one layer up
+    // (top-level permission rules come before the agent's), and the agent holds only the allows.
+    // The top-level rules also cover the subagents the `task` tool spawns (general, explore), which have no rules of
+    // their own and would otherwise see every discovered skill.
+    if (Object.keys(allow).some((n) => /^\d+$/.test(n))) {
+      top.permission = { skill: { '*': 'deny' } };
+      agent.permission = { skill: allow };
+    } else {
+      top.permission = { skill: { '*': 'deny', ...allow } };
+      agent.permission = { skill: { '*': 'deny', ...allow } };
+    }
+  }
+  return { instructions: [systemPath], ...(skills ? { skills: { paths: skills.paths } } : {}), ...top, agent: { [OPENCODE_AGENT]: agent } };
+}
+
+export const opencodeSkillsDir = (agentId: string) => join(agentDir(agentId), 'skills');
+const PROJECT_SKILL_DIRS = ['.claude', '.agents', '.opencode'] as const;
+
+// OpenCode v1 walks from cwd to the Git worktree root (or filesystem root without a worktree) and finds
+// `<source>/skills/*/SKILL.md` at each level.
+// The external-skills flag used below hides the compatibility `.claude` and `.agents` sources too, so explicitly
+// add those project roots back while leaving their global roots excluded. `.opencode/skills` remains native.
+export function projectSkillRoots(cwd: string): { paths: string[]; names: string[] } {
+  let start = resolve(cwd);
+  try { start = realpathSync(start); } catch {}
+  let root: string | null = null;
+  try {
+    const result = Bun.spawnSync(['git', '-C', cwd, 'rev-parse', '--show-toplevel'], { stdout: 'pipe', stderr: 'ignore' });
+    const gitRoot = new TextDecoder().decode(result.stdout).trim();
+    if (result.exitCode === 0 && gitRoot) {
+      try { root = realpathSync(gitRoot); } catch { root = resolve(gitRoot); }
+    }
+  } catch {}
+  // OpenCode walks project skills to the filesystem root when cwd is outside a Git worktree.
+  root ??= parse(start).root;
+  let homeRoot = resolve(process.env.HOME || homedir());
+  try { homeRoot = realpathSync(homeRoot); } catch {}
+
+  const bySource = new Map<(typeof PROJECT_SKILL_DIRS)[number], string[]>();
+  for (const source of PROJECT_SKILL_DIRS) bySource.set(source, []);
+  const names: string[] = [];
+  const seenNames = new Set<string>();
+  const ancestors: string[] = [];
+  for (let current = start; ; current = dirname(current)) {
+    ancestors.push(current);
+    if (current === root) break;
+  }
+  // Register compatibility sources in OpenCode's precedence order: farthest parent first, then cwd.
+  for (const source of ['.claude', '.agents', '.opencode'] as const) {
+    for (const ancestor of [...ancestors].reverse()) {
+      // The external-skills flag hides these user roots. Do not re-add them as project skills for a non-Git cwd
+      // whose native walk reaches the home directory.
+      if (ancestor === homeRoot && source !== '.opencode') continue;
+      const dir = join(ancestor, source, 'skills');
+      try {
+        const entries = readdirSync(dir).sort();
+        const found: string[] = [];
+        for (const entry of entries) {
+          const skillDir = join(dir, entry);
+          const skillFile = join(skillDir, 'SKILL.md');
+          try {
+            if (!statSync(skillFile).isFile()) continue;
+            found.push(skillFile);
+            const name = frontmatterName(skillDir, entry);
+            if (validSkillName(name) && !seenNames.has(name)) { seenNames.add(name); names.push(name); }
+          } catch {}
+        }
+        // `.claude` and `.agents` need explicit paths because external discovery is disabled below.
+        if (source !== '.opencode' && found.length && !bySource.get(source)!.includes(dir)) bySource.get(source)!.push(dir);
+      } catch {}
+    }
+  }
+  return { paths: [...bySource.get('.claude')!, ...bySource.get('.agents')!], names };
+}
+
+// Link the grants into <agentDir>/skills and add the current project's compatibility roots to OpenCode discovery.
+export function prepareSkills(agentId: string, grants?: StartSpec['skills'], cwd?: string): OpencodeSkills {
+  const dir = opencodeSkillsDir(agentId);
+  const usable = launchGrants(withSparrow(grants));
+  // Allow only what was actually linked: a real entry already holding a grant's name shadows it (materializeLinks skips it).
+  const linked = new Set(materializeLinks(dir, usable));
+  const project = cwd ? projectSkillRoots(cwd) : { paths: [], names: [] };
+  return {
+    dir,
+    paths: [dir, ...project.paths],
+    names: [...new Set([...usable.filter((g) => linked.has(g.name)).map((g) => frontmatterName(g.path, g.name)), ...project.names])],
+  };
 }
 
 // ---- effort: the TUI remembers a variant per model in $XDG_STATE_HOME/opencode/model.json, and that
@@ -176,7 +274,9 @@ export const opencodeDriver: Driver = {
       env: {
         XDG_STATE_HOME: seedState(a.id, a.model, a.effort),
         OPENCODE_CONFIG_DIR: opencodeConfigDir(),
-        OPENCODE_CONFIG_CONTENT: JSON.stringify(opencodeConfig(spec, files.system)),
+        // Drops global and native project ~/.claude and ~/.agents scans; project compatibility paths are explicit.
+        OPENCODE_DISABLE_EXTERNAL_SKILLS: '1',
+        OPENCODE_CONFIG_CONTENT: JSON.stringify(opencodeConfig(spec, files.system, prepareSkills(a.id, spec.skills, a.cwd))),
       },
     };
   },

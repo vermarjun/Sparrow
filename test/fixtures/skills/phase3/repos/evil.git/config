@@ -1,0 +1,9 @@
+[core]
+	repositoryformatversion = 0
+	filemode = true
+	bare = true
+	ignorecase = true
+	precomposeunicode = true
+	fsmonitor = false
+[remote "origin"]
+	url = /Users/vermarjun/Desktop/SWEFactory/sparrow-skills/.sandbox/verify3/evil-wt

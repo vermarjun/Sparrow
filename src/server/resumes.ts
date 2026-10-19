@@ -6,8 +6,14 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, unlinkSyn
 import { basename, join } from 'node:path';
 import type { HarnessName as H, Resume as R, ResumeWriteReq } from '../shared/types';
 import type { Settings as S } from '../shared/config';
+import { validSkillName } from '../skills/frontmatter';
+
+export { validSkillName } from '../skills/frontmatter';
 
 export const SLUG_RE = /^[a-z][a-z0-9-]{0,31}$/;
+// Names kept as written (invalid/unknown ones are reported at grant time), de-duplicated, order preserved.
+const skillNames = (v: unknown): string[] =>
+  Array.isArray(v) ? [...new Set(v.filter((x) => typeof x === 'string' || typeof x === 'number').map((x) => String(x).trim()).filter(Boolean))] : [];
 
 const HARNESSES: H[] = ['claude', 'codex', 'opencode', 'fake'];
 
@@ -71,6 +77,7 @@ export function parseResume(text: string, path: string, settings: Pick<S, 'quiet
     },
     body: body.replace(/^\s+/, '').replace(/\s+$/, '') + '\n',
     path,
+    skills: skillNames(d.skills),
   };
 }
 
@@ -93,6 +100,9 @@ export const hashText = (text: string) => createHash('sha256').update(text).dige
 function yamlStr(v: string): string {
   return /^[A-Za-z0-9_][A-Za-z0-9_ .,()/+=-]*$/.test(v) && !/^(null|true|false|~)$/i.test(v) && !/^-?\d/.test(v) ? v : JSON.stringify(v);
 }
+// Plain only when YAML can't read it as anything but a string: a leading digit can parse as a number (`1e3`, `0x1f`,
+// `1-2` all do in Bun.YAML), and the keywords as null/booleans. Everything else is quoted.
+const yamlSkillItem = (v: string) => (validSkillName(v) && !/^\d/.test(v) && !/^(null|true|false|yes|no|on|off|y|n)$/.test(v) ? v : JSON.stringify(v));
 const yamlFlowItem = (v: string) => (/^[A-Za-z0-9_*][A-Za-z0-9_*.-]*$/.test(v) ? v : JSON.stringify(v));
 
 /** The on-disk format (same frontmatter + body as the shipped resumes). */
@@ -107,6 +117,7 @@ export function serializeResume(slug: string, r: Omit<ResumeWriteReq, 'slug'>): 
     `effort: ${r.effort == null ? 'null' : yamlStr(r.effort)}`,
     `can_hire: [${r.can_hire.map(yamlFlowItem).join(', ')}]`,
     `limits: { quiet_minutes: ${r.limits.quiet_minutes}, max_call_minutes: ${r.limits.max_call_minutes} }`,
+    ...(r.skills?.length ? [`skills: [${r.skills.map(yamlSkillItem).join(', ')}]`] : []),
     '---',
     r.body.replace(/^\s+/, '').replace(/\s+$/, ''),
     '',
@@ -129,6 +140,9 @@ export function validateResumeReq(b: any, opts: { create: boolean }): { value: R
   if (b.can_hire !== undefined && (!Array.isArray(b.can_hire) || !b.can_hire.every((x: unknown) => typeof x === 'string' && (x === '*' || SLUG_RE.test(x))))) {
     return { error: "can_hire must be an array of resume slugs (or ['*'])" };
   }
+  if (b.skills !== undefined && (!Array.isArray(b.skills) || !b.skills.every((x: unknown) => typeof x === 'string'))) {
+    return { error: 'skills must be an array of skill names (strings)' };
+  }
   const lim = b.limits ?? {};
   for (const f of ['quiet_minutes', 'max_call_minutes']) {
     if (lim[f] !== undefined && !(typeof lim[f] === 'number' && Number.isFinite(lim[f]) && lim[f] > 0)) return { error: `limits.${f} must be a positive number` };
@@ -142,8 +156,40 @@ export function validateResumeReq(b: any, opts: { create: boolean }): { value: R
       model: b.model || null, effort: b.effort || null, can_hire: b.can_hire ?? [],
       limits: { quiet_minutes: lim.quiet_minutes ?? 15, max_call_minutes: lim.max_call_minutes ?? 90 },
       body: b.body ?? '',
+      ...(b.skills !== undefined ? { skills: skillNames(b.skills) } : {}),
     },
   };
+}
+
+/**
+ * Replace (or insert, or drop when empty) ONLY the `skills:` entry of a resume file's frontmatter; every other byte,
+ * comments and blank lines included, is kept. A block-style list under `skills:` is replaced with its continuation lines.
+ * New entries go after `can_hire:` (and its continuation lines), else just before the closing `---`.
+ * Returns null when the text has no frontmatter.
+ */
+export function editSkillsLine(text: string, skills: string[]): string | null {
+  const eol = text.includes('\r\n') ? '\r\n' : '\n';
+  const lines = text.split(/(?<=\n)/); // keep each line's own terminator
+  if (!/^---[ \t]*\r?\n?$/.test(lines[0] ?? '')) return null;
+  let close = -1;
+  for (let i = 1; i < lines.length; i++) if (/^---[ \t]*\r?\n?$/.test(lines[i])) { close = i; break; }
+  if (close < 0) return null;
+  const isCont = (l: string) => /^[ \t]+\S/.test(l) || /^-[ \t]/.test(l);
+  const blockEnd = (start: number) => { let j = start + 1; while (j < close && isCont(lines[j])) j++; return j; };
+  const entry = skills.length ? [`skills: [${skills.map(yamlSkillItem).join(', ')}]${eol}`] : [];
+  const at = (key: string) => { for (let i = 1; i < close; i++) if (new RegExp(`^${key}[ \\t]*:`).test(lines[i])) return i; return -1; };
+  const sk = at('skills');
+  if (sk >= 0) {
+    const end = blockEnd(sk);
+    // the replaced line keeps its terminator style; a last-line `skills:` before `---` always has one
+    lines.splice(sk, end - sk, ...entry);
+  } else if (entry.length) {
+    const ch = at('can_hire');
+    const pos = ch >= 0 ? blockEnd(ch) : close;
+    if (pos > 0 && !/\n$/.test(lines[pos - 1])) lines[pos - 1] += eol;
+    lines.splice(pos, 0, ...entry);
+  }
+  return lines.join('');
 }
 
 export class Resumes {
@@ -205,6 +251,25 @@ export class Resumes {
     renameSync(tmp, path);
     if (this.isTombstoned(slug)) unlinkSync(this.tombstone(slug));
     return this.get(slug)!;
+  }
+
+  /**
+   * Set a resume's skills by editing only its `skills:` line (see editSkillsLine). Synchronous read-modify-write, so
+   * two requests can never interleave. A resume served from a later dir (a builtin) is copied to the write dir first.
+   * Returns the resume, or null when the slug does not exist; throws when the file has no frontmatter.
+   */
+  setSkills(slug: string, skills: string[]): R | null {
+    const src = this.pathOf(slug);
+    if (!src) return null;
+    const next = editSkillsLine(readFileSync(src, 'utf8'), skills);
+    if (next === null) throw new Error(`resume ${slug} has no frontmatter to hold a skills: list`);
+    mkdirSync(this.writeDir, { recursive: true });
+    const path = join(this.writeDir, `${slug}.md`);
+    const tmp = `${path}.tmp-${process.pid}-${Math.random().toString(36).slice(2)}`;
+    writeFileSync(tmp, next);
+    renameSync(tmp, path);
+    if (this.isTombstoned(slug)) unlinkSync(this.tombstone(slug));
+    return this.get(slug);
   }
 
   /**

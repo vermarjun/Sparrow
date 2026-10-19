@@ -113,7 +113,7 @@ describe('read endpoints', () => {
 
   test('bad JSON → 400; unknown endpoint → 404 JSON; identified-only endpoint without header → 401', async () => {
     const ctx = await setup();
-    const res = await ctx.app.request('/api/hire', { method: 'POST', headers: { 'x-sparrow-agent': ctx.captain.id }, body: '{nope' });
+    const res = await ctx.app.request('/api/hire', { method: 'POST', headers: { 'content-type': 'application/json', 'x-sparrow-agent': ctx.captain.id }, body: '{nope' });
     expect(res.status).toBe(400);
     expect((await res.json()).error).toContain('JSON');
     const nf = await ctx.req('GET', '/api/bogus');

@@ -210,7 +210,11 @@ export function resumesDirectory(resumes: (Resume | ResumeView)[]): string {
       const status = view.status ?? 'unchecked';
       const unusable = !['ok', 'unchecked'].includes(status);
       const lines = [`${r.slug} — ${r.title} [${h}]`, `  ${oneLine(renderResumeText(r.description, r), 160)}`];
-      lines.push(`  status: ${status}${unusable ? ' — UNUSABLE: do not hire' : ''}${view.status_detail ? ` · ${view.status_detail}` : ''}`);
+      const ph = view.provider_health;
+      const degraded = ph?.degraded
+        ? ` · DEGRADED: ${ph.errors} provider errors in a row on ${ph.provider}${ph.last_error ? ` (last: ${oneLine(ph.last_error, 80)}${ph.last_error_at ? `, ${age(ph.last_error_at)}` : ''})` : ''}; prefer another resume until one call succeeds`
+        : '';
+      lines.push(`  status: ${status}${unusable ? ' — UNUSABLE: do not hire' : ''}${view.status_detail ? ` · ${view.status_detail}` : ''}${degraded}`);
       lines.push(`  can hire: ${r.can_hire.length ? r.can_hire.join(', ') : 'nobody'}`);
       return lines.join('\n');
     })

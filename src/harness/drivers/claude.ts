@@ -6,7 +6,7 @@ import type { Agent } from '../../shared/types';
 import type { StartSpec } from '../index';
 import { CLAUDE_BIN, CLAUDE_JSON } from '../env';
 import { hookCommand, writeAtomic, type Arg, type CallFiles } from '../launch';
-import { claudePluginDir, ensureClaudePlugin } from '../claude-plugin';
+import { ensureAgentPlugin } from '../claude-plugin';
 import * as tmux from '../tmux';
 import type { Driver, PreparedLaunch } from './types';
 
@@ -64,14 +64,16 @@ export const claudeDriver: Driver = {
     const settingsPath = join(files.dir, 'claude-settings.json');
     writeAtomic(settingsPath, JSON.stringify(claudeSettings(), null, 2));
     preAcceptTrust(a.cwd);
-    ensureClaudePlugin();
+    const pluginDir = ensureAgentPlugin(a.id, spec.skills);
 
-    const argv: Arg[] = [CLAUDE_BIN(), '--dangerously-skip-permissions', '--setting-sources', 'project,local', '--plugin-dir', claudePluginDir()];
+    const argv: Arg[] = [CLAUDE_BIN(), '--dangerously-skip-permissions', '--setting-sources', 'project,local', '--plugin-dir', pluginDir];
     argv.push(resume ? '--resume' : '--session-id', sessionId);
     argv.push('-n', a.handle);
     if (a.model) argv.push('--model', a.model);
     if (a.effort) argv.push('--effort', a.effort);
-    argv.push('--append-system-prompt', { file: files.system });
+    // Claude has a file option for the system prompt. Keep the first task positional, as the interactive CLI
+    // does not accept --input-format stream-json unless it is in --print mode.
+    argv.push('--append-system-prompt-file', files.system);
     argv.push('--settings', settingsPath);
     argv.push({ file: files.prompt });
     return { argv, session_id: sessionId };

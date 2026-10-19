@@ -1,17 +1,43 @@
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { cleanEnv, run, tempDir, REPO } from './helpers';
+import { cleanEnv, freePort, run, tempDir, REPO } from './helpers';
+
+// This file owns a private server so its afterAll cleanup cannot kill panes from another test file.
+const TEST_TAG = (process.env.SPARROW_TMUX_SOCKET ?? `${process.pid}`).replace(/[^a-zA-Z0-9-]/g, '-');
+const SOCKET = `sparrow-cli-lifecycle-${TEST_TAG}`;
+const PREFIX = `scl-${TEST_TAG}-`;
+const HOMES = new Set<string>();
+
+function fakeAgentPids(): number[] {
+  const r = Bun.spawnSync(['ps', '-ww', '-Ao', 'pid=,command='], { stdout: 'pipe', stderr: 'ignore' });
+  return r.stdout.toString().split('\n').flatMap((line) => {
+    if (!line.includes('/src/harness/fake-agent.ts') || ![...HOMES].some((home) => line.includes(`${home}/agents/`))) return [];
+    const pid = Number(line.trim().split(/\s+/, 1)[0]);
+    return Number.isInteger(pid) && pid > 0 ? [pid] : [];
+  });
+}
+
+afterAll(async () => {
+  // These tests own SOCKET. Killing only that tmux server reaps every child pane process, including fake agents.
+  Bun.spawnSync(['tmux', '-L', SOCKET, 'kill-server'], { stdout: 'ignore', stderr: 'ignore' });
+  for (let i = 0; i < 40 && fakeAgentPids().length; i++) await Bun.sleep(50);
+  const leaked = fakeAgentPids();
+  // If a child survived tmux shutdown, terminate only PIDs whose argv names one of this suite's private homes.
+  for (const pid of leaked) { try { process.kill(pid, 'SIGTERM'); } catch {} }
+  expect(leaked).toEqual([]);
+});
 
 function setup(port: number) {
-  const home = tempDir('u1cli-');
+  const home = tempDir(`sparrow-cli-lifecycle-${TEST_TAG}-`);
+  HOMES.add(home);
   const bin = join(home, 'bin'); mkdirSync(bin);
   writeFileSync(join(bin, 'open'), '#!/bin/sh\nprintf "%s\\n" "$@" >> "$SPARROW_HOME/opened"\n');
   chmodSync(join(bin, 'open'), 0o755);
   const web = join(home, 'web'); mkdirSync(web);
   writeFileSync(join(web, 'package.json'), JSON.stringify({ name: 'stub-ui', scripts: { build: 'mkdir -p dist; echo ui > dist/index.html' } }));
   return { home, env: {
-    SPARROW_HOME: home, SPARROW_PORT: String(port), SPARROW_TMUX_SOCKET: 'u1cli', SPARROW_TMUX_PREFIX: 'u1cli-',
+    SPARROW_HOME: home, SPARROW_PORT: String(port), SPARROW_TMUX_SOCKET: SOCKET, SPARROW_TMUX_PREFIX: PREFIX,
     SPARROW_WEB_DIR: web, PATH: `${bin}:${process.env.PATH}`,
   } };
 }
@@ -41,7 +67,6 @@ describe('one command lifecycle', () => {
       expect((await run(['stop'], { env })).stdout).toContain('not running');
     } finally {
       await run(['stop'], { env });
-      Bun.spawnSync(['tmux', '-L', 'u1cli', 'kill-session', '-t', '=u1cli-sparrow-u1-cli'], { stderr: 'ignore' });
     }
   }, 60_000);
 
@@ -73,7 +98,9 @@ describe('one command lifecycle', () => {
       const r = await run([], { env });
       expect(r.code).toBe(1); expect(r.stderr).toContain(`pid ${foreign.pid}`); expect(r.stderr).toContain('occupied');
       expect(existsSync(join(home, 'server.pid'))).toBe(false);
-      expect((await run(['stop'], { env })).code).toBe(0);
+      const stopped = await run(['stop'], { env });
+      expect(stopped.code).toBe(1);
+      expect(stopped.stderr).toContain('no process was signalled');
       expect(await fetch('http://127.0.0.1:4151').then(r => r.text())).toBe('foreign');
     } finally { foreign.kill(); await foreign.exited; }
   }, 15_000);
@@ -89,18 +116,18 @@ describe('captain', () => {
       const r = await run(['captain', '--cwd', home, '--model', 'haiku', '--effort', 'low', '--json'], { env: { ...env, SPARROW_CLAUDE_BIN: fake, SPARROW_CLAUDE_JSON: join(home, 'claude.json'), SPARROW_AGENT_ID: 'must-not-inherit' } });
       expect(r.code).toBe(0);
       const result = JSON.parse(r.stdout);
-      expect(result.session).toBe('u1cli-captains'); expect(result.attach).toContain(`select-window -t ${result.window_id}`);
+      expect(result.session).toBe(`${PREFIX}captains`); expect(result.attach).toContain(`select-window -t ${result.window_id}`);
       for (let i = 0; i < 40 && !existsSync(join(home, 'argv')); i++) await Bun.sleep(50);
       expect(readFileSync(join(home, 'cwd'), 'utf8').trim()).toBe(home);
       expect(readFileSync(join(home, 'identity'), 'utf8')).toBe('');
       expect(readFileSync(join(home, 'argv'), 'utf8').trim().split('\n')).toEqual(['--append-system-prompt-file', join(REPO, 'assets/captain.md'), '--model', 'haiku', '--effort', 'low']);
       expect(JSON.parse(readFileSync(join(home, 'claude.json'), 'utf8')).projects[home].hasTrustDialogAccepted).toBe(true);
-      expect(Bun.spawnSync(['tmux', '-L', 'u1cli', 'display-message', '-p', '-t', result.window_id, '#{pane_current_path}']).stdout.toString().trim()).toBe(home);
+      expect(Bun.spawnSync(['tmux', '-L', SOCKET, 'display-message', '-p', '-t', result.window_id, '#{pane_current_path}']).stdout.toString().trim()).toBe(home);
       const bad = await run(['captain', '--cwd', join(home, 'absent')], { env: { ...env, SPARROW_CLAUDE_BIN: fake } });
       expect(bad.code).toBe(1); expect(bad.stderr).toContain('existing directory');
     } finally {
       server.stop(true);
-      Bun.spawnSync(['tmux', '-L', 'u1cli', 'kill-session', '-t', '=u1cli-captains'], { stderr: 'ignore' });
+      Bun.spawnSync(['tmux', '-L', SOCKET, 'kill-session', '-t', `=${PREFIX}captains`], { stderr: 'ignore' });
     }
   }, 15_000);
 });
@@ -108,7 +135,7 @@ describe('captain', () => {
 // Attach instructions are shell commands: the semicolon must reach tmux as one argument.
 test('attach command shell escaping preserves the tmux command separator', async () => {
   const { tmuxAttach } = await import('../../src/cli/format');
-  const cmd = tmuxAttach({ tmux_session: 'u1cli-demo', tmux_window: 'worker' });
+  const cmd = tmuxAttach({ tmux_session: 'sparrow-cli-lifecycle-demo', tmux_window: 'worker' });
   const p = Bun.spawn(['bash', '-c', `tmux() { printf '<%s>\\n' "$@"; }; ${cmd}`], { stdout: 'pipe', stderr: 'pipe' });
   const out = await new Response(p.stdout).text();
   expect(await p.exited).toBe(0);
@@ -147,5 +174,28 @@ describe('waitForCatalogs (the browser opens with every harness listed)', () => 
       expect((await waitForCatalogs({ url: `http://127.0.0.1:${full.port}`, say: (l) => lines.push(l) })).complete).toBe(true);
       expect(lines).toEqual([]);
     } finally { partial.stop(true); full.stop(true); }
+  });
+});
+
+describe('stop targets this home, not the inherited SPARROW_URL', () => {
+  // Agent windows export SPARROW_URL (the live server that spawned them). `SPARROW_HOME=<sandbox> SPARROW_PORT=<p>
+  // sparrow stop` from such a window used to ask SPARROW_URL for the pid and SIGTERM the live server.
+  test('a sandbox stop with no server of its own leaves the server at SPARROW_URL alone', async () => {
+    const victim = Bun.spawn(['sleep', '60'], { stdout: 'ignore', stderr: 'ignore' });
+    const decoy = Bun.serve({
+      port: 0,
+      fetch: () => Response.json({ ok: true, pid: victim.pid, version: '0.1.0', started_at: 1 }),
+    });
+    const home = tempDir('stop-url-');
+    try {
+      const port = await freePort();
+      const r = await run(['stop'], { env: { SPARROW_HOME: home, SPARROW_PORT: String(port) }, url: `http://127.0.0.1:${decoy.port}` });
+      expect(r.code).toBe(0);
+      expect(r.stdout).toContain('not running');
+      expect(() => process.kill(victim.pid, 0)).not.toThrow();
+    } finally {
+      decoy.stop(true);
+      victim.kill('SIGKILL');
+    }
   });
 });

@@ -6,3 +6,8 @@ web/dist/
 .orchestra/
 test/.tmp/
 docs/*.html
+
+# sandbox HOMEs, fixture libraries, probe scratch for tests/demos (never committed)
+.sandbox/
+# skills evidence lives on branch evidence/skills (worktree ../sparrow-skills-evidence)
+docs/skills-evidence/

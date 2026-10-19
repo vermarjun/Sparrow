@@ -2,12 +2,13 @@
 // written to a file and passed as `-c "$(cat file)"`, so arbitrary markdown survives quoting); turn ends come
 // from a per-spawn `notify` override (the user's own notify in ~/.codex/config.toml is untouched on disk).
 import { Database } from 'bun:sqlite';
-import { copyFileSync, existsSync, mkdtempSync, openSync, readSync, closeSync, readdirSync, realpathSync, statSync } from 'node:fs';
+import { closeSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readlinkSync, readSync, realpathSync, statSync, symlinkSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Agent } from '../../shared/types';
 import type { StartSpec } from '../index';
-import { CODEX_BIN, CODEX_HOME, bunPath, hookEntry } from '../env';
+import { CODEX_BIN, CODEX_HOME, agentDir, bunPath, hookEntry } from '../env';
+import { agentsSkillsRoots, launchGrants, materializeLinks, withSparrow } from '../../skills/grant';
 import { writeAtomic, type Arg, type CallFiles } from '../launch';
 import * as tmux from '../tmux';
 import type { Driver, PreparedLaunch } from './types';
@@ -35,6 +36,73 @@ export function trustValue(cwd: string): string {
   return `projects={ ${[...paths].map((p) => `${tomlString(p)} = { trust_level = "trusted" }`).join(', ')} }`;
 }
 
+// ---- per-agent CODEX_HOME. Codex reads skills from $CODEX_HOME/skills and ~/.agents/skills. Each agent gets its
+// own home so only the granted folders are in skills/; auth.json, config.toml (and LINKED_FILES) are SYMLINKS to the real ones
+// (a copy could hold a refreshed token that invalidates the real one). The same home is used for discoverSession
+// and for resume: the session lives in it (state_5.sqlite, sessions/).
+export const agentCodexHome = (agentId: string) => join(agentDir(agentId), 'codex-home');
+// Linked from the real home when present: login, config, plugins, and the user's instructions/policy/MCP credentials
+// that a Codex agent used before it had its own home. Never linked: skills/ (the point of the home), SQLite state and
+// sessions (per-agent; a linked SQLite file gets its -wal/-shm beside the link).
+const LINKED_FILES = ['auth.json', 'config.toml', 'plugins', 'AGENTS.md', 'AGENTS.override.md', '.credentials.json', 'rules', 'prompts'];
+
+// Codex's own `.system` built-ins are re-created in skills/ on first use and are left alone.
+export function prepareCodexHome(agentId: string, grants?: StartSpec['skills'], realHome = CODEX_HOME()): string {
+  const home = agentCodexHome(agentId);
+  mkdirSync(home, { recursive: true });
+  for (const f of LINKED_FILES) {
+    const src = join(realHome, f), dst = join(home, f);
+    if (resolveReal(src) === resolveReal(dst) && existsSync(dst)) continue; // realHome IS this home
+    let cur: ReturnType<typeof lstatSync> | null = null;
+    try {
+      cur = lstatSync(dst);
+    } catch {}
+    if (cur && !cur.isSymbolicLink()) continue; // a real file Codex wrote: never overwrite
+    if (!existsSync(src)) {
+      if (cur) unlinkSync(dst);
+      continue;
+    }
+    if (cur && readlinkSync(dst) === src) continue;
+    if (cur) unlinkSync(dst);
+    symlinkSync(src, dst);
+  }
+  materializeLinks(join(home, 'skills'), launchGrants(withSparrow(grants)));
+  return home;
+}
+const resolveReal = (p: string) => {
+  try {
+    return realpathSync(p);
+  } catch {
+    return p;
+  }
+};
+
+// Every entry of the agents roots (real folders and symlinks to folders) that holds a SKILL.md, disabled by path.
+export function agentsSkillPaths(roots = agentsSkillsRoots()): string[] {
+  const out: string[] = [];
+  for (const root of roots) {
+    let entries: string[] = [];
+    try {
+      entries = readdirSync(root).sort();
+    } catch {
+      continue;
+    }
+    for (const e of entries) {
+      const md = join(root, e, 'SKILL.md');
+      try {
+        if (statSync(md).isFile()) out.push(md);
+      } catch {}
+    }
+  }
+  return out;
+}
+
+// `skills.config` is a TOML array of inline tables (a JSON string is rejected: "expected a sequence").
+export function skillsConfigValue(paths: string[]): string | null {
+  if (paths.length === 0) return null;
+  return `skills.config=[${paths.map((p) => `{path=${tomlString(p)},enabled=false}`).join(',')}]`;
+}
+
 export const codexDriver: Driver = {
   name: 'codex',
 
@@ -56,11 +124,14 @@ export const codexDriver: Driver = {
     opts.push('-c', { file: devFile });
     opts.push('-c', `notify=${JSON.stringify([bunPath(), hookEntry(), 'codex-notify'])}`);
     opts.push('-c', trustValue(a.cwd));
+    const home = prepareCodexHome(a.id, spec.skills);
+    const disabled = skillsConfigValue(agentsSkillPaths());
+    if (disabled) opts.push('-c', disabled);
 
     const argv: Arg[] = [CODEX_BIN()];
     if (resume) argv.push('resume', ...opts, a.session_id!, { file: files.prompt });
     else argv.push(...opts, { file: files.prompt });
-    return { argv, session_id: resume ? a.session_id : null };
+    return { argv, session_id: resume ? a.session_id : null, env: { CODEX_HOME: home } };
   },
 
   async deliver(windowId: string, text: string) {
@@ -71,11 +142,11 @@ export const codexDriver: Driver = {
 
   async discoverSession(agent: Agent, since: number): Promise<string | null> {
     try {
-      const fromDb = discoverFromStateDb(agent, since);
+      const fromDb = discoverFromStateDb(agent, since, agentCodexHome(agent.id));
       if (fromDb) return fromDb;
     } catch {}
     try {
-      return discoverFromRollouts(agent, since);
+      return discoverFromRollouts(agent, since, agentCodexHome(agent.id));
     } catch {
       return null;
     }
@@ -126,8 +197,8 @@ function pick<T extends { id: string; path?: string }>(agent: Agent, cands: T[])
   return (match ?? cands[0]).id;
 }
 
-function discoverFromStateDb(agent: Agent, since: number): string | null {
-  const file = join(CODEX_HOME(), 'state_5.sqlite');
+function discoverFromStateDb(agent: Agent, since: number, home: string): string | null {
+  const file = join(home, 'state_5.sqlite');
   if (!existsSync(file)) return null;
   const db = openReadonly(file);
   try {
@@ -145,8 +216,8 @@ function discoverFromStateDb(agent: Agent, since: number): string | null {
   }
 }
 
-function discoverFromRollouts(agent: Agent, since: number): string | null {
-  const root = join(CODEX_HOME(), 'sessions');
+function discoverFromRollouts(agent: Agent, since: number, home: string): string | null {
+  const root = join(home, 'sessions');
   if (!existsSync(root)) return null;
   const cwds = cwdSet(agent.cwd);
   const files: { path: string; mtime: number }[] = [];

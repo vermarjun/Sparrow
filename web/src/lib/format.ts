@@ -143,6 +143,21 @@ export const previewLine = (s: string) =>
     .trim()
     .slice(0, 140)
 
+/** First meaningful line of a `done` summary (skips a bare "## Result" heading), markdown stripped. */
+export function resultLine(text: string): string {
+  const lines = text.split('\n').filter((l) => l.trim() && !/^\s*#{1,6}\s*(result|summary|done)\s*:?\s*$/i.test(l))
+  return previewLine(lines[0] ?? '').slice(0, 160)
+}
+
+/**
+ * How an idle agent's job ended: its latest `done` (status chip + first line), only while its last call ended with `done`.
+ * Anything else (working, waiting, crashed, a later unreported end) keeps showing the last progress update.
+ */
+export function jobResult(a: Pick<Agent, 'state' | 'last_end_reason' | 'last_result'>): { status: 'ok' | 'blocked' | 'failed'; line: string; at: number } | null {
+  if (a.state !== 'idle' || a.last_end_reason !== 'done' || !a.last_result) return null
+  return { status: a.last_result.status, line: resultLine(a.last_result.text), at: a.last_result.at }
+}
+
 /**
  * A system notice whose `meta.screen` is set embeds the screen in its text
  * ("…\nLast screen:\n<screen>\nSend @x a message…"). Return the notice without the

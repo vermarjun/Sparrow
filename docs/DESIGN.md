@@ -137,12 +137,15 @@ Identity header `x-sparrow-agent`; hooks add `x-sparrow-call`. Every response to
 
 UI requests have no identity header: allowed to read everything, create/patch cards (`created_by:'user'`). Nothing else.
 
+Every state-changing `/api/*` request (D13) is refused (403) when `Sec-Fetch-Site` is `cross-site`/`same-site` or `Origin` is present and not `http://127.0.0.1|localhost|[::1]:<this server's port>`, and (415) when it has a body that is not `application/json` (`+json` allowed) — the one exception is the multipart `POST /api/skills/upload`. The CLI and hooks send no Origin and pass. Skills routes (`/api/skills*`) are listed in §12.9 and add stricter content-type rules (§12.2).
+
 `team` is present only on `GET /api/inbox`; its item type is `TeamStatus` in `src/shared/types.ts`, with fields `{handle, resume, harness, state, call_started_at: number|null, last_update: string|null, last_update_at: number|null}`. No other endpoint adds `team`.
 
 ## 5. CLI — plain text output for models; `--json` prints the raw response
 
 ```
-sparrow up [--port N] [--max-running N] [--tmux]   start the server (foreground; --tmux: in tmux session 'sparrow', window 'server')
+sparrow up [--port N] [--home DIR] [--max-running N] [--tmux] [--sandbox]   start the server (foreground; --tmux: in tmux session 'sparrow', window 'server'; --home must equal SPARROW_HOME and shows in `ps`; an agent window may only run up/stop with --sandbox and a non-default SPARROW_HOME)
+sparrow sandbox up [--dir path] | down [--dir path]   throwaway server (D19) owning <dir>: `home` (SPARROW_HOME), `skills-home` (SPARROW_SKILLS_HOME, created; a value the caller already set wins), a free port (never 4040), its own tmux socket/prefix, and a `sbx` wrapper that pins them. The server env carries SPARROW_SKILLS_HOME, so the library, harness skill roots, staging and backups of the sandbox and of every agent it launches stay inside it: a sandbox can never touch the real ~/Skills or harness folders
 sparrow install [--force]                          seed resumes, link ~/.local/bin/sparrow, install skills + harness assets
 sparrow status                                     server health + working agents and their windows
 sparrow whoami
@@ -194,13 +197,15 @@ Installed: Claude Code 2.1.296 (`claude`), Codex 0.162.1 (call `/opt/homebrew/bi
 `start()` writes `~/.sparrow/agents/<agentId>/system.md`, `calls/<callId>.prompt.md`, `calls/<callId>.sh`, then `tmux new-window -d -P -F '#{window_id}' -t <session>: -n <window> -c <cwd> "bash <script>"` (creating the session with `new-session -d -s <session> -c <cwd>` if missing; honour `TMUX_SOCKET` with `-L`). The script: `cd <cwd>`; export/unset env (3.1); run the harness; then `sparrow hook exit --code $?`. Pass big texts as `"$(cat <file>)"`, never inline.
 
 Starting points (verify; adjust; document deviations):
-- **claude** new: `claude --dangerously-skip-permissions --session-id <uuid> -n <handle> [--model M] [--effort E] --append-system-prompt "$(cat system.md)" --settings <settings.json with Stop hook → "sparrow hook claude-stop"> "$(cat prompt.md)"`; resume: same but `--resume <uuid>` instead of `--session-id`. Pre-accept the folder trust dialog if it appears (e.g. `~/.claude.json` `projects[<cwd>].hasTrustDialogAccepted`).
+- **claude** new: `claude --dangerously-skip-permissions --session-id <uuid> -n <handle> [--model M] [--effort E] --append-system-prompt-file <system.md> --settings <settings.json with Stop hook → "sparrow hook claude-stop"> "$(cat prompt.md)"`; resume: same but `--resume <uuid>` instead of `--session-id`. Pre-accept the folder trust dialog if it appears (e.g. `~/.claude.json` `projects[<cwd>].hasTrustDialogAccepted`).
 - **codex** new: `codex --yolo -C <cwd> [-m M] [-c model_reasoning_effort=E] <system prompt via developer_instructions — choose the robust way: -c, a generated profile, or a file key> -c 'notify=["<bin>","hook","codex-notify"]' -c 'projects."<cwd>".trust_level="trusted"' "$(cat prompt.md)"`; resume: `codex resume <thread_id> [same options] "$(cat prompt.md)"` (check where options go). Session id: notify payload `thread-id`, and/or env inside tool calls, and/or newest rollout in `~/.codex/sessions` with matching cwd (`discoverSession`).
 - **opencode** new: `opencode <cwd> --auto [-m provider/model] --prompt "$(cat prompt.md)"` with the system prompt added via `OPENCODE_CONFIG_CONTENT` (`instructions: [<abs path to system.md>]`) or a generated agent; effort via variant if possible; resume: `-s <ses_id>`. Session id + idle signal from a global plugin (`installHarnessAssets` puts it in the OpenCode plugin dir) that is inert unless `SPARROW_AGENT_ID` is set and calls `sparrow hook opencode-idle …` / the HTTP API.
 - **fake** (tests, no model): a Bun script run in the window that reads the prompt file and follows directives in it: `FAKE:update <t>`, `FAKE:done <t>`, `FAKE:ask <t>`, `FAKE:wait`, `FAKE:sleep <sec>`, `FAKE:crash <code>`, `FAKE:exit0`, `FAKE:idle` (simulate a turn end via `sparrow hook turn-end`), `FAKE:remember <word>` / `FAKE:recall` (persists per session id under the agent dir, so resume is testable). Default when no directive: update + done.
 - `deliver(agent, text)`: tmux `load-buffer` + `paste-buffer -p` (bracketed) + Enter, with whatever delay/keys each TUI needs. Verify on each TUI that a pasted multi-line message is submitted as ONE message.
 - `stop`: kill the window by id (idempotent). `isAlive`: window exists and `pane_dead == 0`. `capture`: `capture-pane -p -J -S -<lines>`.
 - `runHook` kinds: `claude-stop` (stdin JSON → POST turn-end → print `{"decision":"block","reason":…}` when told to block), `codex-notify <json>`, `opencode-idle`/`opencode-session` (if the plugin shells out), `exit --code N`, `turn-end` (generic, used by fake). All are no-ops (exit 0, print nothing) when `SPARROW_AGENT_ID` is unset, so global installs never touch the user's own sessions.
+
+Per-agent skills: each driver links exactly the agent's granted skills into a per-agent folder at every call start (Claude `--plugin-dir`, OpenCode `skills.paths` + `permission.skill`, Codex per-agent `CODEX_HOME`); see §12.5.
 
 ## 7. Prompts (`src/server/prompts.ts`, `assets/protocol.md`)
 
@@ -242,6 +247,7 @@ harness: claude          # claude | codex | opencode | fake
 model: opus              # optional (harness default when omitted)
 effort: high             # optional
 can_hire: []             # non-empty ⇒ captain
+skills: [write-like-a-human]  # optional; library skills this role gets (§12.5). Sparrow's two are always on
 limits: { quiet_minutes: 15, max_call_minutes: 90 }
 ---
 <role prompt>
@@ -256,7 +262,8 @@ React + Vite + TypeScript + Tailwind + shadcn/ui (+ dnd-kit for the board). Ligh
 - **Board**: columns Proposed · To do · In progress · Review · Done (Dropped collapsed). Card: #id, title, category chip, assignee @handle with state dot, notes count. Drag between/within columns → `PATCH /api/cards/:id {state, position}`. Only that. Card click → side sheet with details + notes.
 - **Chat**: WhatsApp-like, with direct message threads only (for example, "@captain ↔ @james"), last message + time. Right: bubbles; kind styling — task (blue tag), update (small, muted, no bubble), question (amber), result (green with status), system (grey centered). @mentions highlighted. Read-only.
 - **Agents**: hierarchy (captain → hires → their hires). Row: @handle, resume title, harness icon/label, model/effort, state badge (working pulses), cwd, tmux target with copy button (`tmux attach -t <session> \; select-window -t <window>`), session id (copy), last update + age, quiet warning. Click → sheet with live screen peek (poll `/screen` every 2 s while working) and recent calls (start, duration, end reason).
-Dev: `bun run dev` with proxy `/api` → `http://127.0.0.1:4040`. Build to `web/dist`.
+- **Skills** (global page, `#/skills`, `#/skills/<name>`): Library (per-harness toggles, status chips, Sync, update chips), Agent matrix, Unmanaged / External (Adopt), Conflicts (diff, resolve), skill detail (rendered `SKILL.md`, files, git log), git bar (Pull, Commit & push), Add skill (Create / Upload / From link) and Migrate existing skills. See §12.
+Dev: `bun run dev` with proxy `/api` → `http://127.0.0.1:4040`. Build to `web/dist`. The dev proxy rewrites `Origin` to the target so writes pass the same-origin check (D13).
 
 ## 10. Acceptance (verified with real Claude Code, Codex and OpenCode agents)
 
@@ -279,3 +286,240 @@ A11 UI: Board, Chat and Agents render live data; the screen peek shows a working
 - A3: @mentions and handles are matched case-insensitively.
 - A4: FYI system notices (restarting, quiet nudge) get quiet deliveries (`wake = 0`) and never wake the parent; only terminal notices wake it.
 - A5: Quiet deliveries (`wake = 0`) remain pending but do not wake, spawn, resolve `inbox --wait` early, or block `done`/`ask`/`wait`. When any pending deliveries are handed over, quiet updates accompany waking messages in seq order. `GET /api/inbox` returns the caller's active-child digest so timeout output can show each child's latest update.
+
+## 12. Skills
+
+One git library of skills (default `~/Skills`, setting `skills_dir` in `<SPARROW_HOME>/config.json`), linked into
+each harness's own skills folder, and a per-agent choice of skills at spawn. Managed only through the web UI
+(**Skills** page), the HTTP API (§12.9) and a Doctor check; there is no skills CLI. Code: `src/skills/*`,
+`src/server/skills-api.ts`, `src/server/skills-add-routes.ts`, `src/server/skills-migration.ts`,
+`web/src/pages/Skills.tsx` + `web/src/components/skills/*`. Build evidence: branch `evidence/skills`.
+
+### 12.1 Decisions
+1. The library is a git repo with its own remote; Sparrow pushes only to that repo's `origin`.
+2. A resume without `skills:` gets only Sparrow's two skills (`sparrow-worker`, `sparrow-captain`), which are always on
+   and locked for every agent.
+3. Everything the user installed that is not a harness default or Sparrow's own moves into the library on migration:
+   `~/.claude/skills`, `~/.codex/skills`, the OpenCode folder, `~/.agents/skills` (`npx skills`, the AWS set),
+   `~/Desktop/Skills`, and links to outside HOME (brew's `agent-browser`) or into other folders (the library keeps one
+   copy; the link's content is copied and the link replaced). Harness defaults stay untouched: Claude's built-ins,
+   Codex's `.system` and enabled plugins, OpenCode's `customize-opencode`; so do Sparrow's two skills and claude.ai's
+   `~/.claude/skills/synced` (rewritten by claude.ai: it stays a read-only **External** entry with **Adopt**). Claude
+   plugins are out of scope. After migration, **External** only holds what appears later (a new `npx skills` install, claude.ai).
+4. Imports are built in (shallow `git clone`, `SKILL.md` discovery) and accept Vercel's `skills` source formats; lock
+   fields use Vercel's names. Sparrow never reads or writes `~/.agents/.skill-lock.json`.
+
+### 12.2 Paths and safety
+- **Environment overrides.** `SPARROW_HOME` selects Sparrow's state directory; `SPARROW_PORT` its listener; `SPARROW_URL` the CLI server URL; `SPARROW_TMUX_SOCKET` and `SPARROW_TMUX_PREFIX` isolate tmux servers and session names; `SPARROW_SETTINGS` supplies settings JSON; `SPARROW_WEB_DIR` selects the UI build directory. For skills, `SPARROW_SKILLS_HOME` replaces HOME for skill paths and `SPARROW_SKILLS_DIR` selects the library. Without `SPARROW_SKILLS_HOME`, path resolution also honors `CLAUDE_CONFIG_DIR`, `CODEX_HOME` and `XDG_CONFIG_HOME`.
+- **One resolver.** `skillPaths()` (`src/skills/paths.ts`) computes every harness skills folder, the library, the External
+  roots and the backup dir; no other module builds those paths. `SPARROW_SKILLS_HOME` replaces HOME for all of them (and
+  then `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `XDG_CONFIG_HOME` are ignored); otherwise those three are honoured like the
+  harnesses do. One exception by necessity: a spawned Codex reads the REAL `$HOME/.agents/skills` whatever the sandbox
+  says, so `codexAgentsRoots()` adds it to the disable list (read only). Library: `SPARROW_SKILLS_DIR`, else `skills_dir`, else `<home>/Skills`. `sparrow install` uses it too.
+- **Write fence.** Every write, link, move or delete of the library, the harness skill roots and `~/Desktop/Skills`
+  (migration only) goes through `assertWritable(path)`, which allows only those, the backup dir and `SPARROW_HOME`
+  (with `SPARROW_SKILLS_HOME` set, only inside it). Uploads and import previews are staged in `<SPARROW_HOME>/skills-staging`;
+  a sandbox whose `SPARROW_HOME` lies outside `SPARROW_SKILLS_HOME` (every `sparrow sandbox` server; `sandbox up` sets `SPARROW_SKILLS_HOME=<dir>/skills-home` unless the caller already set one, and launch scripts pass it on to agent windows) keeps that folder and
+  `skills-backup` in `<SPARROW_SKILLS_HOME>/.sparrow` instead, so upload and import work there. Per-agent launch folders under `<SPARROW_HOME>/agents/<id>/`
+  (grant links, Codex home links) are written by the drivers directly; they never leave the agent dir.
+- **Never destroy.** Link sync never deletes or overwrites a real folder or a link it doesn't own (a link into the
+  library); it reports a conflict with a diff. Adopt and migration replace a real folder only after hash-checking the
+  library copy and **move** the original to `<SPARROW_HOME>/skills-backup/<timestamp>-<id>/…`.
+- **Imports are untrusted.** Nothing imported is ever executed (no hooks, filters, submodules, LFS; no scripts). Modes are
+  preserved like Vercel's tool (Git 100755, ZIP Unix attributes, local folders); browser folder uploads carry no modes
+  and stay non-executable. The preview lists every executable file, every `scripts/` file and every shebang file in an
+  amber warning before import. Zip-slip, absolute paths, symlinks, device files, control characters and oversize uploads
+  are rejected.
+- Every skills write (`POST|PUT|PATCH|DELETE /api/skills*`) is covered by the global write guard (§4: cross-site,
+  same-site and foreign `Origin`s → 403). On top, a skills write that sends a body (or a `Content-Type`) must be exactly
+  `application/json`, and the upload must be `multipart/form-data` (415 otherwise).
+
+### 12.3 Roots, readers and classification
+| Root | Path | Read by |
+|---|---|---|
+| `library` | `<library>/<name>` | (through links) |
+| `claude` | `${CLAUDE_CONFIG_DIR:-~/.claude}/skills` | Claude, OpenCode |
+| `codex` | `${CODEX_HOME:-~/.codex}/skills` (`.system/` = Codex built-ins, skipped) | Codex |
+| `opencode` | `${XDG_CONFIG_HOME:-~/.config}/opencode/skills` | OpenCode |
+| `agents` | `~/.agents/skills` | Codex, OpenCode (External until migrated) |
+| `claude-synced` | `~/.claude/skills/synced` | Claude (External) |
+| `sparrow` | `<repo>/assets/skills` | every agent (locked) |
+
+Each entry found by the scan gets one status: `managed` (a library folder, or a link to `<library>/<name>`), `sparrow` (Sparrow's own
+skills, incl. the copies `sparrow install` puts in harness roots), `external`, `unmanaged` (a real folder or a link
+elsewhere in HOME with no library entry → Adopt), `conflict` (a library skill of that name exists and this entry isn't a
+link to it; `identical` or with a diff) or `broken` (dangling link). Apart from dangling links, only folders holding a
+`SKILL.md` are listed and hashed.
+
+**Aliased harness folders.** When one harness folder is a symlink to another (e.g. `~/.codex/skills -> ~/.claude/skills`;
+compared by real path, `harnessRootGroups()`), the two are one root: the first harness of the group (claude, codex, opencode)
+owns the links, a link stays while ANY harness of the group wants the skill (turning one harness off never removes the other's
+link), removal happens once, migration scans the folder once and folds the toggles of both, and Doctor and `GET /api/skills`
+carry a warning (`rootAliasWarnings()`). `~/.agents/skills` aliasing a harness folder warns too.
+
+### 12.4 Library manifest, lock fields, hashes
+`<library>/skills.json`: `{version: 1, skills: {<name>: {harnesses: Harness[], source?: {...}}}}`. `source` uses Vercel's lock
+entry names (`source`, `sourceType`, `sourceUrl`, `skillPath`, `skillFolderHash`, `installedAt`, `updatedAt`) plus Sparrow's
+`installedHash` and `ref`. `skillFolderHash` keeps Vercel's meaning: the upstream Git tree SHA for Git sources (update
+checks compare it), the content digest for local/upload sources. `installedHash` = `folderHash` of the library copy at
+import. `folderHash` (Vercel's `computeSkillFolderHash`: sha256 over relative path + bytes, `localeCompare` order; skips
+`.git`, `node_modules`, symlinks; file modes are NOT included) is the content check for adopt, conflicts, migration
+plans and imports. The listings (`GET /api/skills`, which hashes every skill of every root) use a cached variant that walks
+and lstats each folder every time but re-reads the bytes only when the folder's (path, size, inode, mtime, ctime in
+nanoseconds) signature changed; every writer that verifies a copy hashes uncached; migration backups additionally carry a tar sha256, which rollback checks before restoring (the
+per-file hash / kind / link-target comparisons are done by the dry-run driver and the tests, not at rollback time). Skill names follow the Agent Skills spec (`[a-z0-9]+(-[a-z0-9]+)*`, ≤ 64, = folder name for library skills; an import names the folder after the frontmatter `name`, §12.6); YAML writers quote names
+that could parse as numbers or keywords.
+
+### 12.5 Per-agent skills
+- **Resume field:** `skills: [name, …]` in the frontmatter (§8). An absent field in a resume PUT means unchanged; `[]`
+  clears. The Agent matrix toggle edits only the `skills:` line (comments and other bytes kept) through
+  `POST /api/skills/matrix`, atomically.
+- **Grant snapshot:** at hire and on "apply resume" the server resolves the names to `<library>/<name>` folders (real path
+  must stay inside the real library) and stores them, with the requested names, in `<agentDir>/skills.json`. Each call
+  start passes `StartSpec.skills` = that snapshot, re-checking the library boundary and `SKILL.md`; a requested skill
+  that was missing at hire is granted once it is in the library. Resume edits wait for the next hire or Apply. Missing
+  or invalid names never fail a hire; `sparrow hire` prints them as `Skills: …`.
+- **Launch:** each driver links the grants (Sparrow's two included) into a per-agent folder rebuilt every call; stale
+  links are removed and a real entry already in that folder is never touched: it stays visible to the harness and a
+  grant of the same name is not linked (Codex keeps its own `.system` built-ins there by design; only Sparrow writes
+  the Claude and OpenCode folders). OpenCode also leaves such a shadowed grant out of its allowlist:
+  - Claude: `--plugin-dir <agentDir>/claude-plugin` (plugin `sparrow`; granted skills appear as `sparrow:<name>`), with
+    `--setting-sources project,local`. That keeps bundled skills and cwd `.claude/skills`, while excluding user-scoped
+    skills and synced account skills.
+  - OpenCode keeps the inherited `XDG_CONFIG_HOME` so the user's `~/.config/opencode/opencode.json` and MCP servers
+    remain available. `OPENCODE_DISABLE_EXTERNAL_SKILLS=1` excludes global `.claude/skills` and `.agents/skills`;
+    global `.config/opencode/skills` can still be discovered. Since that flag also hides project compatibility skills,
+    `skills.paths` includes the per-agent grant folder and each project `.claude/skills` and `.agents/skills` directory
+    from cwd through the Git root (or through filesystem root when cwd is outside a Git worktree, matching OpenCode's
+    native walk). User home `.claude/skills` and `.agents/skills` remain excluded. OpenCode discovers project
+    `.opencode/skills` in its normal cwd-to-root scan.
+    `permission.skill = {"*": "deny", <frontmatter names>: "allow"}` filters the model-visible list, including
+    ungranted XDG skills ("*" first; for all-digit names the deny moves to top-level rules). The same rules are
+    also set top-level so subagents the `task` tool spawns (general, explore) get them too. The built-in
+    `customize-opencode` remains allowed.
+  - Codex: `CODEX_HOME=<agentDir>/codex-home` with `auth.json`, `config.toml`, `plugins/`, `AGENTS.md`,
+    `AGENTS.override.md`, `.credentials.json`, `rules/`, `prompts/` symlinked to the real home when present (never
+    copied; a real file Codex wrote there is kept), `skills/` holding the grants, and
+    `-c skills.config=[{path=…, enabled=false}, …]` for every global `~/.agents/skills` entry. The linked `plugins/`
+    cache plus live `config.toml` gives the agent exactly the plugin skills enabled by the user's config. Codex 0.163.0
+    wrote its `tui.screen_reader_detection_done` setting through the `config.toml` symlink and kept it a symlink; the
+    sandbox `codex mcp add` config writer also edited the target and kept the symlink. The user's latest config thus
+    remains live on the next spawn. Its `.system` skills stay in the agent's own `skills/`,
+    and project `.agents/skills` remains natively discoverable. Session discovery and resume use the agent's own
+    `CODEX_HOME`. Codex agents hired before this feature can't resume their old session there; the fresh fallback
+    (§3.8) applies once.
+- A resume with no `skills:` list sees the same harness defaults and cwd project skills plus Sparrow's two; it gets no
+  library skills. Expected view = harness defaults + Sparrow's two + granted skills (when listed) + cwd project skills.
+
+### 12.6 Library operations
+Toggle a skill per harness (manifest + links), Sync (recreate links from `skills.json`, e.g. after a fresh clone),
+Adopt (Unmanaged: copy, hash-check, back up the original, link back; External: copy only), resolve conflicts (keep
+library / keep this copy / identical → replace with link), and library git: status, log per skill, Pull (fast-forward
+only), Commit & push (only the library repo's `origin`; first push sets the upstream). Network git runs async with a
+60 s timeout and no prompts. Add flows: Create (starter `SKILL.md`), Upload (folder or one .zip, staged and validated),
+From link (`owner/repo`, `owner/repo/sub/path`, Git URLs, `…/tree/<ref>/<path>`, `@skill` filter; `file://`, `ext::` and
+`fd::` refused), with a preview of each skill's files and warnings before import, and an update check per Git source
+(`POST /api/skills/updates`: it shallow-clones every source, so it is a guarded write, not a GET). **Import naming follows
+Vercel's `skills` tool** (`sanitizeName` of the frontmatter `name`; the folder a skill sits in is irrelevant): the library
+folder is the frontmatter name lowercased with runs of other characters turned into `-` (Sparrow's name rule is a bit
+stricter than Vercel's: no `.`/`_`, ≤ 64). A skill whose folder differs from that name (5 of the 9 in
+`vercel-labs/agent-skills`) imports fine and the preview shows a warning; `SKILL.md` is copied unchanged, and the library
+listing does not flag the difference on imported skills. A name that cleans to nothing or to a reserved Sparrow name is
+still refused. Two skills in one source that clean to the same name are both listed; the second carries a `name-collision` problem (not importable, so the user imports one or renames it); a byte-identical mirror of a skill (the same folder under `skills/` and `.claude/skills/`) is listed once with a notice. `@skill` matches the library name, the frontmatter name or the folder. Commit & push also pushes when
+there is nothing to commit: a branch with no upstream counts the commits no remote branch has as unpushed (the push then
+sets the upstream).
+
+### 12.7 Migration (existing harness folders → library)
+Run from Skills → **Migrate existing skills** (wizard) or the API; refused (409) while the library location is unsafe (§12.2).
+**Scope: everything that is not a harness default or Sparrow's own moves into the library; the library is the single copy.**
+- *Candidates* (a real folder or a link, with a `SKILL.md`): entries in the `claude`, `codex`, `opencode` roots, in
+  `~/.agents/skills` (the `npx skills` AWS set, `terminal-browser`) and in `~/Desktop/Skills`. A link to anywhere (outside
+  HOME such as brew's `agent-browser`, another folder, a tool's folder, `~/.agents/skills`) is a candidate: the target's content is
+  copied into the library, the link is moved to the backup and replaced by a library link, and the original link target is noted in
+  the backup manifest (`moved[].linkTarget`). The target itself is never touched.
+- *Skipped and reported* (`skipped[].code`): Sparrow's skills (`sparrow`), Codex `.system` and claude.ai `synced/` (`container`),
+  a link into `synced/` (`synced`) or `.system` (`builtin`), a link already pointing into the library (`in-library`: this is what
+  makes a second run a no-op), a folder that is the same folder as an earlier source (`alias`), invalid names, and dangling links
+  (`dangling`, reported, never touched). Protected variants (`synced/`, `.system/`) are listed read-only.
+- *One library copy per name.* Copies with the same bytes (a Claude AWS folder and its `~/.agents/skills` twin) become one library
+  skill: Claude no longer links to `~/.agents/skills`. **Differing copies are never resolved for the user:** the plan marks them
+  `needsChoice`, the wizard shows them side by side with a diff, and the choice is copy A / copy B / keep as conflict, default keep
+  as conflict (nothing copied, no copy touched). A library skill of that name with other bytes stops the apply before anything moves.
+- *Toggles keep today's visibility* in `skills.json`: an entry in `~/.claude/skills` → claude + opencode (OpenCode reads that folder);
+  in `~/.codex/skills` → codex; in the OpenCode folder → opencode; in `~/.agents/skills` → codex + opencode (both read it);
+  `~/Desktop/Skills` → none. A skill found in several places gets the union of the copies that were actually moved, plus any toggles it
+  already had. A harness folder that aliases another earns the toggles of both. Day one, the user's own sessions see the same
+  skills as before; they trim in the UI.
+- *Apply* requires `plan_id` (the server re-plans and refuses if any candidate's content hash or the planned decisions changed; mode-only or
+  symlink-only changes are not detected because `folderHash` ignores them) and the typed word `migrate`. It writes a tar backup with
+  sha256 first, re-hashes each source just before touching it (a folder whose content changed is skipped), copies and hash-checks the
+  library copies, then per entry: records the intent (`inFlight`) in the backup manifest, moves the original to
+  `<backup>/<root>/<name>`, records it (`moved`), and puts a library link where a harness-folder or Desktop/Skills original was
+  (`~/.agents/skills` originals only move out: that folder is another tool's, written by migration alone). The toggles are then written
+  to `skills.json` and linked through the normal link planner; links that could not be made are returned (`link_conflicts`). Harness
+  folders that did not exist are recorded (`createdDirs`).
+- *Rollback* (`rollback` typed; once per backup; the archive is checked against its sha256) restores **every** migrated entry from the
+  archive: one that is gone now (its link was removed later) or whose move was interrupted (the rename happened, the record did not:
+  `inFlight`) is restored too, one still present is moved aside first. Library links the migration did not create (toggled on later)
+  are moved aside so nothing dangles, the current library goes aside inside the backup folder and the previous one is restored, and
+  folders apply created are removed again when empty. The result is `restored` (each entry verified afterwards: kind, link target or
+  folder hash) and `notRestored` (path + reason: not in the archive, outside HOME, its move never happened, verification failed),
+  plus `libraryRestored`/`libraryNote`, `removedLinks`, `removedDirs`. Nothing is reported restored that was skipped.
+- *Dry run:* `bun scripts/skills-migration-dryrun.ts` copies the user's real folders into `.sandbox/migration-home` (`SPARROW_SKILLS_HOME`),
+  prints the plan summary, applies and rolls back on the copy, and proves with checksums that the real folders stayed untouched and
+  the copy is byte-identical afterwards.
+
+### 12.8 Doctor
+The `skills` check fails first on a refused library location (§12.2), warns on aliased harness folders, and reports Sparrow's skills current in the harness roots, every managed skill linked where `skills.json`
+says, conflicts and broken links (fail), library folders missing from `skills.json`, and the library repo state
+(missing, dirty, unpushed; "no remote" is informational). Fix text points at the Skills page. The `sparrow on PATH` check
+never recommends `sparrow install` on a sandbox server (it writes the real `~/.local/bin` and harness folders): it points
+at this checkout's binary or the sandbox's `sbx` wrapper.
+
+### 12.9 HTTP API
+UI requests carry no identity (like the Resumes API). Errors are `{error}` with 400, 403 (cross-site), 404, 409, 415, or
+500 for unexpected failures.
+| Method & path | Body / query | Returns |
+|---|---|---|
+| GET `/api/skills` | | `SkillsState`: library (incl. locked Sparrow skills), unmanaged, external, conflicts, broken, git, paths, warnings, `library_missing`, `library_problem` |
+| POST `/api/skills/library/init` | | `SkillsState` after creating the library (git init + `skills.json`); never done by a GET |
+| GET `/api/skills/:name` | | skill, `SKILL.md`, file tree, git log, entries, problems |
+| PUT `/api/skills/:name/harnesses` | `{harnesses}` | `{skill, actions, conflicts}`; 409 for locked skills |
+| POST `/api/skills/sync` | | link actions + conflicts for every skill |
+| POST `/api/skills/adopt` | `{path}` (must be a scanned entry) | `{skill, backup}` |
+| POST `/api/skills/conflicts/resolve` | `{path, keep: 'library'\|'entry'}` | `{skill, backup}` |
+| GET `/api/skills/:name/diff` | `?path=` | `{diff, truncated?}` (cut at 1 MiB) |
+| GET `/api/skills/git` | | `GitState` |
+| POST `/api/skills/git/pull` | | `GitState` + `output` (fast-forward only) |
+| POST `/api/skills/git/commit` | `{message, push}` | `GitState` |
+| POST `/api/skills` | `{name, description, harnesses}` | `{skill}` (Create) |
+| POST `/api/skills/upload` | multipart: files with relative paths, or one `.zip` | `{staged: StagedImport}` |
+| POST `/api/skills/import/preview` | `{source}` | `{staged: StagedImport}` (skills, files, executables/scripts) |
+| POST `/api/skills/import` | `{staged_id, skills, harnesses}` | `{skills, actions, conflicts}` |
+| POST `/api/skills/updates` | | `{name, current, latest, available, error?}[]` (POST behind the write guard: it shallow-clones every Git source; no body) |
+| GET `/api/skills/matrix` | | `{resumes: [{slug, title, harness, skills, hired, stale}], skills, locked}` |
+| POST `/api/skills/matrix` | `{slug, skill, on}` | `{resume}` (atomic `skills:` line edit) |
+| POST `/api/skills/migration/plan` | | plan (`decisions`, `candidates`, `skipped[].code`, `warnings`) + `plan_id` + `backup_root` + `summary` (writes nothing; 409 for an unsafe library) |
+| GET `/api/skills/migration/diff` | `?name=&a=&b=` | `{diff, truncated?}` of two planned copies |
+| POST `/api/skills/migration/apply` | `{plan_id, choices: {name: path}, confirm: "migrate"}` | backup, applied, selected, skipped, kept_as_conflict, conflicts_left, link_conflicts |
+| POST `/api/skills/migration/rollback` | `{backup_id, confirm: "rollback"}` | `{restored, notRestored: {path, reason}[], libraryRestored, libraryNote, addedSkills, preservedAt, removedLinks, removedDirs, backup_id}` |
+| GET `/api/skills/migration/backups` | | `{id, path, created, size, sha256, members, moved, library_existed, rolled_back_at}[]` |
+
+Every change to the library, the links, the manifest or a resume's `skills` emits the SSE event
+`{type: 'skills.updated', project_id: '*'}` so open pages refresh. Staging (upload, import preview) and the migration
+plan change nothing visible and emit nothing.
+
+### 12.10 Seam changes (approved: additive, optional)
+- `src/shared/types.ts`: `Resume.skills?: string[]`; `ResumeWriteReq.skills?: string[]`; `ServerEvent` gains
+  `{ type: 'skills.updated'; project_id: '*' }`.
+- `src/harness/index.ts`: `SkillGrant = { name: string; path: string }`; `StartSpec.skills?: SkillGrant[]`: the absolute
+  folders a spawn may see, Sparrow's two included. `undefined` means Sparrow's skills only.
+- Nothing else in the frozen files changed. Skills API types live in `src/skills/types.ts` (mirrored in `web/src/lib/skills.ts`).
+
+### 12.11 Known gaps
+- Source formats not supported: Vercel's well-known skill URLs, Azure Repos, self-hosted GitLab `/-/tree/`, GitHub archive
+  ZIP URLs (cloned instead). Local-source lock entries keep `skillPath`; SSH sources are normalised to a repo path.
+- For the user's own OpenCode sessions a skill toggled "Claude only" is still visible (OpenCode reads `~/.claude/skills`;
+  shown as "via Claude"). Agents are isolated.
+- After a keep-as-conflict migration the untouched copies are listed as Unmanaged until one is adopted.
+- Codex plugins enabled in `config.toml` and Claude plugins are harness defaults/out of scope: Sparrow neither lists nor migrates them.

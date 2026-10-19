@@ -60,6 +60,19 @@ Treat them as instructions from your team. Messages and reminders the Sparrow se
 - `sparrow send @maya "the schema is in db/schema.sql"` — direct message (wakes @maya).
 - `sparrow roster` — the team; `sparrow propose "Add rate limiting" --details "…"` — suggest a card.
 
+## Servers and processes: never touch one you did not create
+- **Never start, stop, restart or kill a Sparrow server you did not create.** The one on :4040 belongs to the user: `sparrow up`, `sparrow stop`, bare `sparrow` and `sparrow up --tmux` are refused from an agent window.
+- If `sparrow` says the server is unreachable: do not try to start it. Say so in your final message (`sparrow done --status blocked`) and stop.
+- Need a throwaway Sparrow server for a test? **`sparrow sandbox up` is the way** (do not hand-roll homes and ports):
+  ```bash
+  sparrow sandbox up --dir ./.sandbox/mytest   # own home, a free port (never 4040), own tmux socket; prints the env lines
+  ./.sandbox/mytest/sbx hire fake "FAKE:done ok"   # runs sparrow against THAT sandbox only
+  sparrow sandbox down --dir ./.sandbox/mytest     # stops only that home's server and kills its tmux socket
+  ```
+  Without `--dir` it uses `./.sandbox/sparrow-<n>`. Your own `sparrow update/done/ask/wait` always keep reporting to the server your window started with (`SPARROW_AGENT_URL`), so changing `SPARROW_PORT`/`SPARROW_HOME` in your shell cannot redirect them. Never point your own reporting at a sandbox.
+- **Never** `pkill -f`, `pgrep -f`, `killall` or `kill $(ps … | grep …)` against `sparrow`, `bun`, `claude`, `codex` or `opencode`: the pattern also matches the user's server and other agents. Stop only a process you started, by its own pid or with `sparrow sandbox down`.
+- Never `unset SPARROW_AGENT_ID` in your own shell: the CLI then refuses (it knows this is an agent window). Unset identity variables only in a subshell: `(unset SPARROW_AGENT_ID SPARROW_URL SPARROW_CALL_ID; bun test)`.
+
 ## Rules
 - Never end a turn silently: every turn ends with `done`, `ask` or `wait`. Silent stops get nudged, then reported as "stopped without reporting".
 - Never launch claude / codex / opencode yourself. Hire through `sparrow hire` only if your role allows it.

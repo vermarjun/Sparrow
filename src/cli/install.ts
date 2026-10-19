@@ -19,6 +19,7 @@ import {
 import { homedir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { AGENTS_DIR, ASSETS, BIN, REPO_ROOT, RESUMES_DIR, SPARROW_HOME } from '../shared/config';
+import { assertWritable, skillPaths } from '../skills/paths';
 
 /** The web package dir. SPARROW_WEB_DIR overrides it (tests only). */
 export function webDir(): string {
@@ -143,18 +144,20 @@ export async function runInstall(opts: { force?: boolean } = {}): Promise<Instal
   if (!onPath) warnings.push(`${t(binDir)} is not on your PATH — add: export PATH="$HOME/.local/bin:$PATH"`);
 
   // 3. skills
-  const codexHome = process.env.CODEX_HOME || join(home, '.codex');
+  const skillLocation = skillPaths();
   const targets: { dir: string; who: string }[] = [
-    { dir: join(home, '.claude', 'skills'), who: 'Claude Code + OpenCode' },
-    { dir: join(codexHome, 'skills'), who: 'Codex' },
+    { dir: skillLocation.roots.claude, who: 'Claude Code + OpenCode' },
+    { dir: skillLocation.roots.codex, who: 'Codex' },
   ];
   for (const { dir, who } of targets) {
+    const writableDir = assertWritable(dir, skillLocation);
+    mkdirSync(writableDir, { recursive: true });
     const done: string[] = [];
     let fresh = 0;
     for (const skill of SKILLS) {
       const from = join(ASSETS, 'skills', skill);
       if (!existsSync(from)) { warnings.push(`missing assets/skills/${skill}`); continue; }
-      const to = join(dir, skill);
+      const to = assertWritable(join(dir, skill), skillLocation);
       if (sameTree(from, to)) fresh++;
       else { mkdirSync(to, { recursive: true }); cpSync(from, to, { recursive: true, force: true }); }
       done.push(skill);

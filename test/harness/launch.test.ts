@@ -31,6 +31,7 @@ describe('launch script', () => {
       'printf "ARG1=%s\\n" "$1"; printf "ARG2=%s\\n" "$2"; printf "PWD=%s\\n" "$PWD"',
       'echo "AGENT=$SPARROW_AGENT_ID CALL=$SPARROW_CALL_ID H=$SPARROW_HARNESS URL=$SPARROW_URL HOME=$SPARROW_HOME"',
       'echo "CC=${CLAUDECODE:-unset} CSID=${CLAUDE_CODE_SESSION_ID:-unset} CX=${CODEX_THREAD_ID:-unset} CXH=${CODEX_HOME:-unset} OC=${OPENCODE_SERVER:-unset}"',
+      'echo "CHILD=${CLAUDE_CODE_CHILD_SESSION:-unset} ATTENDED=${CLAUDE_CODE_SESSION_ATTENDED:-unset} EXECPATH=${CLAUDE_CODE_EXECPATH:-unset} WINDOW=$SPARROW_WINDOW AGENTURL=$SPARROW_AGENT_URL"',
       'echo "SPARROW=$(command -v sparrow)"; echo "EXTRA=$EXTRA"; exit 7',
     ].join('\n'));
     const script = buildScript(agent, 'call_1', { argv: ['bash', probe, { file: files.prompt }], env: { EXTRA: 'e x' } });
@@ -41,6 +42,7 @@ describe('launch script', () => {
       env: {
         ...process.env,
         CLAUDECODE: '1', CLAUDE_CODE_SESSION_ID: 'abc', CODEX_THREAD_ID: 't', CODEX_HOME: '/keep', OPENCODE_SERVER: 'x',
+        CLAUDE_CODE_CHILD_SESSION: '1', CLAUDE_CODE_SESSION_ATTENDED: '1', CLAUDE_CODE_EXECPATH: '/some/claude', SPARROW_WINDOW: 'ag_STALE',
       },
     });
     const out = await new Response(p.stdout).text();
@@ -48,11 +50,30 @@ describe('launch script', () => {
     expect(code).toBe(7); // harness exit code is propagated
     expect(out).toContain("ARG1=line1\nline2 'q'");
     expect(out).toContain(`PWD=${cwd}`);
-    expect(out).toContain(`AGENT=${agent.id} CALL=call_1 H=fake URL=http://127.0.0.1:4120 HOME=${TEST_HOME}`);
+    expect(out).toContain(`AGENT=${agent.id} CALL=call_1 H=fake URL=http://127.0.0.1:${process.env.SPARROW_PORT} HOME=${TEST_HOME}`);
     expect(out).toContain('CC=unset CSID=unset CX=unset CXH=/keep OC=unset');
+    // D12: a server started from a Claude Code session leaks these; the harness must not inherit them
+    expect(out).toContain('CHILD=unset ATTENDED=unset EXECPATH=unset');
+    expect(script).toMatch(/unset .*CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_SESSION_ATTENDED CLAUDE_CODE_EXECPATH/);
+    // D11: the marker survives `unset SPARROW_AGENT_ID` and names this agent
+    expect(out).toContain(`WINDOW=${agent.id}`);
+    expect(out).toContain(`AGENTURL=http://127.0.0.1:${process.env.SPARROW_PORT}`); // D19: where this agent reports
     expect(out).toContain(`SPARROW=${BIN}`);
     expect(out).toContain('EXTRA=e x');
   }, 20_000);
+});
+
+describe('sandbox skills isolation reaches the agent window', () => {
+  test('the launch script exports the server\'s SPARROW_SKILLS_HOME, and omits it when the server has none', () => {
+    const agent = makeAgent({ harness: 'fake', cwd: tempDir('skh-') });
+    const before = process.env.SPARROW_SKILLS_HOME;
+    try {
+      process.env.SPARROW_SKILLS_HOME = '/sbx/skills home';
+      expect(buildScript(agent, 'c1', { argv: ['true'] })).toContain(`export SPARROW_SKILLS_HOME=${sq('/sbx/skills home')}`);
+      delete process.env.SPARROW_SKILLS_HOME;
+      expect(buildScript(agent, 'c1', { argv: ['true'] })).not.toContain('SPARROW_SKILLS_HOME');
+    } finally { if (before === undefined) delete process.env.SPARROW_SKILLS_HOME; else process.env.SPARROW_SKILLS_HOME = before; }
+  });
 });
 
 describe('drivers build the right commands', () => {
@@ -60,10 +81,11 @@ describe('drivers build the right commands', () => {
     const claudeJson = join(TEST_HOME, 'claude.json');
     process.env.SPARROW_CLAUDE_JSON = claudeJson;
     const agent = makeAgent({ harness: 'claude', model: 'haiku', effort: 'low' });
-    const files = writeCallTexts(agent.id, 'c1', 'sys', 'hi');
-    const a = await claudeDriver.prepare({ agent, call_id: 'c1', system_prompt: 'sys', prompt: 'hi', resume: false }, files);
+    const files = writeCallTexts(agent.id, 'c1', 'SYSTEM_SECRET_MARKER_41', 'TASK_SECRET_MARKER_41');
+    const a = await claudeDriver.prepare({ agent, call_id: 'c1', system_prompt: 'SYSTEM_SECRET_MARKER_41', prompt: 'TASK_SECRET_MARKER_41', resume: false }, files);
     const s = buildScript(agent, 'c1', a);
-    expect(s).toContain(`/claude --dangerously-skip-permissions --setting-sources project,local --plugin-dir ${join(TEST_HOME, 'claude-plugin')} --session-id ${a.session_id} -n ${agent.handle} --model haiku --effort low --append-system-prompt "$(cat ${files.system})" --settings `);
+    expect(s).toContain(`/claude --dangerously-skip-permissions --setting-sources project,local --plugin-dir ${join(files.dir, 'claude-plugin')} --session-id ${a.session_id} -n ${agent.handle} --model haiku --effort low --append-system-prompt-file ${files.system} --settings `);
+    expect(s).not.toContain('SYSTEM_SECRET_MARKER_41');
     expect(a.session_id).toMatch(/^[0-9a-f-]{36}$/);
     const settings = JSON.parse(readFileSync(join(files.dir, 'claude-settings.json'), 'utf8'));
     expect(settings.hooks.Stop[0].hooks[0].command).toContain('hook.ts claude-stop');
@@ -88,15 +110,22 @@ describe('drivers build the right commands', () => {
 
   test('codex new vs resume (options after `resume`)', async () => {
     const agent = makeAgent({ harness: 'codex', model: 'gpt-x', effort: 'low' });
-    const files = writeCallTexts(agent.id, 'c1', 'sys "q"\nline', 'hi');
-    const a = await codexDriver.prepare({ agent, call_id: 'c1', system_prompt: 'sys "q"\nline', prompt: 'hi', resume: false }, files);
+    const system = 'SYSTEM_SECRET_MARKER_42';
+    const prompt = 'TASK_SECRET_MARKER_42';
+    const files = writeCallTexts(agent.id, 'c1', system, prompt);
+    const a = await codexDriver.prepare({ agent, call_id: 'c1', system_prompt: system, prompt, resume: false }, files);
     expect(a.session_id).toBeNull();
     const s = buildScript(agent, 'c1', a);
-    expect(s).toMatch(/codex --no-daemon --yolo -C \S+ -m gpt-x -c 'model_reasoning_effort="low"' -c "\$\(cat .*codex-developer-instructions.toml\)" -c 'notify=\[/);
-    expect(readFileSync(join(files.dir, 'codex-developer-instructions.toml'), 'utf8')).toBe('developer_instructions="sys \\"q\\"\\nline"');
+    expect(s).toContain('codex --no-daemon --yolo -C');
+    expect(s).toContain(`-c "$(cat ${join(files.dir, 'codex-developer-instructions.toml')})"`);
+    expect(s).not.toContain(system);
+    expect(s).not.toContain(prompt);
+    expect(a.argv.some((arg) => typeof arg === 'object' && arg.file === files.prompt)).toBe(true);
+    expect(readFileSync(join(files.dir, 'codex-developer-instructions.toml'), 'utf8')).toContain(`developer_instructions=${JSON.stringify(system)}`);
     const files2 = writeCallTexts(agent.id, 'c2', 's', 'hi');
     const r = await codexDriver.prepare({ agent: { ...agent, session_id: 'th-1' }, call_id: 'c2', system_prompt: 's', prompt: 'hi', resume: true }, files2);
-    expect(buildScript(agent, 'c2', r)).toMatch(/codex resume --no-daemon .* th-1 "\$\(cat [^)]*c2.prompt.md\)"/);
+    expect(buildScript(agent, 'c2', r)).toContain(`codex resume --no-daemon --yolo -C ${agent.cwd}`);
+    expect(buildScript(agent, 'c2', r)).toContain(`"$(cat ${files2.prompt})"`);
     expect(tomlString('a"b')).toBe('"a\\"b"');
     expect(trustValue('/x.y')).toContain('"/x.y" = { trust_level = "trusted" }');
     const sub = join(agent.cwd, 'pkg');
@@ -107,10 +136,14 @@ describe('drivers build the right commands', () => {
 
   test('opencode new vs resume', async () => {
     const agent = makeAgent({ harness: 'opencode', model: 'opencode-go/glm-5.3-flash' });
-    const files = writeCallTexts(agent.id, 'c1', 'sys', 'hi');
-    const a = await opencodeDriver.prepare({ agent, call_id: 'c1', system_prompt: 'sys', prompt: 'hi', resume: false }, files);
+    const files = writeCallTexts(agent.id, 'c1', 'SYSTEM_SECRET_MARKER_43', 'TASK_SECRET_MARKER_43');
+    const a = await opencodeDriver.prepare({ agent, call_id: 'c1', system_prompt: 'SYSTEM_SECRET_MARKER_43', prompt: 'TASK_SECRET_MARKER_43', resume: false }, files);
     const s = buildScript(agent, 'c1', a);
     expect(s).toMatch(/opencode \S+ --auto --agent sparrow -m opencode-go\/glm-5.3-flash --prompt "\$\(cat /);
+    expect(s).not.toContain('SYSTEM_SECRET_MARKER_43');
+    expect(s).not.toContain('TASK_SECRET_MARKER_43');
+    expect(a.argv.some((arg) => typeof arg === 'object' && arg.file === files.prompt)).toBe(true);
+    expect(JSON.parse(a.env!.OPENCODE_CONFIG_CONTENT).instructions).toEqual([files.system]);
     expect(s).toContain(`export OPENCODE_CONFIG_DIR=${join(TEST_HOME, 'opencode')}`);
     expect(existsSync(join(TEST_HOME, 'opencode', 'plugins', 'sparrow.js'))).toBe(true);
     expect(opencodeConfig({ agent: { ...agent, effort: 'max' }, call_id: 'c1', system_prompt: '', prompt: '', resume: false }, '/s.md')).toEqual({
@@ -152,11 +185,12 @@ describe('opencode helpers (fix round 2)', () => {
     expect(JSON.parse(readFileSync(f, 'utf8')).variant).toEqual({});
   });
 
-  test('prepare exports XDG_STATE_HOME for the agent', async () => {
+  test('prepare exports per-agent state home for the effort override', async () => {
     const agent = makeAgent({ harness: 'opencode', model: 'opencode-go/x', effort: 'high' });
     const files = writeCallTexts(agent.id, 'c1', 's', 'p');
     const r = await opencodeDriver.prepare({ agent, call_id: 'c1', system_prompt: 's', prompt: 'p', resume: false }, files);
     expect(r.env!.XDG_STATE_HOME).toBe(join(TEST_HOME, 'agents', agent.id, 'opencode-state'));
+    expect(r.env!.XDG_DATA_HOME).toBeUndefined();
   });
 
   test('idle vs busy footer, truncated footer, transcript text ignored', () => {

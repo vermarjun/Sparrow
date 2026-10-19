@@ -54,6 +54,30 @@ describe('identity', () => {
     expect(stub.find('POST', '/api/update')[0].agent).toBe('ag_JAMES');
   });
 
+  test('D11: an agent window that lost SPARROW_AGENT_ID is refused, never registered as a captain', async () => {
+    stub.on('POST', '/api/update', { message: msg({ kind: 'update' }), inbox: [] });
+    for (const cmd of [['update', 'x'], ['whoami'], ['roster'], ['inbox']]) {
+      const r = await run(cmd, { url, env: { SPARROW_WINDOW: 'ag_JAMES' } });
+      expect(r.code).toBe(1);
+      expect(r.stderr).toContain('inside agent window ag_JAMES but SPARROW_AGENT_ID is unset');
+      expect(r.stderr).toContain('(unset SPARROW_AGENT_ID SPARROW_URL SPARROW_CALL_ID; bun test)');
+    }
+    // windows opened before the marker existed are recognised by SPARROW_HARNESS
+    const old = await run(['update', 'x'], { url, env: { SPARROW_HARNESS: 'claude' } });
+    expect(old.code).toBe(1);
+    expect(old.stderr).toContain('SPARROW_AGENT_ID is unset');
+    expect(stub.find('POST', '/api/captains/register').length).toBe(0);
+    expect(stub.find('POST', '/api/update').length).toBe(0);
+  });
+
+  test('D11: the marker does not break an agent with its id, nor a human captain without one', async () => {
+    stub.on('POST', '/api/update', { message: msg({ kind: 'update' }), inbox: [] });
+    ok(await run(['update', 'x'], { url, env: { ...AGENT, SPARROW_WINDOW: 'ag_JAMES' } }));
+    expect(stub.find('POST', '/api/captains/register').length).toBe(0);
+    ok(await run(['update', 'x'], { url, env: { TMUX: '/tmp/tmux-501/default,1,0', TMUX_PANE: '%3' } }));
+    expect(stub.find('POST', '/api/captains/register').length).toBe(1);
+  });
+
   test('whoami prints identity', async () => {
     const r = await run(['whoami'], { url, env: AGENT });
     ok(r);

@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skills Build Report</title>
+<style>
+  :root {
+    --bg: #fafaf9; --card: #ffffff; --ink: #1c1917; --muted: #78716c; --line: #e7e5e4;
+    --ok: #15803d; --ok-bg: #dcfce7; --warn: #b45309; --warn-bg: #fef3c7; --bad: #b91c1c; --bad-bg: #fee2e2;
+    --info: #1d4ed8; --info-bg: #dbeafe; --code: #f5f5f4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0c0a09; --card: #1c1917; --ink: #f5f5f4; --muted: #a8a29e; --line: #292524;
+      --ok: #4ade80; --ok-bg: #14532d55; --warn: #fbbf24; --warn-bg: #78350f55; --bad: #f87171; --bad-bg: #7f1d1d55;
+      --info: #93c5fd; --info-bg: #1e3a8a55; --code: #292524;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif; }
+  main { max-width: 1040px; margin: 0 auto; padding: 32px 16px 80px; }
+  h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: -.01em; }
+  h2 { font-size: 18px; margin: 36px 0 12px; display: flex; align-items: center; gap: 10px; }
+  h2 .n { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; background: var(--ink); color: var(--bg); font-size: 13px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+  .stat .big { font-size: 22px; font-weight: 650; }
+  .stat .lbl { color: var(--muted); font-size: 13px; }
+  .chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .ok { color: var(--ok); background: var(--ok-bg); } .warn { color: var(--warn); background: var(--warn-bg); }
+  .bad { color: var(--bad); background: var(--bad-bg); } .info { color: var(--info); background: var(--info-bg); }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
+  .tw { overflow-x: auto; }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+  code { background: var(--code); padding: 1px 5px; border-radius: 5px; }
+  pre { background: var(--code); padding: 12px 14px; border-radius: 10px; overflow-x: auto; line-height: 1.5; }
+  a { color: var(--info); }
+  ul { padding-left: 20px; } li { margin: 3px 0; }
+  details { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px 14px; margin: 8px 0; }
+  summary { cursor: pointer; font-weight: 600; }
+  .shots { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+  .shots figure { margin: 0; } .shots img { width: 100%; border-radius: 8px; border: 1px solid var(--line); display: block; }
+  .shots figcaption { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .icon { width: 18px; height: 18px; vertical-align: -3px; }
+</style>
+</head>
+<body>
+<main>
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="i-check" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-box" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M21 8 12 3 3 8v8l9 5 9-5V8ZM3 8l9 5 9-5M12 13v8"/></symbol>
+  <symbol id="i-test" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M9 3h6m-5 0v6L4.5 19A1.5 1.5 0 0 0 5.8 21h12.4a1.5 1.5 0 0 0 1.3-2L14 9V3"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3Z"/></symbol>
+  <symbol id="i-bug" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M8 8a4 4 0 0 1 8 0v1H8V8Zm-2 4h12v3a6 6 0 0 1-12 0v-3Zm-3 0h3m12 0h3M4 7l3 2m13-2-3 2M4 19l3-2m13 2-3-2"/></symbol>
+</svg>
+
+<h1>Skills feature: build report</h1>
+<p class="sub">Branch <code>feat/skills</code> in <code>../sparrow-skills</code>. Built 18–19 Oct 2026 with Sparrow agents. Not merged, not pushed, nothing migrated.
+Raw evidence is on the orphan branch <code>evidence/skills</code> (worktree <code>../sparrow-skills-evidence</code>); every link below points there.
+The Sparrow core fixes found while building are on a separate branch, <code>fix/dogfood</code>, with their own report: <a href="../../sparrow-dogfood/docs/dogfood-fix-report.html">dogfood-fix-report.html</a>.</p>
+
+<div class="grid">
+  <div class="card stat"><div class="big"><svg class="icon" style="color:var(--ok)"><use href="#i-check"/></svg>4 + 3</div><div class="lbl">phases + 3 follow-up decisions built, each verified on another harness</div></div>
+  <div class="card stat"><div class="big"><svg class="icon" style="color:var(--ok)"><use href="#i-box"/></svg>6 / 6</div><div class="lbl">real resumes: harness listing and live answer = exactly the chosen set</div></div>
+  <div class="card stat"><div class="big"><svg class="icon" style="color:var(--ok)"><use href="#i-shield"/></svg>77 / 0</div><div class="lbl">migration hash rows unchanged / changed; rollback byte-identical</div></div>
+  <div class="card stat"><div class="big"><svg class="icon" style="color:var(--ok)"><use href="#i-test"/></svg>493 · 84</div><div class="lbl">server · web tests passing, 0 failing, all four SPARROW_* vars set</div></div>
+  <div class="card stat"><div class="big"><svg class="icon" style="color:var(--info)"><use href="#i-bug"/></svg>10 + 12</div><div class="lbl">/code-review findings (9 fixed, 1 decided by you) + DESIGN.md inaccuracies fixed</div></div>
+</div>
+
+<h2><span class="n">!</span>What needs your decision</h2>
+<div class="card"><ul>
+  <li><span class="chip info">merge</span> <b>Merge strategy.</b> The evidence was removed from <code>feat/skills</code> in one commit (<code>548c971</code>), but the branch history still contains the 16 MB in earlier commits. A <b>squash merge</b> keeps it out of <code>main</code>'s history. A normal merge brings those blobs in. I can rewrite the branch history instead, if you prefer.</li>
+  <li><span class="chip info">resumes</span> Your new <b>verifier</b> and <b>researcher</b> models are good choices, but their descriptions still name the old models ("DeepSeek V4.1 Flash", "Kimi K3"). Consider <code>{{runtime}}</code> in descriptions. Once <code>fix/dogfood</code> is merged, Doctor will flag this (D1).</li>
+  <li><span class="chip info">after merge</span> Run the real migration from <b>Skills → Migrate existing skills</b>. On today's folders: 28 skills copied into <code>~/Skills</code>, 23 AWS copies become links to <code>~/.agents/skills</code>, 17 skipped. <code>component-design</code> has two different copies: the wizard shows them side by side and keeps both as a conflict unless you pick one.</li>
+  <li><span class="chip info">housekeeping</span> Your live DB has two junk projects, <code>sparrow-skills-p2</code> and <code>other</code> (both from D11). The removal steps are in the dogfood fix report. I didn't touch the DB.</li>
+</ul></div>
+
+<h2><span class="n">1</span>What was built</h2>
+<div class="tw"><table>
+<tr><th>Piece</th><th>Built</th><th>Builder → verifier</th><th>Result</th></tr>
+<tr><td><b>0</b> Spikes</td><td>One spawn can see exactly {x, y}: Claude per-agent <code>--plugin-dir</code>; OpenCode <code>DISABLE_EXTERNAL_SKILLS</code> + <code>skills.paths</code> + <code>permission.skill</code>; Codex per-agent <code>CODEX_HOME</code> + <code>skills.config</code></td><td>@maya, @leo, @nina (research)</td><td><span class="chip ok">GO ×3</span> <a href="../../sparrow-skills-evidence/docs/skills-evidence/phase0/">phase0/</a></td></tr>
+<tr><td><b>1</b> Library + linker</td><td>One path resolver with a sandbox override and a write fence; Vercel-compatible folder hash; scanner; linker that never overwrites; Adopt; library git; migration plan/backup/apply/rollback; Doctor check</td><td>@kai → @mira</td><td><span class="chip ok">10 bugs fixed</span> <a href="../../sparrow-skills-evidence/docs/skills-evidence/migration/verify.md">verify</a></td></tr>
+<tr><td><b>1b</b> Migration wizard</td><td>Apply/rollback API (plan id, typed confirm, tar backup + sha256), wizard</td><td>@cleo → @theo2</td><td><span class="chip ok">pass</span> <a href="../../sparrow-skills-evidence/docs/skills-evidence/migration-ui/verify.md">verify</a></td></tr>
+<tr><td><b>2</b> API + Skills page</td><td><code>/api/skills*</code>, Library toggles + chips, detail, Unmanaged / External / Conflicts, git bar</td><td>@cleo → @theo2</td><td><span class="chip ok">pass</span> <a href="../../sparrow-skills-evidence/docs/skills-evidence/phase2-ui/verify.md">verify</a></td></tr>
+<tr><td><b>3</b> Add flows</td><td>Create, Upload folder/.zip, From link (Vercel source formats, hooks off), preview, import with lock fields, update check</td><td>@ivan → @noor</td><td><span class="chip ok">B1–B16 fixed, re-verified</span> <a href="../../sparrow-skills-evidence/docs/skills-evidence/phase3/verify.md">verify</a></td></tr>
+<tr><td><b>4</b> Per-agent skills</td><td><code>skills:</code> in resumes, grant snapshot, launch wiring in all 3 drivers, Agent matrix, Skills field in the resume editor</td><td>@ben → @ada</td><td><span class="chip ok">pass</span> <a href="../../sparrow-skills-evidence/docs/skills-evidence/phase4-launch/verify.md">launch</a> · <a href="../../sparrow-skills-evidence/docs/skills-evidence/phase4-ui/verify.md">UI</a></td></tr>
+<tr><td><b>D3</b> Exec bit (your decision)</td><td>Imports keep exec bits like Vercel (Git 100755, ZIP attributes, local folders); the preview's amber warning lists every executable, <code>scripts/</code> and shebang file; nothing ever runs</td><td>@ivan → @noor</td><td><span class="chip ok">4/4 pass</span> <a href="../../sparrow-skills-evidence/docs/skills-evidence/phase3/exec-bit/verify.md">verify</a></td></tr>
+<tr><td><b>D4</b> Migration conflicts (your decision)</td><td>Never picks a copy: differing copies are shown side by side with an inline diff; choose copy A / copy B / keep as conflict, default keep as conflict (every copy untouched)</td><td>@cleo → @theo2</td><td><span class="chip ok">pass</span> <a href="../../sparrow-skills-evidence/docs/skills-evidence/migration-ui/explicit-choice/verify.md">verify</a></td></tr>
+<tr><td><b>D5</b> Shared types (your decision)</td><td>Documented in <a href="DESIGN.md">DESIGN.md §12</a> (with §4/§6/§8/§9 pointers): <code>Resume.skills?</code>, <code>ResumeWriteReq.skills?</code>, <code>SkillGrant</code> + <code>StartSpec.skills?</code>, the <code>skills.updated</code> event</td><td>captain → @ada</td><td><span class="chip ok">12 inaccuracies fixed, re-checked</span> <a href="../../sparrow-skills-evidence/docs/skills-evidence/final-checks/verify-design-isolation.md">verify</a></td></tr>
+</table></div>
+<details><summary>Commits</summary>
+<p><code>git -C ../sparrow-skills log --oneline --no-merges main..feat/skills</code>: 99 commits. Code diff: 146 files (src, web/src, tests incl. fixture repos, scripts, assets); docs: <code>DESIGN.md</code>, <code>dogfood-log.md</code>, this report. Sparrow fixes are separate <code>sparrow-fix:</code> commits (also on <code>fix/dogfood</code>): <code>43dfb7a</code>, <code>668b53a</code>, <code>0cc7a30</code>, <code>0b692dd</code>, <code>ad8555f</code>.</p></details>
+
+<h2><span class="n">2</span>Probe matrix: what each real resume's agent actually sees</h2>
+<p class="sub">Your six resumes (copied read-only into a sandbox), spawned for real through the new code. Expected = chosen + sparrow-worker + sparrow-captain + that harness's built-ins, nothing else.</p>
+<div class="tw"><table>
+<tr><th>Resume</th><th>Harness · model</th><th>Chosen</th><th>Harness listing</th><th>Agent's answer</th><th>Raw</th></tr>
+<tr><td>builder</td><td>Claude · sonnet</td><td>fx-alpha, fx-beta</td><td><span class="chip ok">exact</span></td><td><span class="chip ok">exact ×2 (resumed)</span></td><td><a href="../../sparrow-skills-evidence/docs/skills-evidence/probe-matrix/builder/">builder/</a></td></tr>
+<tr><td>sub-captain</td><td>Claude · opus</td><td>fx-gamma</td><td><span class="chip ok">exact</span></td><td><span class="chip ok">exact</span></td><td><a href="../../sparrow-skills-evidence/docs/skills-evidence/probe-matrix/sub-captain/">sub-captain/</a></td></tr>
+<tr><td>builder-codex</td><td>Codex · gpt-6-luna</td><td>fx-alpha, fx-delta</td><td><span class="chip ok">exact</span></td><td><span class="chip ok">exact ×2 (resumed)</span></td><td><a href="../../sparrow-skills-evidence/docs/skills-evidence/probe-matrix/builder-codex/">builder-codex/</a></td></tr>
+<tr><td>researcher</td><td>OpenCode · opencode-go (real model, key renewed)</td><td>fx-epsilon</td><td><span class="chip ok">exact</span></td><td><span class="chip ok">exact ×2 (resumed)</span></td><td><a href="../../sparrow-skills-evidence/docs/skills-evidence/probe-matrix/researcher/real-model-run/">real-model-run/</a></td></tr>
+<tr><td>verifier</td><td>OpenCode · opencode-go (real model)</td><td>fx-beta, fx-zeta</td><td><span class="chip ok">exact</span></td><td><span class="chip ok">exact ×2 (resumed)</span></td><td><a href="../../sparrow-skills-evidence/docs/skills-evidence/probe-matrix/verifier/real-model-run/">real-model-run/</a></td></tr>
+<tr><td>presenter</td><td>OpenCode · opencode-go (real model)</td><td>(none)</td><td><span class="chip ok">exact</span></td><td><span class="chip ok">exact ×2 (resumed)</span></td><td><a href="../../sparrow-skills-evidence/docs/skills-evidence/probe-matrix/presenter/real-model-run/">real-model-run/</a></td></tr>
+</table></div>
+<ul>
+<li>The OpenCode rows were re-run on the real resumes after your key renewal, with two listing sources each: a dump inside the live TUI, and a debug re-run of the agent's own launch. <a href="../../sparrow-skills-evidence/docs/skills-evidence/probe-matrix/summary.md">summary.md</a> · <a href="../../sparrow-skills-evidence/docs/skills-evidence/final-proof.md">final-proof.md</a>. These used the models your resumes had before your latest change.</li>
+<li><b>Fresh clone</b> of the library into a second empty HOME + one Sync: identical links, hashes, matrix and probe listings. <a href="../../sparrow-skills-evidence/docs/skills-evidence/reproducibility/summary.md">reproducibility</a></li>
+<li><b>Interop:</b> <code>npx skills@1.7.2 list -g</code> runs cleanly in both sandbox HOMEs and corrupts nothing. <a href="../../sparrow-skills-evidence/docs/skills-evidence/interop/">interop/</a></li>
+</ul>
+
+<h2><span class="n">3</span>Migration dry-run on a byte-copy of your real skill folders</h2>
+<div class="grid">
+  <div class="card stat"><div class="big">56 / 51 / 17</div><div class="lbl">candidates / decisions / skipped</div></div>
+  <div class="card stat"><div class="big">77 / 0</div><div class="lbl">hash rows unchanged / changed (<a href="../../sparrow-skills-evidence/docs/skills-evidence/migration/hashes.tsv">hashes.tsv</a>)</div></div>
+  <div class="card stat"><div class="big">0</div><div class="lbl">differences in the three harness listings before vs after</div></div>
+  <div class="card stat"><div class="big"><svg class="icon" style="color:var(--ok)"><use href="#i-check"/></svg></div><div class="lbl">rollback byte-identical; your real folders unchanged</div></div>
+</div>
+<ul>
+<li>Re-run after the "never pick a copy" change: <code>component-design</code> is reported as <b>NEEDS YOUR CHOICE</b> and both copies stay untouched. <a href="../../sparrow-skills-evidence/docs/skills-evidence/migration/summary.md">summary.md</a> · <a href="../../sparrow-skills-evidence/docs/skills-evidence/migration/plan.md">plan.md</a></li>
+<li>To run the real one after merge, follow <b>Skills → Migrate existing skills</b>; the steps are in <a href="DESIGN.md">DESIGN.md §12.7</a>. Typed confirms, tar backup + sha256, one rollback per backup. Wizard walks: <a href="../../sparrow-skills-evidence/docs/skills-evidence/migration-ui/explicit-choice/">explicit-choice/</a>.</li>
+</ul>
+
+<h2><span class="n">4</span>Tests, review, UI</h2>
+<ul>
+<li><b>Tests, final run</b> with <code>SPARROW_HOME</code>, <code>SPARROW_PORT</code>, <code>SPARROW_TMUX_SOCKET</code>, <code>SPARROW_TMUX_PREFIX</code> all set (and identity vars unset): <b>493 pass · 8 skip · 0 fail</b>; web <b>84 pass</b>; tsc clean. <a href="../../sparrow-skills-evidence/docs/skills-evidence/final-checks/final-full-run.txt">final-full-run.txt</a>. @ada repeated it at two different ports (4597 and 4120): green both times. <code>test/harness/launch.test.ts</code> no longer hard-codes 4120 (<code>ad8555f</code>; it failed on main too).</li>
+<li><b>/code-review (high)</b>: 10 findings; 9 fixed with tests, the exec-bit one you decided. <a href="../../sparrow-skills-evidence/docs/skills-evidence/code-review.md">code-review.md</a></li>
+<li><b>Verifier rounds</b>: every phase and every follow-up was verified by an agent on a different harness from the builder, and bugs went back to whoever wrote the code (table above).</li>
+</ul>
+<div class="shots">
+  <figure><a href="../../sparrow-skills-evidence/docs/skills-evidence/captain-walk/01-library-light.png"><img src="../../sparrow-skills-evidence/docs/skills-evidence/captain-walk/01-library-light.png" alt=""></a><figcaption>Library</figcaption></figure>
+  <figure><a href="../../sparrow-skills-evidence/docs/skills-evidence/captain-walk/13-matrix-dark.png"><img src="../../sparrow-skills-evidence/docs/skills-evidence/captain-walk/13-matrix-dark.png" alt=""></a><figcaption>Agent matrix (dark)</figcaption></figure>
+  <figure><a href="../../sparrow-skills-evidence/docs/skills-evidence/phase3/exec-bit/git-preview-light.png"><img src="../../sparrow-skills-evidence/docs/skills-evidence/phase3/exec-bit/git-preview-light.png" alt=""></a><figcaption>Import preview: exec-bit warning</figcaption></figure>
+  <figure><a href="../../sparrow-skills-evidence/docs/skills-evidence/captain-walk/15-detail-dark.png"><img src="../../sparrow-skills-evidence/docs/skills-evidence/captain-walk/15-detail-dark.png" alt=""></a><figcaption>Skill detail (dark)</figcaption></figure>
+</div>
+<p>Integrated walk of every flow: <a href="../../sparrow-skills-evidence/docs/skills-evidence/captain-walk/README.md">captain-walk</a>. Per-phase walks in light and dark with no console errors: <a href="../../sparrow-skills-evidence/docs/skills-evidence/phase2-ui/">phase2-ui/</a>, <a href="../../sparrow-skills-evidence/docs/skills-evidence/phase3/">phase3/</a>, <a href="../../sparrow-skills-evidence/docs/skills-evidence/phase4-ui/">phase4-ui/</a>, <a href="../../sparrow-skills-evidence/docs/skills-evidence/migration-ui/">migration-ui/</a>.</p>
+
+<h2><span class="n">5</span>Dogfooding Sparrow</h2>
+<p>20 issues logged in <a href="dogfood-log.md">dogfood-log.md</a>. The fixes live on <code>fix/dogfood</code> (off <code>main</code>); results, the open items and the live demos are in <a href="../../sparrow-dogfood/docs/dogfood-fix-report.html">dogfood-fix-report.html</a>. The five <code>sparrow-fix:</code> commits that the Skills work needed are on both branches.</p>
+
+<h2><span class="n">6</span>Known gaps and what I didn't verify</h2>
+<ul>
+<li>The probe matrix ran before your latest model change (verifier/researcher → <code>deepseek-v4-pro</code>). The skills mechanism doesn't depend on the model, but those exact models weren't probed for skills.</li>
+<li>Codex agents hired before this branch can't resume their old session from their new per-agent home; their first call restarts fresh, with context replayed.</li>
+<li>Codex token refresh through the linked <code>auth.json</code> wasn't forced.</li>
+<li>For your <i>own</i> OpenCode sessions, a skill toggled "Claude only" is still visible (OpenCode reads <code>~/.claude/skills</code>; shown as "via Claude"). Agents are isolated.</li>
+<li>Migration <code>plan_id</code> doesn't notice mode-only or symlink-only changes between plan and apply (<a href="DESIGN.md">§12.7</a>).</li>
+<li>Vercel source formats not supported: well-known URLs, Azure Repos, self-hosted GitLab <code>/-/tree/</code>, archive ZIP URLs.</li>
+<li>The real migration was <b>not</b> run, by design.</li>
+</ul>
+
+<h2><span class="n">7</span>Try it yourself</h2>
+<pre># tests (as CLAUDE.md requires: all four vars set)
+cd ~/Desktop/SWEFactory/sparrow-skills
+(unset SPARROW_URL SPARROW_AGENT_ID SPARROW_CALL_ID; SPARROW_HOME=$PWD/.sandbox/t/home SPARROW_PORT=4597 \
+  SPARROW_TMUX_SOCKET=skills-t SPARROW_TMUX_PREFIX=skt- bun test test/)
+(cd web &amp;&amp; bun test test/ &amp;&amp; bun run build)
+
+# a demo instance: separate server process on :4777, own home + tmux socket, a byte-copy of your skills
+#   (the captain starts one for you at the end; these are the commands it used)
+export SPARROW_HOME=$PWD/.sandbox/demo/home/.sparrow SPARROW_SKILLS_HOME=$PWD/.sandbox/demo/home \
+       SPARROW_PORT=4777 SPARROW_TMUX_SOCKET=sparrow-demo SPARROW_TMUX_PREFIX=demo-
+unset SPARROW_URL SPARROW_AGENT_ID SPARROW_CALL_ID
+open http://127.0.0.1:4777/#/skills
+bin/sparrow hire builder "List every skill you can use, names only. Then sparrow done with the list." --cwd "$PWD/.sandbox/demo/work"
+bin/sparrow inbox --wait 300
+# stop it (this exact form; never pkill)
+bin/sparrow stop; tmux -L sparrow-demo kill-server
+
+# the migration dry-run against a byte-copy of YOUR folders (writes only under .sandbox/)
+bun scripts/skills-migration-dryrun.ts</pre>
+
+<h2><span class="n">8</span>Throw it all away</h2>
+<pre>cd ~/Desktop/SWEFactory/sparrow
+for w in sparrow-skills sparrow-skills-p1 sparrow-skills-p2 sparrow-skills-p3 sparrow-skills-p4 sparrow-skills-evidence; do git worktree remove --force ../$w; done
+git branch -D feat/skills feat/skills-p1 feat/skills-p2 feat/skills-p3 feat/skills-p4 evidence/skills</pre>
+<p class="sub">(<code>--force</code>: the worktrees hold untracked <code>.sandbox/</code> and <code>node_modules</code>.) The <code>fix/dogfood</code> worktrees are separate; their report says how to drop them.</p>
+</main>
+</body>
+</html>

@@ -111,6 +111,22 @@ describe('exit / crash (§3.8)', () => {
     expect(inbox[0].text).toContain('last words on screen');
   });
 
+  test('Codex exit 0 with an active-turn footer → crashed and restarted from the final capture', async () => {
+    const ctx = await setup();
+    const a = await hire(ctx, 'builder-codex', 'x');
+    const firstCall = agentOf(ctx, a.id).call_id!;
+    ctx.sp.screens.set(a.id, 'Codex transcript\n• Working (7m 19s · esc to interrupt)\n›');
+    await ctx.req('POST', '/api/hooks/exit', { code: 0 }, a.id, firstCall);
+    expect(ctx.store.getCall(firstCall)!.end_reason).toBe('crashed');
+    expect(ctx.store.getCall(firstCall)!.exit_code).toBe(0);
+    expect(ctx.sp.starts).toHaveLength(2);
+    expect(ctx.sp.starts[1].prompt).toContain('ended unexpectedly (exit 0)');
+    expect(agentOf(ctx, a.id).state).toBe('working');
+    const notices = (await ctx.req('GET', '/api/inbox', undefined, ctx.captain.id)).body.inbox;
+    expect(notices[0].text).toContain('@');
+    expect(notices[0].text).toContain('crashed (exit 0); restarting');
+  });
+
   test('non-zero → restart once with resume:true + CRASH_RESUME; second crash → crashed + snapshot tail', async () => {
     const ctx = await setup();
     const a = await hire(ctx, 'builder', 'x');

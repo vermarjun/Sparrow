@@ -7,16 +7,20 @@ import type { Agent, HarnessName } from '../../src/shared/types';
 
 export const TEST_HOME = realpathSync(mkdtempSync(join(tmpdir(), 'sparrow-t2-')));
 process.env.SPARROW_HOME = TEST_HOME;
+process.env.SPARROW_TEST_MODE = '1';
+if (process.env.SPARROW_REAL !== '1') {
+  process.env.CODEX_HOME = join(TEST_HOME, 'codex-source');
+  process.env.XDG_DATA_HOME = join(TEST_HOME, 'xdg-data-source');
+}
 process.env.SPARROW_TMUX_SOCKET = process.env.SPARROW_TMUX_SOCKET_T2 ?? `sparrow-test-t2-${process.pid}`;
 process.env.SPARROW_TMUX_PREFIX = 'sptest-';
 process.env.SPARROW_PORT ??= '4120';
+// Test workers may inherit a server URL unrelated to their isolated port.
+process.env.SPARROW_URL = `http://127.0.0.1:${process.env.SPARROW_PORT}`;
 
-let portCursor = 4120 + Math.floor(Math.random() * 3);
 export function nextPort() {
-  // Spread across 4120–4129 (fast tests 4120–4124; real tests 4125–4129).
-  const p = portCursor;
-  portCursor = portCursor >= 4124 ? 4120 : portCursor + 1;
-  return p;
+  // Port 0 asks the OS for a free port, avoiding cross-file Bun worker races.
+  return 0;
 }
 
 export function tempDir(name: string) {

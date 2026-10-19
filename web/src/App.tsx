@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Bird, FileText, KanbanSquare, MessagesSquare, Network, Stethoscope } from 'lucide-react'
+import { Bird, FileText, KanbanSquare, Library, MessagesSquare, Network, Stethoscope } from 'lucide-react'
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -13,6 +13,7 @@ import { ChatPage } from '@/pages/Chat'
 import { AgentsPage } from '@/pages/Agents'
 import { DoctorPage } from '@/pages/Doctor'
 import { ResumesPage } from '@/pages/Resumes'
+import { SkillsPage } from '@/pages/Skills'
 import { StartCaptainButton } from '@/components/sparrow/StartCaptain'
 
 const TABS: { id: Tab; label: string; icon: typeof Bird }[] = [
@@ -23,9 +24,10 @@ const TABS: { id: Tab; label: string; icon: typeof Bird }[] = [
 // Global pages: render outside the project gate (work with zero projects).
 const GLOBAL_TABS: { id: Tab; label: string; icon: typeof Bird }[] = [
   { id: 'resumes', label: 'Resumes', icon: FileText },
+  { id: 'skills', label: 'Skills', icon: Library },
   { id: 'doctor', label: 'Doctor', icon: Stethoscope },
 ]
-const isGlobal = (t: Tab) => t === 'doctor' || t === 'resumes'
+const isGlobal = (t: Tab) => t === 'doctor' || t === 'resumes' || t === 'skills'
 
 // Hash route: #/<tab>[/<slug>]  (project is remembered in localStorage and in ?p= for sharing)
 function readHash(hash = location.hash): { tab: Tab; project: string | null; slug: string | null } {
@@ -33,8 +35,20 @@ function readHash(hash = location.hash): { tab: Tab; project: string | null; slu
   const [head, ...rest] = path.split('/')
   const tab = ([...TABS, ...GLOBAL_TABS].find((t) => t.id === head)?.id ?? 'board') as Tab
   const project = new URLSearchParams(query ?? '').get('p')
-  const slug = tab === 'resumes' && rest[0] ? decodeURIComponent(rest[0]) : null
+  const slug = (tab === 'resumes' || tab === 'skills') && rest[0] ? decodeURIComponent(rest[0]) : null
   return { tab, project, slug }
+}
+
+// The page follows the `dark` class on <html> (shadcn tokens); the toaster has to match it.
+function useDark() {
+  const read = () => document.documentElement.classList.contains('dark')
+  const [dark, setDark] = useState(read)
+  useEffect(() => {
+    const obs = new MutationObserver(() => setDark(read()))
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
+    return () => obs.disconnect()
+  }, [])
+  return dark
 }
 
 function useRoute() {
@@ -52,6 +66,7 @@ function useRoute() {
 
 export default function App() {
   const { tab, project: hashProject, slug, go } = useRoute()
+  const dark = useDark()
   const projects = useStore((s) => s.projects)
   const project = useStore((s) => s.project)
   const conn = useStore((s) => s.conn)
@@ -89,7 +104,7 @@ export default function App() {
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="flex h-screen flex-col bg-zinc-50/60 text-foreground">
+      <div className="flex h-screen flex-col bg-muted/40 text-foreground">
         <header className="flex h-12 shrink-0 items-center gap-4 border-b bg-background px-4">
           <div className="flex items-center gap-1.5 font-semibold tracking-tight">
             <Bird className="size-4.5 text-amber-600" />
@@ -108,7 +123,7 @@ export default function App() {
             </SelectContent>
           </Select>
           <nav className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5">
-            {[...TABS, null, ...GLOBAL_TABS].map((t, i) => t === null ? <span key={`sep${i}`} className="mx-0.5 h-4 w-px bg-zinc-300" /> : (
+            {[...TABS, null, ...GLOBAL_TABS].map((t, i) => t === null ? <span key={`sep${i}`} className="mx-0.5 h-4 w-px bg-border" /> : (
               <button
                 key={t.id}
                 onClick={() => go(t.id, project)}
@@ -137,6 +152,8 @@ export default function App() {
             <DoctorPage />
           ) : tab === 'resumes' ? (
             <ResumesPage slug={slug} />
+          ) : tab === 'skills' ? (
+            <SkillsPage name={slug} />
           ) : boot === 'error' ? (
             <Empty title="Can't reach the Sparrow server" className="h-full">
               Start it with <code className="rounded bg-muted px-1">sparrow up</code>, then reload. This page reads <code className="rounded bg-muted px-1">/api</code> on the same origin.
@@ -154,7 +171,7 @@ export default function App() {
           )}
         </main>
       </div>
-      <Toaster position="bottom-right" theme="light" />
+      <Toaster position="bottom-right" theme={dark ? 'dark' : 'light'} />
     </TooltipProvider>
   )
 }

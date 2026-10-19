@@ -10,6 +10,8 @@ import { Core, DOCTOR_PROJECT, HttpError } from './core';
 import type { Doctor } from './doctor';
 import { sseHandler } from './events';
 import { SLUG_RE, validateResumeReq } from './resumes';
+import { mountSkillsApi } from './skills-api';
+import { mountSkillAddRoutes } from './skills-add-routes';
 
 type Vars = { caller: Agent | null; callHeader: string | null };
 
@@ -17,6 +19,7 @@ export interface ApiOpts {
   version?: string;
   startedAt?: number;
   webDist?: string | null;
+  port?: number;               // this server's own port for the Origin check (default: the Host header's)
   pingMs?: number;
   catalogs?: CatalogService;
   doctor?: Doctor;
@@ -32,6 +35,47 @@ async function body<T = any>(c: Context): Promise<T> {
   return (v && typeof v === 'object' && !Array.isArray(v) ? v : {}) as T;
 }
 
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
+/** Write routes whose body is multipart/form-data (the skills upload); every other write body must be JSON. */
+const MULTIPART_ROUTES = new Set(['/api/skills/upload']);
+
+/**
+ * CSRF / DNS-rebinding guard for every state-changing /api request (dogfood D13).
+ * Browsers always send Origin (and Sec-Fetch-Site) on cross-site writes; the CLI and hooks send neither, so they pass.
+ * - Sec-Fetch-Site must be same-origin (or none): cross-site and same-site (another localhost app) are refused.
+ * - Origin, when present, must be http://127.0.0.1|localhost:<this server's port> (`null` is refused).
+ * - A request that sends a body must declare application/json: a text/plain or form POST needs no CORS
+ *   preflight, so the content type is the second line of defence. The one exception is the skills upload
+ *   (MULTIPART_ROUTES), which takes multipart/form-data; the Sec-Fetch-Site/Origin checks above still apply to it.
+ */
+export function guardWrites(ownPort?: number) {
+  return async (c: Context, next: () => Promise<void>) => {
+    if (SAFE_METHODS.has(c.req.method)) return next();
+    const site = c.req.header('sec-fetch-site');
+    if (site && site !== 'same-origin' && site !== 'none') {
+      throw new HttpError(403, `Refused: ${c.req.method} ${c.req.path} came from a ${site} page (Sec-Fetch-Site: ${site}). The Sparrow API only accepts writes from its own UI or the CLI.`);
+    }
+    const origin = c.req.header('origin');
+    if (origin !== undefined) {
+      const port = ownPort ?? Number(new URL(c.req.url).port || 80);
+      let ok = false;
+      try {
+        const u = new URL(origin);
+        ok = u.protocol === 'http:' && LOOPBACK_HOSTS.has(u.hostname) && Number(u.port || 80) === port;
+      } catch { /* "null" and junk are refused */ }
+      if (!ok) throw new HttpError(403, `Refused: ${c.req.method} ${c.req.path} has Origin "${origin}", which is not this server (http://127.0.0.1:${port}).`);
+    }
+    const hasBody = c.req.raw.body !== null || (c.req.header('transfer-encoding') ?? '') !== '' || Number(c.req.header('content-length') ?? 0) > 0;
+    const type = c.req.header('content-type') ?? '';
+    const multipartOk = MULTIPART_ROUTES.has(c.req.path) && /^multipart\/form-data\s*(?:;|$)/i.test(type);
+    if (hasBody && !multipartOk && !/^application\/(?:[\w.+-]+\+)?json\s*(?:;|$)/i.test(type)) {
+      throw new HttpError(415, `Unsupported content type "${c.req.header('content-type') ?? ''}": this endpoint takes application/json.`);
+    }
+    return next();
+  };
+}
+
 export function createApi(core: Core, opts: ApiOpts = {}) {
   const app = new Hono<{ Variables: Vars }>();
   const startedAt = opts.startedAt ?? Date.now();
@@ -41,6 +85,8 @@ export function createApi(core: Core, opts: ApiOpts = {}) {
     console.error('[sparrow] internal error:', err);
     return c.json({ error: `Internal server error: ${(err as Error)?.message ?? err}` }, 500);
   });
+
+  app.use('/api/*', guardWrites(opts.port));
 
   // Identity
   app.use('/api/*', async (c, next) => {
@@ -52,6 +98,26 @@ export function createApi(core: Core, opts: ApiOpts = {}) {
       c.set('caller', core.touch(a));
     } else c.set('caller', null);
     await next();
+  });
+
+  // Skills writes are browser reachable and unauthenticated. Cross-site / foreign-Origin refusal is guardWrites'
+  // job (D13, every /api write, run above). This adds the skills-only content-type rules guardWrites does not have:
+  // strict application/json (no +json), a Content-Type header counts as a body, and the upload must be multipart.
+  app.use('*', async (c, next) => {
+    const path = c.req.path;
+    const method = c.req.method.toUpperCase();
+    if (!path.startsWith('/api/skills') || !['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) return next();
+    // Every skills write that sends a body is JSON, except the multipart upload. Rule-based, so new routes are covered:
+    // a cross-site "simple" request (text/plain, form) always carries a non-JSON Content-Type.
+    const type = c.req.header('content-type');
+    const hasBody = !!type || Number(c.req.header('content-length') ?? '0') > 0 || !!c.req.header('transfer-encoding');
+    if (path !== '/api/skills/upload' && hasBody && !/^application\/json(?:\s*;|$)/i.test(type ?? '')) {
+      return c.json({ error: 'Content-Type must be application/json.' }, 415);
+    }
+    if (path === '/api/skills/upload' && !/^multipart\/form-data(?:\s*;|$)/i.test(c.req.header('content-type') ?? '')) {
+      return c.json({ error: 'Content-Type must be multipart/form-data.' }, 415);
+    }
+    return next();
   });
 
   const need = (c: Context<{ Variables: Vars }>): Agent => {
@@ -104,7 +170,7 @@ export function createApi(core: Core, opts: ApiOpts = {}) {
 
   app.get('/api/doctor', (c) => {
     const d = needSvc(doctor, 'The doctor');
-    return c.json({ run: d.latest(), health: d.healthAll() });
+    return c.json({ run: d.latest(), health: d.healthAll(), providers: core.providers.list() });
   });
   app.post('/api/doctor/run', (c) => c.json({ run: needSvc(doctor, 'The doctor').start() }));
 
@@ -141,10 +207,14 @@ export function createApi(core: Core, opts: ApiOpts = {}) {
   });
   app.put('/api/resumes/:slug', async (c) => {
     const slug = c.req.param('slug');
-    resumeOr404(slug);
+    const cur = resumeOr404(slug);
     const { slug: _s, ...rest } = checkWrite(await body(c), false);
+    // A client that does not know about skills (older UI) must not wipe them: absent = unchanged, [] = clear.
+    if (rest.skills === undefined) rest.skills = cur.skills ?? [];
+    const before = JSON.stringify(cur.skills ?? []);
     core.resumes.write(slug, rest);
     core.emitResume(slug);
+    if (JSON.stringify(rest.skills) !== before) core.events.emit({ type: 'skills.updated', project_id: '*' }); // open matrices refetch
     return c.json(core.resumeView(core.resumes.get(slug)!));
   });
   app.delete('/api/resumes/:slug', (c) => {
@@ -161,7 +231,7 @@ export function createApi(core: Core, opts: ApiOpts = {}) {
     if (core.resumes.get(b.slug)) throw new HttpError(409, `Resume "${b.slug}" already exists; pick another slug.`);
     core.resumes.write(b.slug, {
       title: src.title, description: src.description, harness: src.harness, model: src.model, effort: src.effort,
-      can_hire: src.can_hire, limits: src.limits, body: src.body,
+      can_hire: src.can_hire, limits: src.limits, body: src.body, skills: src.skills ?? [],
     });
     core.emitResume(b.slug);
     return c.json(core.resumeView(core.resumes.get(b.slug)!), 201);
@@ -173,6 +243,9 @@ export function createApi(core: Core, opts: ApiOpts = {}) {
     if (!check) throw new HttpError(404, `Resume "${c.req.param('slug')}" has not been tested yet.`);
     return c.json(check);
   });
+
+  mountSkillAddRoutes(app, { onSkillsChanged: () => core.events.emit({ type: 'skills.updated', project_id: '*' }) });
+  mountSkillsApi(app, core);
 
   app.get('/api/captain/recent', (c) => c.json(core.recentRoots()));
   app.post('/api/captain/start', async (c) => {
@@ -197,7 +270,7 @@ export function createApi(core: Core, opts: ApiOpts = {}) {
     const project = c.req.query('project') || null;
     const rows = core.store.listAgents(project);
     // The _doctor project (probes + its captain) stays hidden unless asked for.
-    return c.json(project ? rows : rows.filter((a) => a.project_id !== DOCTOR_PROJECT));
+    return c.json(core.withResults(project ? rows : rows.filter((a) => a.project_id !== DOCTOR_PROJECT), project));
   });
 
   const agentRef = (c: Context<{ Variables: Vars }>) => {
@@ -276,6 +349,7 @@ export function createApi(core: Core, opts: ApiOpts = {}) {
 
   // ---------------------------------------------------------------- hooks (no piggyback: never steal deliveries from a dying window)
   app.post('/api/hooks/turn-end', async (c) => c.json(await core.turnEnd(need(c), c.get('callHeader'), await body(c))));
+  app.post('/api/hooks/provider-error', async (c) => c.json(core.providerErrorHook(need(c), c.get('callHeader'), await body(c))));
   app.post('/api/hooks/exit', async (c) => {
     const b = await body<{ code: unknown }>(c);
     const code = typeof b.code === 'number' ? b.code : typeof b.code === 'string' && /^-?\d+$/.test(b.code.trim()) ? Number(b.code) : NaN;

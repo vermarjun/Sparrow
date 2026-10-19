@@ -70,6 +70,8 @@ with your result or another waking message, or shown in the parent's `Still work
   or `wait`, you will be nudged, and then reported as "stopped without reporting".
 - Hiring: {{can_hire}} Never launch claude, codex, opencode or other agent CLIs yourself.
 - Stay inside `{{cwd}}` unless the task names other paths.
+- Never start, stop, restart or kill a Sparrow server you did not create (`sparrow up` / `sparrow stop` are refused for agents). If `sparrow` reports the server unreachable, say so in your final message and stop. A sandbox server of your own: `sparrow sandbox up --dir <dir>` / `sparrow sandbox down --dir <dir>` (never hand-pick homes or ports). Never `pkill -f` / `pgrep -f` / `killall` against sparrow, bun or harness processes.
+- Never `unset SPARROW_AGENT_ID` in your own shell; do it only in a subshell: `(unset SPARROW_AGENT_ID SPARROW_URL SPARROW_CALL_ID; bun test)`.
 - No git commits, pushes, branch switches or resets unless your task says so.
 - Evidence beats claims: run what you build and quote real output. Never invent results.
 - Small ambiguity: pick the smallest safe interpretation, say so in your result, keep going.

@@ -3,6 +3,8 @@
 // Reports to the Sparrow server over HTTP:
 //   - the root session id     → POST /api/hooks/session   {session_id}
 //   - each root turn end      → POST /api/hooks/turn-end  {harness:'opencode', session_id, last_message}
+//   - a root session.error    → POST /api/hooks/provider-error {harness:'opencode', session_id, message}
+//     (the model provider failed: HTTP 5xx, expired key, rate limit …; the server then skips the nudges for that turn)
 // The server answers turn-end with {action:'none'} and types any follow-up into the TUI itself.
 
 export const SparrowPlugin = async ({ client }) => {
@@ -70,6 +72,15 @@ export const SparrowPlugin = async ({ client }) => {
     return undefined;
   };
 
+  // OpenCode error object ({name, data:{message, statusCode}}) → one line; a user abort is not a provider error.
+  const errorText = (err) => {
+    if (!err || err.name === 'MessageAbortedError') return '';
+    const d = err.data ?? {};
+    const msg = String(d.message ?? err.message ?? '').trim().split('\n')[0];
+    const status = d.statusCode ? 'HTTP ' + d.statusCode + ' ' : '';
+    return (status + (msg || err.name || 'error')).slice(0, 200);
+  };
+
   return {
     event: async ({ event }) => {
       try {
@@ -79,6 +90,11 @@ export const SparrowPlugin = async ({ client }) => {
             parentOf.set(info.id, info.parentID ?? null);
             if (!info.parentID) await reportSession(info.id);
           }
+        } else if (event?.type === 'session.error') {
+          const sessionID = event.properties?.sessionID;
+          const message = errorText(event.properties?.error);
+          if (!message || (sessionID && !(await isRoot(sessionID)))) return;
+          await post('/api/hooks/provider-error', { harness: 'opencode', session_id: sessionID, message });
         } else if (event?.type === 'session.idle') {
           const sessionID = event.properties?.sessionID;
           if (!sessionID || !(await isRoot(sessionID))) return;

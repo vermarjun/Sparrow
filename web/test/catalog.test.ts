@@ -85,7 +85,7 @@ describe('harness availability + health', () => {
     expect(modelsLoading('claude', onlyCodex)).toBe(true)
     expect(modelsLoading('codex', onlyCodex)).toBe(false)
     expect(harnessAvailability('claude', onlyCodex, [])).toEqual({ disabled: false, reason: null })
-    const later = reduceGlobal({ catalogs: onlyCodex, doctorRun: null, resumes: {} }, { type: 'catalog.updated', project_id: '*', catalogs: cats })
+    const later = reduceGlobal({ catalogs: onlyCodex, doctorRun: null, providers: [], resumes: {} }, { type: 'catalog.updated', project_id: '*', catalogs: cats })
     expect(modelsLoading('claude', later.catalogs)).toBe(false)
   })
   test('verdicts', () => {
@@ -143,7 +143,7 @@ describe('resume helpers', () => {
 })
 
 describe('global reducer', () => {
-  const g0: GlobalData = { catalogs: [], doctorRun: null, resumes: {} }
+  const g0: GlobalData = { catalogs: [], doctorRun: null, providers: [], resumes: {} }
   const rv = (slug: string, hash = 'h1') => ({ slug, hash, status: 'ok' }) as ResumeView
   test('catalog, doctor and resume events', () => {
     let g = reduceGlobal(g0, { type: 'catalog.updated', project_id: '*', catalogs: cats })

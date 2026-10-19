@@ -17,6 +17,7 @@ export type CallEndReason =
   | 'ask'            // agent ran `sparrow ask`
   | 'wait'           // agent ran `sparrow wait`
   | 'unreported'     // turn ended / exited 0 without done|ask|wait, nudges used up
+  | 'provider_error' // the turn ended on a model-provider error (API error screen / OpenCode session.error); not nudged
   | 'crashed'        // harness exited non-zero or its window vanished
   | 'released'       // a captain ran `sparrow release`
   | 'server_restart';// window found dead when the server booted
@@ -58,11 +59,14 @@ export interface Agent {
   last_update: string | null;    // text of the latest `update`
   last_update_at: number | null;
   last_seen_at: number | null;   // latest CLI request or hook from this agent
+  last_result?: AgentResult | null; // the latest `done` this agent sent (API read paths only; web keeps it fresh from events)
   resume_hash: string | null;    // ResumeView.hash of the resume copy this agent was hired from (or last applied)
   last_run: RunInfo | null;      // what the latest call actually launched with
   created_at: number;
   updated_at: number;
 }
+
+export interface AgentResult { status: DoneStatus; text: string; at: number }
 
 export interface RunInfo { harness: HarnessName | 'human'; model: string | null; effort: string | null; at: number }
 
@@ -142,6 +146,7 @@ export interface Resume {
   limits: { quiet_minutes: number; max_call_minutes: number };
   body: string;                  // role prompt (markdown after the frontmatter)
   path: string;
+  skills?: string[];             // library skill names granted to agents hired from this resume (Sparrow's own are always on)
 }
 
 // ---------- U1: model catalog, doctor, editable resumes, captain launcher
@@ -199,6 +204,18 @@ export interface HarnessHealth {
   checked_at: number | null;
 }
 
+/** Model-provider health (D2): consecutive provider errors per harness + provider (provider = model prefix, else the harness). */
+export interface ProviderHealth {
+  harness: HarnessName;
+  provider: string;              // e.g. 'opencode-go' for model opencode-go/kimi-k3; 'claude' when the harness default is used
+  degraded: boolean;             // N consecutive errors within M minutes, no success since
+  errors: number;                // errors in the current streak (within the window)
+  last_error: string | null;     // first line of the latest error
+  last_error_at: number | null;
+  last_ok_at: number | null;
+  degraded_since: number | null;
+}
+
 export type ResumeStatus = 'ok' | 'harness_missing' | 'harness_logged_out' | 'harness_broken' | 'model_gone' | 'effort_invalid' | 'unchecked';
 
 export interface ResumeView extends Resume {
@@ -208,6 +225,8 @@ export interface ResumeView extends Resume {
   status_detail: string | null;  // human text, e.g. "model gpt-6-nova no longer offered by codex"
   resolved_model: string | null; // claude alias resolved through the catalog
   stale_agents: string[];        // ids of non-retired agents hired from an older copy (agent.resume_hash !== hash)
+  provider?: string;             // the provider this resume's agents talk to (model prefix, else the harness)
+  provider_health?: ProviderHealth | null; // set while that harness + provider is degraded (D2); never blocks hiring
 }
 
 export interface ResumeWriteReq {
@@ -220,6 +239,7 @@ export interface ResumeWriteReq {
   can_hire: string[];
   limits: { quiet_minutes: number; max_call_minutes: number };
   body: string;
+  skills?: string[];
 }
 
 export interface CaptainStartReq { cwd: string; model?: string | null; effort?: string | null }
@@ -277,6 +297,7 @@ export interface InboxRes extends WithInbox { team: TeamStatus[]; superseded?: b
 // Hooks (sent by `sparrow hook ...` from inside an agent's session)
 export interface TurnEndReq { harness: HarnessName; session_id?: string; last_message?: string; stop_hook_active?: boolean }
 export interface TurnEndRes { action: 'allow' | 'block' | 'none'; reason?: string } // block: Claude Stop hook continues with `reason`
+export interface ProviderErrorReq { harness?: HarnessName; session_id?: string; message: string } // POST /api/hooks/provider-error (OpenCode session.error)
 export interface ExitReq { code: number }
 export interface SessionReq { session_id: string }
 
@@ -290,5 +311,8 @@ export type ServerEvent =
   // Global events (U1): project_id is '*'; delivered to every SSE subscriber regardless of ?project=
   | { type: 'catalog.updated'; project_id: '*'; catalogs: HarnessCatalog[] }
   | { type: 'doctor.updated'; project_id: '*'; run: DoctorRun }
+  | { type: 'provider.updated'; project_id: '*'; providers: ProviderHealth[] }
   | { type: 'resume.updated'; project_id: '*'; resume: ResumeView }
-  | { type: 'resume.deleted'; project_id: '*'; slug: string };
+  | { type: 'resume.deleted'; project_id: '*'; slug: string }
+  // Skills library changed (any write under /api/skills): pages refetch GET /api/skills
+  | { type: 'skills.updated'; project_id: '*' };

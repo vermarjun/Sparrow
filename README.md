@@ -39,7 +39,10 @@ Agents (the `sparrow-worker` skill + the protocol in their system prompt) post `
 sparrow                                         # start detached + open browser
 sparrow stop
 sparrow captain [--cwd dir] [--model m] [--effort e]
-sparrow up [--port N] [--max-running N] [--tmux]
+sparrow up [--port N] [--home DIR] [--max-running N] [--tmux] [--sandbox]
+sparrow sandbox up [--dir path] | down [--dir path]   # throwaway server: own home, free port, tmux socket, and its own
+                                                       # skills home (<dir>/skills-home; your SPARROW_SKILLS_HOME wins if set),
+                                                       # so it never touches ~/Skills or the harness skill folders
 sparrow install [--force]
 sparrow status
 sparrow whoami
@@ -77,6 +80,16 @@ Resumes shipped: `builder` (Claude, opus), `builder-codex` (Codex, gpt-6.1-sol),
 - `~/.sparrow/sparrow.db` — SQLite: projects, agents, calls, messages, deliveries, cards.
 - `~/.sparrow/resumes/*.md` — role cards. `~/.sparrow/config.json` — tunables (`max_running`, `max_depth`, `max_nudges`, …).
 - `~/.sparrow/agents/<id>/` — per-agent system prompt and per-call launch scripts/prompts.
-- Env overrides (tests): `SPARROW_HOME`, `SPARROW_PORT`, `SPARROW_URL`, `SPARROW_TMUX_SOCKET`, `SPARROW_TMUX_PREFIX`, `SPARROW_SETTINGS`.
+- Env overrides: `SPARROW_HOME`, `SPARROW_PORT`, `SPARROW_URL`, `SPARROW_TMUX_SOCKET`, `SPARROW_TMUX_PREFIX`, `SPARROW_SETTINGS`, `SPARROW_WEB_DIR`, `SPARROW_SKILLS_HOME`, and `SPARROW_SKILLS_DIR`.
 
-Tests: `bun test test/`.
+Run tests with isolated Sparrow state, port, tmux names, and skills paths (the port must be free and not 4040):
+
+```sh
+test_root="$(mktemp -d)"
+SPARROW_HOME="$test_root/home" \
+SPARROW_PORT="$(bun -e 'const s = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response() }); console.log(s.port); s.stop(true)')" \
+SPARROW_TMUX_SOCKET="sparrow-test-$$" \
+SPARROW_TMUX_PREFIX="test-$$-" \
+SPARROW_SKILLS_HOME="$test_root/skills" \
+bun test test/
+```

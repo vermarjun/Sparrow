@@ -4,7 +4,7 @@ import { toast } from 'sonner'
 import type { DoctorCheck, HarnessCatalog } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api'
-import { CHECK_DOT, HARNESSES, groupChecks, healthVerdict, summarizeChecks } from '@/lib/catalog'
+import { CHECK_DOT, HARNESSES, groupChecks, providerSummary, healthVerdict, summarizeChecks } from '@/lib/catalog'
 import { agoLabel, clock, duration, plural } from '@/lib/format'
 import { useStore } from '@/lib/store'
 import { cn } from '@/lib/utils'
@@ -57,6 +57,8 @@ export function DoctorPage() {
             {running ? 'Running…' : run ? 'Run doctor again' : 'Run doctor'}
           </Button>
         </div>
+
+        <ProviderPanel />
 
         {!run ? (
           <div className="rounded-xl border bg-background">
@@ -115,6 +117,34 @@ export function DoctorPage() {
         <CatalogPanel />
       </div>
     </div>
+  )
+}
+
+/** Providers whose agents returned errors (D2): degraded ones are warnings until a later call succeeds. */
+function ProviderPanel() {
+  const providers = useStore((s) => s.providers)
+  const now = useNow(15000)
+  if (!providers.length) return null
+  return (
+    <section className="rounded-xl border bg-background" data-testid="provider-panel">
+      <header className="border-b px-4 py-2.5 text-sm font-medium">Model providers <span className="text-xs font-normal text-muted-foreground">· counted from agents' provider errors; cleared by the next successful call</span></header>
+      <ul className="divide-y">
+        {providers.map((p) => (
+          <li key={`${p.harness}/${p.provider}`} className="px-4 py-2.5" data-provider={`${p.harness}/${p.provider}`} data-degraded={p.degraded}>
+            <div className="flex items-center gap-2">
+              <span className={cn('inline-block size-2 shrink-0 rounded-full', p.degraded ? 'bg-amber-500' : p.errors ? 'bg-amber-300' : 'bg-emerald-500')} />
+              <HarnessLabel harness={p.harness} className="text-[13px] font-medium text-foreground" />
+              <span className="font-mono text-xs">{p.provider}</span>
+              <span className={cn('inline-flex h-5 items-center rounded-full border px-2 text-[11px] font-medium', p.degraded ? TONE.warn : p.errors ? TONE.warn : TONE.ok)}>
+                {p.degraded ? 'degraded' : p.errors ? `${p.errors} error${p.errors === 1 ? '' : 's'}` : 'recovered'}
+              </span>
+              {p.last_error_at && <span className="ml-auto text-[11px] text-muted-foreground">last error {agoLabel(p.last_error_at, now)}</span>}
+            </div>
+            <p className="mt-0.5 pl-4 text-xs break-words text-zinc-600">{providerSummary(p)}</p>
+          </li>
+        ))}
+      </ul>
+    </section>
   )
 }
 

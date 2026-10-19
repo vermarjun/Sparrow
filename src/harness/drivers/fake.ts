@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import type { Agent } from '../../shared/types';
 import type { StartSpec } from '../index';
 import { bunPath, repoRoot } from '../env';
-import type { Arg, CallFiles } from '../launch';
+import { writeAtomic, type Arg, type CallFiles } from '../launch';
 import * as tmux from '../tmux';
 import type { Driver, PreparedLaunch } from './types';
 
@@ -15,6 +15,8 @@ export const fakeDriver: Driver = {
   async prepare(spec: StartSpec, files: CallFiles): Promise<PreparedLaunch> {
     const a = spec.agent;
     const resume = spec.resume && !!a.session_id;
+    // Record the grants this spawn received so tests can assert hire → call start end to end.
+    writeAtomic(join(files.dir, 'fake-skills.json'), JSON.stringify({ call_id: spec.call_id, skills: spec.skills ?? null }, null, 2) + '\n');
     const sessionId = resume ? a.session_id! : `fake-${crypto.randomUUID()}`;
     const argv: Arg[] = [
       bunPath(), fakeAgentEntry(),

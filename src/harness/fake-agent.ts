@@ -4,12 +4,15 @@
 // - Acts on directives found on their own line anywhere in a prompt:
 //     FAKE:update <text>     sparrow update <text>
 //     FAKE:done <text>       sparrow done <text>
+//     FAKE:done_blocked <text>  / FAKE:done_failed <text>   sparrow done <text> --status blocked|failed
 //     FAKE:ask <text>        sparrow ask <text>
 //     FAKE:wait [reason]     sparrow wait [reason]
 //     FAKE:sleep <sec>       sleep (busy)
 //     FAKE:crash <code>      exit with <code> (default 3)
 //     FAKE:exit0             exit 0 (like the user typing /exit)
 //     FAKE:idle              end the turn here (remaining directives ignored)
+//     FAKE:provider_error <text>  the provider failed the way OpenCode reports it: `sparrow hook provider-error`, then the turn ends
+//     FAKE:api_error <text>  the provider failed the way Claude/Codex show it: an "API Error: …" screen, then the turn ends
 //     FAKE:silent            from now on, prompts without directives get no reply (only a turn end)
 //     FAKE:remember <word>   remember a word in this session (persists across resume)
 //     FAKE:recall            sparrow update "recall: <remembered words>"
@@ -82,7 +85,7 @@ async function handlePrompt(text: string, depth = 0): Promise<void> {
   out(`\n> ${text.split('\n').slice(0, 6).join('\n  ')}${text.split('\n').length > 6 ? '\n  …' : ''}`);
   const directives = text
     .split(/\r?\n/)
-    .map((l) => l.match(/^\s*FAKE:([a-z0-9]+)\s*(.*?)\s*$/i))
+    .map((l) => l.match(/^\s*FAKE:([a-z0-9_]+)\s*(.*?)\s*$/i))
     .filter(Boolean) as RegExpMatchArray[];
   let last = 'fake: nothing to do';
 
@@ -107,6 +110,11 @@ async function handlePrompt(text: string, depth = 0): Promise<void> {
         await sparrow('done', arg || 'fake: done');
         last = arg;
         break;
+      case 'done_blocked':
+      case 'done_failed':
+        await sparrow('done', arg || 'fake: done', ['--status', name.toLowerCase().slice(5)]);
+        last = arg;
+        break;
       case 'ask':
         await sparrow('ask', arg || 'fake question?');
         last = arg;
@@ -127,6 +135,17 @@ async function handlePrompt(text: string, depth = 0): Promise<void> {
         process.exit(0);
       case 'idle':
         last = 'fake: idle without reporting';
+        break loop;
+      case 'provider_error': {
+        const msg = arg || 'Internal Server Error';
+        out(`• provider error: ${msg}`);
+        await run([process.execPath, hookTs, 'provider-error', '--session', session, '--message', msg]);
+        last = '';
+        break loop;
+      }
+      case 'api_error':
+        last = `API Error: ${arg || '500 Internal Server Error'}`;
+        out(`⎿ ${last}`);
         break loop;
       case 'silent':
         silent = true;

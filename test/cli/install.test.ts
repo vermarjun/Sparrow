@@ -8,6 +8,7 @@ function env(home: string, extraPath = true) {
   return {
     HOME: home,
     SPARROW_HOME: join(home, '.sparrow'),
+    SPARROW_SKILLS_HOME: home,
     XDG_CONFIG_HOME: join(home, '.config'),
     PATH: (extraPath ? join(home, '.local', 'bin') + ':' : '') + process.env.PATH,
     SPARROW_SKIP_WEB_BUILD: '1', // never build the real UI in unit tests
@@ -93,6 +94,27 @@ describe('sparrow install', () => {
     expect(r.code).toBe(0);
     expect(readlinkSync(join(home, '.local', 'bin', 'sparrow'))).toBe(BIN);
     expect(r.stdout).toContain('relinked');
+  }, 120_000);
+
+  test('installs harness skills into the roots skillPaths resolves from CLAUDE_CONFIG_DIR / CODEX_HOME', async () => {
+    const home = tempDir('sparrow-t3-skills-paths-');
+    const r = await run(['install'], {
+      env: {
+        ...env(home),
+        SPARROW_SKILLS_HOME: undefined,
+        CLAUDE_CONFIG_DIR: join(home, 'claude-config'),
+        CODEX_HOME: join(home, 'codex-home'),
+      },
+      cwd: home,
+    });
+    expect(r.code).toBe(0);
+    for (const root of ['claude-config/skills', 'codex-home/skills']) {
+      for (const skill of ['sparrow-captain', 'sparrow-worker']) {
+        expect(existsSync(join(home, root, skill, 'SKILL.md'))).toBe(true);
+      }
+    }
+    expect(existsSync(join(home, '.claude/skills'))).toBe(false);
+    expect(existsSync(join(home, '.codex/skills'))).toBe(false);
   }, 120_000);
 
   test('web UI: builds when dist is missing (stub package), reports up to date, --force rebuilds, skip env honoured', async () => {

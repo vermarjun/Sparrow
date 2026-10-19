@@ -346,6 +346,14 @@ export class Store {
     }
     return rows.map(rowToMessage);
   }
+  /** Latest `result` message per sender (the agent's last `done`), for one project or all. */
+  lastResults(project?: string | null): Map<string, Message> {
+    const rows = this.db.query(
+      `SELECT m.* FROM messages m WHERE m.kind = 'result' ${project ? 'AND m.project_id = ?' : ''}
+       AND m.seq = (SELECT MAX(seq) FROM messages x WHERE x.kind = 'result' AND x.from_id = m.from_id)`,
+    ).all(...(project ? [project] : [])) as Row[];
+    return new Map(rows.map((r) => [r.from_id as string, rowToMessage(r)]));
+  }
   threadSummaries(project: string): { thread: string; count: number; last_seq: number }[] {
     return this.db.query("SELECT thread, COUNT(*) AS count, MAX(seq) AS last_seq FROM messages WHERE project_id = ? AND thread != 'group' GROUP BY thread ORDER BY last_seq DESC").all(project) as any[];
   }

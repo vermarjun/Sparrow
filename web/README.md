@@ -17,6 +17,8 @@ bun scripts/live-check.ts   # SSE live append, pinned scroll, reconnect (own moc
 bun scripts/real-smoke.ts   # real server + fake harness, isolated (port 4144, tmux -L sparrow-test-T4)
 ```
 
+The **Skills** page (`#/skills`, `#/skills/<name>`) drives `/api/skills/*` (library, harness toggles, adopt, conflicts, git); demo: `scripts/skills-demo-up.sh`.
+
 Layout: `src/lib` (api, store, SSE hook, pure reducer + helpers), `src/pages` (Board, Chat, Agents),
 `src/components/sparrow` (shared bits, markdown), `src/components/ui` (shadcn), `src/components/kibo-ui/kanban`
 (registry code with small marked "Sparrow edit" changes: no in-place mutation, final order passed to `onDragEnd`,

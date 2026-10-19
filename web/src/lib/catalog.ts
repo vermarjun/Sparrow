@@ -1,6 +1,6 @@
 // Pure helpers for the U1 pages: catalog-driven selects, doctor grouping, resume status (unit-tested in web/test).
 import type {
-  Agent, CatalogModel, CheckStatus, DoctorCheck, DoctorRun, HarnessCatalog, HarnessHealth, HarnessName, ResumeStatus, ResumeView,
+  Agent, CatalogModel, CheckStatus, DoctorCheck, DoctorRun, HarnessCatalog, HarnessHealth, HarnessName, ProviderHealth, ResumeStatus, ResumeView,
 } from '@shared/types'
 
 export const HARNESSES = ['claude', 'codex', 'opencode'] as const satisfies readonly HarnessName[]
@@ -30,6 +30,14 @@ export const STATUS_CHIP: Record<ResumeStatus, { label: string; cls: string }> =
   model_gone: { label: 'model gone', cls: 'bg-amber-50 text-amber-800 border-amber-200' },
   effort_invalid: { label: 'effort invalid', cls: 'bg-amber-50 text-amber-800 border-amber-200' },
   unchecked: { label: 'unchecked', cls: 'bg-zinc-50 text-zinc-600 border-zinc-200' },
+}
+
+/** One-line description of a provider's state, for chips and the Doctor panel. */
+export function providerSummary(p: ProviderHealth): string {
+  const errs = `${p.errors} provider error${p.errors === 1 ? '' : 's'} in a row`
+  if (p.degraded) return `${p.provider} is degraded: ${errs}${p.last_error ? `, last: ${p.last_error}` : ''}. Hiring still works; expect failures until one call succeeds.`
+  if (p.errors) return `${p.provider}: ${errs}${p.last_error ? `, last: ${p.last_error}` : ''} (not degraded yet)`
+  return `${p.provider}: recovered${p.last_error ? ` (last error: ${p.last_error})` : ''}`
 }
 
 /** Agent was hired from (or last applied) an older copy of its resume. Unknown hashes are not "older". */
@@ -179,7 +187,7 @@ export function stripField(msg: string, field: string): string {
 }
 
 /** Error text from the server, mapped to the editor field it names (400s name the field), else null. */
-const FIELDS = ['slug', 'title', 'description', 'harness', 'model', 'effort', 'can_hire', 'limits', 'body'] as const
+const FIELDS = ['slug', 'title', 'description', 'harness', 'model', 'effort', 'can_hire', 'limits', 'body', 'skills'] as const
 export type ResumeField = (typeof FIELDS)[number]
 export function errorField(msg: string): ResumeField | null {
   const lower = msg.toLowerCase()

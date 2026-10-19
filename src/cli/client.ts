@@ -14,6 +14,17 @@ export interface ApiOpts {
   retries?: number;          // connection retries when the server is down (default 3, backoff 1s/2s/4s)
 }
 
+/**
+ * Agent mode (SPARROW_AGENT_ID set) reports to the server that spawned the window (SPARROW_AGENT_URL, exported by the
+ * launch script), whatever SPARROW_PORT/SPARROW_HOME/SPARROW_URL were later changed to (D19). Additive: no
+ * SPARROW_AGENT_URL, or a different identity than the env's (captain registration passes agentId: null), uses SERVER_URL.
+ */
+export function baseUrl(agentId?: string | null): string {
+  const env = process.env;
+  const agentMode = !!env.SPARROW_AGENT_ID && !!env.SPARROW_AGENT_URL && (agentId === undefined || agentId === env.SPARROW_AGENT_ID);
+  return agentMode ? env.SPARROW_AGENT_URL! : SERVER_URL;
+}
+
 export async function api<T = any>(method: string, path: string, body?: unknown, opts: ApiOpts = {}): Promise<T> {
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   const agentId = opts.agentId ?? process.env.SPARROW_AGENT_ID;
@@ -21,10 +32,11 @@ export async function api<T = any>(method: string, path: string, body?: unknown,
   if (process.env.SPARROW_CALL_ID) headers['x-sparrow-call'] = process.env.SPARROW_CALL_ID;
 
   const retries = opts.retries ?? 3;
+  const base = baseUrl(opts.agentId);
   for (let attempt = 0; ; attempt++) {
     let res: Response;
     try {
-      res = await fetch(SERVER_URL + path, {
+      res = await fetch(base + path, {
         method,
         headers,
         body: body === undefined ? undefined : JSON.stringify(body),
@@ -46,7 +58,7 @@ export async function api<T = any>(method: string, path: string, body?: unknown,
         await Bun.sleep(1000 * 2 ** attempt);
         continue;
       }
-      throw new ApiError(0, `Sparrow server unreachable at ${SERVER_URL} (${(err as Error).message}). Start it with: sparrow up`);
+      throw new ApiError(0, `Sparrow server unreachable at ${base} (${(err as Error).message}). Start it with: sparrow up`);
     }
     const text = await res.text();
     const data = text ? JSON.parse(text) : {};

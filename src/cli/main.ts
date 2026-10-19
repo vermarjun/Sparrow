@@ -1,9 +1,10 @@
 // `sparrow` CLI entry. Every agent (and the captain) talks to the server through these commands.
 // Output is plain text for models; `--json` prints the raw server response instead.
 import { parseArgs, type ParseArgsConfig } from 'node:util';
-import { existsSync, statSync } from 'node:fs';
+import { existsSync, realpathSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { api, ApiError, type ApiOpts } from './client';
+import { AGENT_ENV_VARS, inAgentWindow, lifecycleRefusal, lostIdentityRefusal } from './guard';
 import { BIN, LOG_FILE, PORT, REPO_ROOT, SERVER_URL, SPARROW_HOME, TMUX_SOCKET } from '../shared/config';
 import { CARD_STATES } from '../shared/types';
 import type {
@@ -24,9 +25,10 @@ const isGroup = (t: string | undefined) => !!t && ['group', '@group'].includes(t
 // ---------------------------------------------------------------- usage
 
 const USAGE: Record<string, string> = {
-  up: 'sparrow up [--port N] [--max-running N] [--tmux]   start the server (foreground; --tmux: in tmux session \'sparrow\', window \'server\')',
+  up: 'sparrow up [--port N] [--home DIR] [--max-running N] [--tmux] [--sandbox]   start the server (foreground; --tmux: in tmux session \'sparrow\', window \'server\'; --home must equal SPARROW_HOME and shows in ps; agents may only use --sandbox with a non-default SPARROW_HOME)',
+  sandbox: 'sparrow sandbox up [--dir path] | down [--dir path]   a throwaway server: own home, free port (never 4040), tmux socket; allowed for agents',
   install: 'sparrow install [--force]   seed resumes, link ~/.local/bin/sparrow, install skills + harness assets',
-  stop: 'sparrow stop   stop the server',
+  stop: 'sparrow stop [--sandbox]   stop the server of this SPARROW_HOME/SPARROW_PORT (agents: --sandbox, with SPARROW_HOME set to a non-default dir)',
   captain: 'sparrow captain [--cwd dir] [--model m] [--effort e]   open your Claude Code captain in tmux',
   status: 'sparrow status   server health + working agents and their windows',
   whoami: 'sparrow whoami',
@@ -103,6 +105,8 @@ async function identify(ctx: Ctx, opts: { noInbox?: boolean } = {}): Promise<voi
   if (ctx.agentId) return;
   const envId = process.env.SPARROW_AGENT_ID;
   if (envId) { ctx.agentId = envId; return; }
+  const lost = lostIdentityRefusal();
+  if (lost) throw new Error(lost);
   const body: Record<string, string> = { cwd: process.cwd() };
   const det = detectHarness();
   if (det.harness) body.harness = det.harness;
@@ -223,7 +227,9 @@ type Handler = (ctx: Ctx, args: string[]) => Promise<Out | number>;
 
 const commands: Record<string, Handler> = {
   async stop(ctx, args) {
-    parse('stop', args);
+    const { values } = parse('stop', args, { sandbox: { type: 'boolean' } });
+    const refusal = lifecycleRefusal('stop', !!values.sandbox);
+    if (refusal) throw new Error(refusal);
     const { stopServer } = await import('./lifecycle');
     const text = await stopServer();
     return { raw: { ok: true, message: text }, text };
@@ -310,6 +316,7 @@ const commands: Record<string, Handler> = {
       ...(['model', 'effort'] as const).flatMap((field) => override?.[field]
         ? [`Override: ${field} ${override[field]!.used} (resume says ${override[field]!.resume ?? 'default'}).`]
         : []),
+      ...((res.message.meta.skills_warnings as string[] | undefined) ?? []).map((w) => `Skills: ${w}.`),
       `  id ${a.id} · cwd ${a.cwd}`,
       `  watch: ${tmuxAttach(a)}`,
       `  Its result arrives in your inbox (sparrow inbox --wait 600). Talk to it: sparrow send @${a.handle} "…"`,
@@ -553,7 +560,16 @@ const commands: Record<string, Handler> = {
   },
 
   async up(ctx, args) {
-    const { values } = parse('up', args, { port: { type: 'string' }, 'max-running': { type: 'string' }, tmux: { type: 'boolean' } });
+    const { values } = parse('up', args, { port: { type: 'string' }, home: { type: 'string' }, 'max-running': { type: 'string' }, tmux: { type: 'boolean' }, sandbox: { type: 'boolean' } });
+    const refusal = lifecycleRefusal('up', !!values.sandbox, process.env, values.port as string | undefined);
+    if (refusal) throw new Error(refusal);
+    // --home exists so the server's command line names its home in `ps`; it may only restate SPARROW_HOME.
+    if (values.home !== undefined && !sameDir(values.home as string, SPARROW_HOME))
+      throw new Error(`--home ${values.home} disagrees with SPARROW_HOME ${SPARROW_HOME}; set SPARROW_HOME instead of passing a different --home.`);
+    if (inAgentWindow()) {
+      // An allowed sandbox start must not inherit the starting agent's identity or its server's URL.
+      for (const k of [...AGENT_ENV_VARS, 'SPARROW_URL']) delete process.env[k];
+    }
     const port = intArg('up', values.port as string | undefined, '--port', 1, 65535) ?? PORT;
     const maxRunning = intArg('up', values['max-running'] as string | undefined, '--max-running', 1, 64);
     if (maxRunning !== undefined) {
@@ -564,6 +580,8 @@ const commands: Record<string, Handler> = {
     if (values.tmux) return upInTmux(port);
     const running = await probeHealth(port);
     if (running) {
+      const foreign = await foreignServer(running.pid, port);
+      if (foreign) { console.error(`sparrow up: ${foreign}`); return 1; }
       console.log(`Sparrow server already running on http://127.0.0.1:${port} (pid ${running.pid}).`);
       return 0;
     }
@@ -587,6 +605,19 @@ const commands: Record<string, Handler> = {
       process.once('SIGINT', stop);
       process.once('SIGTERM', stop);
     });
+  },
+
+  async sandbox(ctx, args) {
+    const { values, positionals } = parse('sandbox', args, { dir: { type: 'string' } });
+    const sub = positionals[0];
+    if (positionals.length !== 1 || (sub !== 'up' && sub !== 'down')) throw new UsageError('sandbox', 'expected `up` or `down`');
+    const sb = await import('./sandbox');
+    if (sub === 'up') {
+      const r = await sb.sandboxUp(values.dir as string | undefined);
+      return { raw: { ...r.info, reused: r.reused }, text: r.text };
+    }
+    const text = await sb.sandboxDown(values.dir as string | undefined);
+    return { raw: { ok: true, message: text }, text };
   },
 
   async install(ctx, args) {
@@ -621,6 +652,17 @@ async function projectAgents(ctx: Ctx): Promise<Agent[]> {
   }
 }
 
+const sameDir = (a: string, b: string) => {
+  const real = (p: string) => { try { return realpathSync(p); } catch { return resolve(p); } };
+  return real(a) === real(b);
+};
+
+/** Why the server already answering on `port` is not this SPARROW_HOME's (refuse, don't adopt), or null. */
+async function foreignServer(pid: number, port: number): Promise<string | null> {
+  const { foreignServer: check } = await import('./lifecycle');
+  return check(pid, `http://127.0.0.1:${port}`);
+}
+
 async function probeHealth(port: number): Promise<{ pid: number } | null> {
   try {
     const r = await fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(1500) });
@@ -647,7 +689,10 @@ async function upInTmux(port: number): Promise<number> {
   const hasSession = tmuxCmd('has-session', '-t', `=${SESSION}`).code === 0;
   const windows = hasSession ? tmuxCmd('list-windows', '-t', `=${SESSION}`, '-F', '#{window_name}').out.split('\n') : [];
   const hasWindow = windows.includes(WINDOW);
-  if (await probeHealth(port)) {
+  const there = await probeHealth(port);
+  if (there) {
+    const foreign = await foreignServer(there.pid, port);
+    if (foreign) { console.error(`sparrow up --tmux: ${foreign}`); return 1; }
     console.log(`Sparrow server already running on http://127.0.0.1:${port}${hasWindow ? ` (tmux: ${attach})` : ''}.`);
     return 0;
   }
@@ -656,13 +701,16 @@ async function upInTmux(port: number): Promise<number> {
     const v = process.env[k];
     if (v !== undefined) env.push('-e', `${k}=${v}`);
   }
-  const cmd = `${shq(process.execPath)} ${shq(BIN)} up --port ${port}; echo; echo "[sparrow] server exited ($?). Restart: sparrow up --tmux"; read -r _`;
+  const cmd = `${shq(process.execPath)} ${shq(BIN)} up --home ${shq(SPARROW_HOME)} --port ${port}; echo; echo "[sparrow] server exited ($?). Restart: sparrow up --tmux"; read -r _`;
   let r;
   if (!hasSession) r = tmuxCmd('new-session', '-d', '-s', SESSION, '-n', WINDOW, '-c', REPO_ROOT, ...env, cmd);
   else if (hasWindow) {
     // The window exists but the port does not answer: give a starting server a moment, then respawn.
     for (let i = 0; i < 6 && !(await probeHealth(port)); i++) await Bun.sleep(500);
-    if (await probeHealth(port)) {
+    const late = await probeHealth(port);
+    if (late) {
+      const foreign = await foreignServer(late.pid, port);
+      if (foreign) { console.error(`sparrow up --tmux: ${foreign}`); return 1; }
       console.log(`Sparrow server already running on http://127.0.0.1:${port} (tmux: ${attach}).`);
       return 0;
     }
@@ -698,6 +746,8 @@ export async function main(argv: string[]): Promise<number> {
   const [cmd, ...args] = [...head.filter((a) => a !== '--json'), ...tail];
   const flagArgs = args.includes('--') ? args.slice(0, args.indexOf('--')) : args;
   if (!cmd) {
+    const refusal = lifecycleRefusal('up', false);
+    if (refusal) { console.error(`sparrow: ${refusal}`); return 1; }
     try {
       const { openUi } = await import('./lifecycle');
       const r = await openUi({ say: json ? undefined : (l) => console.log(l) });

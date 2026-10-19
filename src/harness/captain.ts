@@ -28,7 +28,7 @@ export async function launchCaptain(req: CaptainStartReq): Promise<CaptainStartR
   };
   writeAtomic(script, [
     '#!/usr/bin/env bash', `cd ${sq(cwd)} || exit 1`,
-    `unset SPARROW_AGENT_ID SPARROW_CALL_ID SPARROW_HARNESS SPARROW_TMUX_SOCKET ${UNSET_VARS.join(' ')}`,
+    `unset SPARROW_AGENT_ID SPARROW_CALL_ID SPARROW_WINDOW SPARROW_HARNESS SPARROW_TMUX_SOCKET ${UNSET_VARS.join(' ')}`,
     'for __v in $(compgen -e); do if [[ $__v =~ ^CODEX_ && $__v != CODEX_HOME ]]; then unset "$__v"; fi; done; unset __v',
     ...Object.entries(env).map(([k, v]) => `export ${k}=${sq(v)}`),
     `export PATH=${sq(binDir())}:${sq(dirname(bunPath()))}:"$PATH"`,

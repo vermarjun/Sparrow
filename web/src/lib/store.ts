@@ -1,16 +1,21 @@
 import { create } from 'zustand'
 import type { HarnessHealth, ServerEvent } from '@shared/types'
 import { api, type ProjectRow } from './api'
+import type { SkillsState } from './skills'
 import { emptyData, reduce, reduceGlobal, sortThreads, type Data, type GlobalData } from './reduce'
 
 export type Conn = 'connecting' | 'live' | 'down'
-export type Tab = 'board' | 'chat' | 'agents' | 'doctor' | 'resumes'
+export type Tab = 'board' | 'chat' | 'agents' | 'doctor' | 'resumes' | 'skills'
 
 interface Store extends Data, GlobalData {
   projects: ProjectRow[]
   health: HarnessHealth[]
   catalogLoaded: boolean
   doctorLoaded: boolean
+  skills: SkillsState | null
+  skillsError: string | null
+  /** Bumps on every skills.updated event so open detail pages refetch. */
+  skillsRev: number
   conn: Conn
   loading: boolean
   error: string | null
@@ -19,6 +24,7 @@ interface Store extends Data, GlobalData {
   loadResumes: () => Promise<void>
   loadCatalog: () => Promise<void>
   loadDoctor: () => Promise<void>
+  loadSkills: () => Promise<void>
   loadGlobals: () => Promise<void>
   selectProject: (id: string) => void
   loadProject: () => Promise<void>
@@ -34,9 +40,13 @@ export const useStore = create<Store>((set, get) => ({
   resumes: {},
   catalogs: [],
   doctorRun: null,
+  providers: [],
   health: [],
   catalogLoaded: false,
   doctorLoaded: false,
+  skills: null,
+  skillsError: null,
+  skillsRev: 0,
   conn: 'connecting',
   loading: false,
   error: null,
@@ -59,13 +69,21 @@ export const useStore = create<Store>((set, get) => ({
   },
   async loadDoctor() {
     try {
-      const { run, health } = await api.doctor()
-      set({ doctorRun: run, health, doctorLoaded: true })
+      const { run, health, providers } = await api.doctor()
+      set({ doctorRun: run, health, providers: providers ?? [], doctorLoaded: true })
     } catch { /* idem */ }
+  },
+  async loadSkills() {
+    try {
+      set({ skills: await api.skills(), skillsError: null })
+    } catch (e) {
+      set({ skillsError: (e as Error).message })
+    }
   },
   async loadGlobals() {
     const s = get()
-    await Promise.all([s.loadResumes(), s.loadCatalog(), s.loadDoctor()])
+    // Skills load on first visit to the page; once loaded they stay fresh (reconnect + skills.updated).
+    await Promise.all([s.loadResumes(), s.loadCatalog(), s.loadDoctor(), ...(s.skills ? [s.loadSkills()] : [])])
   },
   selectProject(id) {
     if (get().project === id) return
@@ -112,6 +130,10 @@ export const useStore = create<Store>((set, get) => ({
         void get().loadResumes()
       }
       if (ev.type === 'catalog.updated') void get().loadResumes()
+      if (ev.type === 'skills.updated') {
+        set({ skillsRev: s.skillsRev + 1 })
+        if (get().skills) void get().loadSkills()
+      }
       return
     }
     const next = reduce(s, ev)

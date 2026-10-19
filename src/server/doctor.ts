@@ -3,18 +3,24 @@
 // doctor_timeout_ms. Shared checks: tmux, port, sparrow on PATH, skills current, hook paths. Every failing check
 // carries a fix. Runs are stored in the DB and streamed over SSE (doctor.updated). Sparrow never repairs anything.
 import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 import {
   binaryExists, binaryFor, cheapestModel, harnessVersion, loginStatus, type LoginResult, opencodeLastError, type RealHarness, run, spawnEnv,
 } from '../harness/catalog';
 import { opencodeConfigDir, pluginSource } from '../harness/drivers/opencode';
-import { BIN, ASSETS, type Settings } from '../shared/config';
-import { bunPath, CODEX_HOME, hookEntry, serverUrl } from '../harness/env';
+import { BIN, type Settings } from '../shared/config';
+import { bunPath, hookEntry, isSandboxHome, serverUrl } from '../harness/env';
 import { ulid } from '../shared/ids';
 import type { Agent, CheckStatus, DoctorCheck, DoctorRun, HarnessCatalog, HarnessHealth, HarnessName } from '../shared/types';
 import type { CatalogService } from './catalog';
 import { type Core, HttpError } from './core';
+import { libraryProblem, rootAliasWarnings, skillPaths } from '../skills/paths';
+import { readManifest } from '../skills/manifest';
+import { plan } from '../skills/link';
+import { scanSkills } from '../skills/scan';
+import { status as skillsGitStatus } from '../skills/git';
+import type { SkillPaths } from '../skills/types';
+import { resumeDescriptionDrift } from './resume-lint';
 
 export interface BinaryResult { ok: boolean; path: string | null; version: string | null; detail: string; fix: string | null }
 
@@ -81,7 +87,7 @@ export class Doctor {
   constructor(private d: DoctorDeps) {
     this.harnesses = d.harnesses ?? ['claude', 'codex', 'opencode'];
     this.ops = d.ops ?? realOps;
-    this.shared = d.shared ?? defaultSharedChecks();
+    this.shared = d.shared ?? [...defaultSharedChecks(), resumeDescriptionsCheck(d.core, d.catalogs)];
     this.log = d.log ?? (() => {});
     // A run left open by a server stop is over: close it so it never blocks a new run.
     const last = d.core.store.latestDoctorRun();
@@ -323,15 +329,137 @@ function blank(id: string, harness: HarnessName | null, label: string, now: numb
 const fmt = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
 
 function fixFor(h: HarnessName, reason: string): string {
+  if (reason === 'provider_error') return `${h}'s model provider answered with an error (see the detail above). Fix that in your ${h} account or provider, or pick another model, then Run doctor.`;
   if (reason === 'crashed') return `${h} exited right after starting. Run it in a terminal with the same model to see the error (log in again, update it, or pick another model), then Run doctor.`;
   return `${h} started but never ran the sparrow CLI. Attach to the probe window during the next run to see why, then Run doctor.`;
 }
 
 // ---------------------------------------------------------------- shared checks
 
+/** D1: resume descriptions that hard-code a harness or model different from the resume's own settings. */
+export function resumeDescriptionsCheck(core: Core, catalogs: CatalogService): SharedCheck {
+  return {
+    id: 'resume-descriptions', label: 'Resume descriptions match settings',
+    async run() {
+      const drift = resumeDescriptionDrift(core.resumes.list(), catalogs.list());
+      if (!drift.length) return { status: 'pass', detail: 'no description names a harness or model that differs from its resume', fix: null };
+      return {
+        status: 'warn',
+        detail: drift.map((d) => `${d.slug}: ${d.problems.join('; ')}`).join('\n'),
+        fix: `Replace the hard-coded name with {{runtime}} (or {{model}} / {{harness}}) in the description of ${drift.map((d) => d.slug).join(', ')} on the Resumes page; it then always matches the settings.`,
+      };
+    },
+  };
+}
+
 const sameFile = (a: string, b: string) => {
   try { return realpathSync(a) === realpathSync(b); } catch { return false; }
 };
+
+/**
+ * The `sparrow` on PATH check. `sparrow install` links the REAL ~/.local/bin/sparrow and writes real harness folders, so a
+ * sandbox server (SPARROW_HOME or SPARROW_SKILLS_HOME set) never recommends it: it points at this checkout's own binary.
+ */
+export function pathCheck(found: string | null, sandbox: boolean): { status: CheckStatus; detail: string; fix: string | null } {
+  const direct = `Run this checkout's binary directly (${BIN}) or the sandbox's own \`sbx\` wrapper that \`sparrow sandbox up\` prints.`;
+  if (!found) {
+    return {
+      status: 'fail', detail: 'sparrow is not on PATH (agents still get it; your own terminal does not)',
+      fix: sandbox
+        ? `This is a sandbox server: do not run \`sparrow install\` (it writes your real ~/.local/bin and harness folders). ${direct}`
+        : 'Run `bun run sparrow install` in the Sparrow repo (it links ~/.local/bin/sparrow; make sure ~/.local/bin is on PATH), then open a new terminal.',
+    };
+  }
+  if (!sameFile(found, BIN)) {
+    return {
+      status: 'warn', detail: `${found} is not this checkout's ${BIN}`,
+      fix: sandbox
+        ? `This is a sandbox server: do not run \`sparrow install\` (it would relink your real ~/.local/bin/sparrow). ${direct}`
+        : 'Run `sparrow install` from this checkout to relink it.',
+    };
+  }
+  return { status: 'pass', detail: found, fix: null };
+}
+
+export async function skillsCheck(paths: SkillPaths = skillPaths()): Promise<{ status: CheckStatus; detail: string; fix: string | null }> {
+  const failures: string[] = [];
+  const warnings: string[] = [];
+  const info: string[] = [];
+  const fix = 'Open the Skills page to review the library, links, and conflicts.';
+  const unsafeLibrary = libraryProblem(paths);
+  // A library that overlaps a harness folder or a migration source is refused: nothing else about the skills can be trusted.
+  if (unsafeLibrary) {
+    return { status: 'fail', detail: unsafeLibrary, fix: 'Set skills_dir in config.json (or SPARROW_SKILLS_DIR) to a separate folder such as ~/Skills; Sparrow will not use this one.' };
+  }
+  warnings.push(...rootAliasWarnings(paths));
+  const source = paths.roots.sparrow;
+  const names = existsSync(source) ? readdirSync(source).filter((name) => existsSync(join(source, name, 'SKILL.md'))).sort() : [];
+  const missing: string[] = [];
+  const stale: string[] = [];
+  for (const name of names) {
+    const expected = readFileSync(join(source, name, 'SKILL.md'), 'utf8');
+    for (const root of ['claude', 'codex'] as const) {
+      const actual = join(paths.roots[root], name, 'SKILL.md');
+      if (!existsSync(actual)) missing.push(actual);
+      else if (readFileSync(actual, 'utf8') !== expected) stale.push(actual);
+    }
+  }
+  if (missing.length) warnings.push(`Sparrow skills missing: ${missing.join(', ')}`);
+  if (stale.length) warnings.push(`Sparrow skills outdated: ${stale.join(', ')}`);
+
+  if (!existsSync(paths.library)) warnings.push(`Skills library missing: ${paths.library}`);
+  let entries: ReturnType<typeof scanSkills> = [];
+  let manifest;
+  try {
+    manifest = readManifest(paths.library);
+    entries = scanSkills(paths);
+  } catch (error) {
+    warnings.push(`Skills inventory could not be read: ${(error as Error).message}`);
+    manifest = { version: 1, skills: {} };
+  }
+  for (const entry of entries.filter((item) => item.root === 'library' && item.problems.some((problem) => problem.code === 'not-in-manifest'))) {
+    warnings.push(`Library skill is missing from skills.json: ${entry.name}`);
+  }
+  for (const entry of entries.filter((item) => item.status === 'conflict' || item.status === 'broken')) {
+    const managed = Array.isArray(manifest.skills[entry.name]?.harnesses) && manifest.skills[entry.name]!.harnesses.includes(entry.root as any);
+    const message = entry.status === 'broken'
+      ? `Broken link ${entry.root}/${entry.name}`
+      : `Conflict ${entry.root}/${entry.name} (${entry.conflict ?? 'different'})`;
+    (managed ? failures : warnings).push(managed ? `Managed ${message}` : message);
+  }
+  try {
+    const actions = plan(manifest, entries, paths);
+    for (const action of actions) {
+      if (action.type === 'create') warnings.push(`Missing managed link ${action.root}/${action.name}`);
+      else if (action.type === 'repair') warnings.push(`Managed link needs repair ${action.root}/${action.name}`);
+      else if (action.type === 'remove-own-link') warnings.push(`Stale managed link ${action.root}/${action.name}`);
+      else if (!entries.some((entry) => entry.root === action.root && entry.name === action.name && (entry.status === 'conflict' || entry.status === 'broken'))) {
+        warnings.push(`Link conflict ${action.root}/${action.name}: ${action.reason}`);
+      }
+    }
+  } catch (error) {
+    warnings.push(`Skills links could not be checked: ${(error as Error).message}`);
+  }
+  const git = skillsGitStatus(paths);
+  if (!git.available) warnings.push(`Skills library git status unavailable${git.error ? `: ${git.error}` : ''}`);
+  else {
+    if (git.dirty.length) warnings.push(`Skills library has uncommitted files: ${git.dirty.join(', ')}`);
+    if (!git.remote) info.push('Skills library has no origin remote (local-only; push is unavailable).');
+    else if (git.ahead === null) warnings.push('Skills library has no upstream tracking branch');
+    else if (git.ahead > 0) warnings.push(`Skills library has ${git.ahead} unpushed commit(s)`);
+    if (git.behind !== null && git.behind > 0) warnings.push(`Skills library is ${git.behind} commit(s) behind origin`);
+  }
+  const detail = [
+    ...failures, ...warnings,
+    ...(failures.length || warnings.length ? [] : [`${names.join(', ') || 'no Sparrow skills'} current; ${Object.keys(manifest.skills).length} library skills checked`]),
+    ...info,
+  ].join('; ');
+  return failures.length
+    ? { status: 'fail', detail, fix }
+    : warnings.length
+      ? { status: 'warn', detail, fix }
+      : { status: 'pass', detail, fix: null };
+}
 
 export function defaultSharedChecks(): SharedCheck[] {
   return [
@@ -360,36 +488,11 @@ export function defaultSharedChecks(): SharedCheck[] {
     },
     {
       id: 'path', label: '`sparrow` on PATH',
-      async run() {
-        const found = Bun.which('sparrow');
-        if (!found) return { status: 'fail', detail: 'sparrow is not on PATH (agents still get it; your own terminal does not)', fix: 'Run `bun run sparrow install` in the Sparrow repo (it links ~/.local/bin/sparrow; make sure ~/.local/bin is on PATH), then open a new terminal.' };
-        if (!sameFile(found, BIN)) return { status: 'warn', detail: `${found} is not this checkout's ${BIN}`, fix: 'Run `sparrow install` from this checkout to relink it.' };
-        return { status: 'pass', detail: found, fix: null };
-      },
+      async run() { return pathCheck(Bun.which('sparrow'), isSandboxHome() || skillPaths().sandboxHome); },
     },
     {
-      id: 'skills', label: 'Global skills current',
-      async run() {
-        const src = join(ASSETS, 'skills');
-        const names = existsSync(src) ? readdirSync(src).filter((n) => existsSync(join(src, n, 'SKILL.md'))) : [];
-        const targets = [join(homedir(), '.claude', 'skills'), join(CODEX_HOME(), 'skills')];
-        const missing: string[] = [];
-        const stale: string[] = [];
-        for (const n of names) {
-          const want = readFileSync(join(src, n, 'SKILL.md'), 'utf8');
-          for (const t of targets) {
-            const f = join(t, n, 'SKILL.md');
-            if (!existsSync(f)) missing.push(f);
-            else if (readFileSync(f, 'utf8') !== want) stale.push(f);
-          }
-        }
-        if (!missing.length && !stale.length) return { status: 'pass', detail: `${names.join(', ')} current in ${targets.join(' and ')}`, fix: null };
-        return {
-          status: 'warn',
-          detail: [missing.length ? `missing: ${missing.join(', ')}` : '', stale.length ? `outdated: ${stale.join(', ')}` : ''].filter(Boolean).join('; '),
-          fix: 'Run `sparrow install` to copy the current skills.',
-        };
-      },
+      id: 'skills', label: 'Skills library and links',
+      async run() { return skillsCheck(skillPaths()); },
     },
     {
       id: 'hooks', label: 'Hook paths exist',
@@ -415,7 +518,7 @@ export function defaultSharedChecks(): SharedCheck[] {
 // ---------------------------------------------------------------- org-managed Claude hooks
 
 /** Claude settings Sparrow cannot override (remote / managed); their hooks run inside every Claude agent. */
-export function managedSettingsFiles(home = homedir()): string[] {
+export function managedSettingsFiles(home = skillPaths().home): string[] {
   const dir = join(home, '.claude');
   const out = [join(dir, 'remote-settings.json')];
   try { for (const f of readdirSync(dir)) if (/^managed-settings.*\.json$/.test(f)) out.push(join(dir, f)); } catch { /* no ~/.claude */ }

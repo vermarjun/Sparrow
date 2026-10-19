@@ -28,6 +28,8 @@ export interface Settings {
   quiet_minutes: number;      // default when the resume has no limits.quiet_minutes
   max_call_minutes: number;   // default when the resume has no limits.max_call_minutes
   doctor_timeout_ms: number;  // per-harness cap for the doctor's live round trip
+  provider_error_threshold: number;       // consecutive provider errors that mark a harness+provider degraded
+  provider_error_window_minutes: number;  // ...within this many minutes
   doctor_models: Partial<Record<'claude' | 'codex' | 'opencode', string>>; // override the auto-picked cheapest model per harness
 }
 
@@ -43,6 +45,8 @@ export const DEFAULT_SETTINGS: Settings = {
   quiet_minutes: 15,
   max_call_minutes: 90,
   doctor_timeout_ms: 90000,
+  provider_error_threshold: 3,
+  provider_error_window_minutes: 15,
   doctor_models: {},
 };
 

@@ -9,6 +9,7 @@
 //   opencode-session --session S
 //   session --session S            generic: report the harness session id
 //   turn-end [--session S] [--last-message T] [--harness H] [--stop-hook-active]   generic (fake harness); prints the JSON reply
+//   provider-error --message T     the model provider failed (OpenCode session.error; the fake harness simulates it)
 //   exit --code N                  launch script, after the harness process ended
 import { parseArgs } from 'node:util';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, openSync, readSync, closeSync } from 'node:fs';
@@ -59,6 +60,7 @@ function flags(args: string[]) {
     options: {
       session: { type: 'string' },
       'last-message': { type: 'string' },
+      message: { type: 'string' },
       'last-message-file': { type: 'string' },
       harness: { type: 'string' },
       code: { type: 'string' },
@@ -136,6 +138,12 @@ async function handle(kind: string, args: string[]): Promise<string | null> {
       const { values } = flags(args);
       const s = values.session as string | undefined;
       if (s) await api('POST', '/api/hooks/session', { session_id: s }, opts);
+      return null;
+    }
+    case 'provider-error': {
+      const { values } = flags(args);
+      const message = String(values.message ?? '').trim();
+      if (message) await api('POST', '/api/hooks/provider-error', { harness: process.env.SPARROW_HARNESS || undefined, session_id: (values.session as string) || undefined, message }, opts);
       return null;
     }
     case 'exit': {

@@ -8,6 +8,9 @@ import type { Agent, ServerEvent } from '../../src/shared/types';
 import type { Clock } from '../../src/server/core';
 import { type AppDeps, createApp } from '../../src/server/main';
 
+// Hiring snapshots the agent's skills under agentDir(); keep that (and everything else) out of the real home (D6).
+process.env.SPARROW_HOME = mkdtempSync(join(tmpdir(), 'sparrow-t1-home-'));
+
 export class FakeSpawner implements Spawner {
   starts: StartSpec[] = [];
   delivers: { agent: Agent; text: string }[] = [];

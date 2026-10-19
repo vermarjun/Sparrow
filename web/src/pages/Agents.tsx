@@ -4,7 +4,7 @@ import type { Agent } from '@shared/types'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { api, type AgentDetail, type Screen } from '@/lib/api'
-import { ago, agoLabel, buildTree, clock, duration, flattenTree, quietMinutes, tmuxAttach } from '@/lib/format'
+import { ago, agoLabel, buildTree, clock, duration, flattenTree, jobResult, quietMinutes, tmuxAttach } from '@/lib/format'
 import { useStore } from '@/lib/store'
 import { isOlderResume, resumeHref, runLabel } from '@/lib/catalog'
 import { OlderResumeBadge } from '@/pages/Resumes'
@@ -17,6 +17,13 @@ function useQuietLimit() {
   const resumes = useStore((s) => s.resumes)
   return (a: Agent) => resumes[a.resume]?.limits?.quiet_minutes ?? DEFAULT_QUIET
 }
+
+const RESULT_LABEL = { ok: 'done ok', blocked: 'blocked', failed: 'failed' } as const
+const RESULT_CHIP = {
+  ok: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  blocked: 'border-amber-200 bg-amber-50 text-amber-800',
+  failed: 'border-red-200 bg-red-50 text-red-700',
+} as const
 
 const shortId = (s: string | null) => (s ? (s.length > 14 ? `${s.slice(0, 8)}…${s.slice(-4)}` : s) : '—')
 
@@ -121,12 +128,7 @@ export function AgentsPage() {
                       ) : <span className="text-xs text-muted-foreground">—</span>}
                     </TableCell>
                     <TableCell className="max-w-96 py-2 pr-4">
-                      {a.last_update ? (
-                        <div className="flex items-baseline gap-2">
-                          <span className="line-clamp-2 text-xs text-zinc-700">{a.last_update}</span>
-                          <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">{ago(a.last_update_at, now)}</span>
-                        </div>
-                      ) : <span className="text-xs text-muted-foreground">—</span>}
+                      <LastActivity agent={a} now={now} />
                     </TableCell>
                   </TableRow>
                 )
@@ -136,6 +138,31 @@ export function AgentsPage() {
         )}
       </div>
       <AgentSheet agentId={open} onClose={() => setOpen(null)} />
+    </div>
+  )
+}
+
+/** An idle agent whose last call ended `done` shows how the job ended; everyone else shows the latest progress update. */
+export function LastActivity({ agent: a, now }: { agent: Agent; now: number }) {
+  const res = jobResult(a)
+  if (res) {
+    return (
+      <div className="flex items-baseline gap-2" data-testid="job-result" data-result-status={res.status}>
+        <span className={cn('inline-flex h-5 shrink-0 items-center rounded-full border px-2 text-[11px] font-medium whitespace-nowrap', RESULT_CHIP[res.status])}>{RESULT_LABEL[res.status]}</span>
+        <span className="line-clamp-2 text-xs text-zinc-700">{res.line}</span>
+        <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">{ago(res.at, now)}</span>
+      </div>
+    )
+  }
+  const providerError = a.state === 'idle' && a.last_end_reason === 'provider_error'
+  if (!a.last_update && !providerError) return <span className="text-xs text-muted-foreground">—</span>
+  return (
+    <div className="flex items-baseline gap-2">
+      {providerError && (
+        <span className="inline-flex h-5 shrink-0 items-center rounded-full border border-amber-200 bg-amber-50 px-2 text-[11px] font-medium whitespace-nowrap text-amber-800" title="The model provider answered with an error; message the agent to retry" data-testid="provider-error-chip">provider error</span>
+      )}
+      {a.last_update && <span className="line-clamp-2 text-xs text-zinc-700">{a.last_update}</span>}
+      {a.last_update && <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">{ago(a.last_update_at, now)}</span>}
     </div>
   )
 }

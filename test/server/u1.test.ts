@@ -7,7 +7,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Store } from '../../src/server/db';
 import { DOCTOR_PROJECT } from '../../src/server/core';
-import { defaultSharedChecks, healthFrom, missingManagedHooks } from '../../src/server/doctor';
+import { BIN } from '../../src/shared/config';
+import { defaultSharedChecks, healthFrom, missingManagedHooks, pathCheck } from '../../src/server/doctor';
 import { removePidFile, writePidFile } from '../../src/server/main';
 import { parseResume, serializeResume } from '../../src/server/resumes';
 import type { CatalogModel, DoctorCheck, DoctorRun, HarnessCatalog, ResumeView } from '../../src/shared/types';
@@ -465,6 +466,22 @@ describe('doctor + probes', () => {
     expect(miss.map((m) => [m.event, m.binary])).toEqual([['PreToolUse', '/usr/local/bin/rtk'], ['Stop', 'nosuchtool-xyz']]);
     expect(missingManagedHooks([join(dir, 'nope.json')])).toEqual([]);
     expect(defaultSharedChecks().map((c) => c.id)).toEqual(['tmux', 'port', 'path', 'skills', 'hooks']);
+  });
+
+  test('the PATH check never tells a sandbox server to run `sparrow install` (it writes the real ~/.local/bin and harness folders)', () => {
+    const nowhere = pathCheck(null, true);
+    const elsewhere = pathCheck(process.execPath, true);          // on PATH, but not this checkout's bin/sparrow
+    for (const r of [nowhere, elsewhere]) {
+      expect(r.fix).toContain('sandbox');
+      expect(r.fix).toContain('do not run `sparrow install`');
+      expect(r.fix).toContain('sbx');
+    }
+    expect(nowhere.status).toBe('fail');
+    expect(elsewhere.status).toBe('warn');
+    // real server: unchanged advice
+    expect(pathCheck(null, false).fix).toContain('bun run sparrow install');
+    expect(pathCheck(process.execPath, false).fix).toBe('Run `sparrow install` from this checkout to relink it.');
+    expect(pathCheck(BIN, true)).toMatchObject({ status: 'pass', fix: null });
   });
 
   test('healthFrom maps check statuses (warn counts as fine, missing run = unknown)', () => {

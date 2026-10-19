@@ -63,7 +63,8 @@ export function writeCallTexts(agentId: string, callId: string, systemPrompt: st
 
 // Session-identity env vars a spawned harness must NOT inherit from whoever started the server.
 export const UNSET_VARS = ['CLAUDECODE', 'CLAUDE_CODE_SESSION_ID', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_MESSAGING_SOCKET',
-  'CLAUDE_CODE_MESSAGING_TOKEN', 'CLAUDE_PID', 'CLAUDE_EFFORT', 'CLAUDE_CODE_SSE_PORT', 'TMUX_PANE_SPARROW'];
+  'CLAUDE_CODE_MESSAGING_TOKEN', 'CLAUDE_PID', 'CLAUDE_EFFORT', 'CLAUDE_CODE_SSE_PORT', 'TMUX_PANE_SPARROW',
+  'CLAUDE_CODE_CHILD_SESSION', 'CLAUDE_CODE_SESSION_ATTENDED', 'CLAUDE_CODE_EXECPATH'];
 // Prefix families unset too — except configuration homes, which hold auth.
 export const UNSET_PREFIX_RE = '^(CODEX_|OPENCODE_)';
 export const KEEP_RE = '^(CODEX_HOME|OPENCODE_CONFIG|OPENCODE_CONFIG_DIR|OPENCODE_CONFIG_CONTENT)$';
@@ -75,10 +76,14 @@ export function hookCommand(kind: string, extra = ''): string {
 export function buildScript(agent: Agent, callId: string, cmd: LaunchCommand): string {
   const ident: Record<string, string> = {
     SPARROW_AGENT_ID: agent.id,
+    SPARROW_WINDOW: agent.id, // marker for the CLI: this shell is an agent window even if SPARROW_AGENT_ID gets unset (D11)
     SPARROW_CALL_ID: callId,
     SPARROW_URL: serverUrl(),
+    SPARROW_AGENT_URL: serverUrl(), // where this agent reports, immune to later SPARROW_PORT/HOME changes (D19)
     SPARROW_HARNESS: String(agent.harness),
     SPARROW_HOME: sparrowHome(),
+    // A sandbox server's skills isolation (`sparrow sandbox up`) follows its agents, so their own sparrow calls stay inside it.
+    ...(process.env.SPARROW_SKILLS_HOME ? { SPARROW_SKILLS_HOME: process.env.SPARROW_SKILLS_HOME } : {}),
   };
   const lines = [
     '#!/usr/bin/env bash',

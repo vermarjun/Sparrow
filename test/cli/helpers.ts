@@ -114,3 +114,13 @@ export function msg(over: Partial<MessageView> = {}): MessageView {
     from_handle: 'captain', thread_label: 'dm @captain ↔ @james', to_handles: ['james'], ...over,
   };
 }
+
+/** A TCP port that is free right now (OS-assigned), so tests never collide with other instances. Never 4040. */
+export async function freePort(): Promise<number> {
+  for (;;) {
+    const srv = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: () => new Response('') });
+    const port = srv.port as number;
+    srv.stop(true);
+    if (port !== 4040) return port;
+  }
+}

@@ -1,8 +1,11 @@
 // `sparrow up` against the real server (T1). Temp SPARROW_HOME, ports 4133/4134, own tmux socket.
 import { afterAll, describe, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { BIN, REPO, cleanEnv, run, tempDir } from './helpers';
+import { shouldRefreshCatalogsAtStartup } from '../../src/server/main';
+import { startupCatalogWaitMs } from '../../src/cli/lifecycle';
 
 const HAVE_SERVER = existsSync(join(REPO, 'src', 'server', 'main.ts'));
 const SOCKET = 'sparrow-test-t3-up';
@@ -16,6 +19,29 @@ async function health(port: number) {
 
 afterAll(() => {
   Bun.spawnSync(['tmux', '-L', SOCKET, 'kill-server'], { stdout: 'ignore', stderr: 'ignore' });
+});
+
+test('catalog startup probes are cached-only for non-default homes and can be disabled explicitly', () => {
+  const prevHome = process.env.SPARROW_HOME;
+  const prevNoRefresh = process.env.SPARROW_NO_CATALOG_REFRESH;
+  try {
+    delete process.env.SPARROW_NO_CATALOG_REFRESH;
+    process.env.SPARROW_HOME = join(homedir(), '.sparrow');
+    expect(shouldRefreshCatalogsAtStartup()).toBe(true);
+    expect(startupCatalogWaitMs()).toBe(20_000);
+    const sandbox = tempDir('catalog-sandbox-');
+    process.env.SPARROW_HOME = sandbox;
+    expect(shouldRefreshCatalogsAtStartup()).toBe(false);
+    expect(startupCatalogWaitMs()).toBe(0);
+    process.env.SPARROW_HOME = join(homedir(), '.sparrow');
+    process.env.SPARROW_NO_CATALOG_REFRESH = '1';
+    expect(shouldRefreshCatalogsAtStartup()).toBe(false);
+  } finally {
+    if (prevHome === undefined) delete process.env.SPARROW_HOME;
+    else process.env.SPARROW_HOME = prevHome;
+    if (prevNoRefresh === undefined) delete process.env.SPARROW_NO_CATALOG_REFRESH;
+    else process.env.SPARROW_NO_CATALOG_REFRESH = prevNoRefresh;
+  }
 });
 
 describe.skipIf(!HAVE_SERVER)('sparrow up', () => {

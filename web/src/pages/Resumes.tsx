@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, Copy, FlaskConical, Plus, Save, Trash2, Users } from 'lucide-react'
+import { ArrowLeft, Copy, FlaskConical, Lock, Plus, Save, Trash2, TriangleAlert, Users } from 'lucide-react'
 import { toast } from 'sonner'
-import type { DoctorCheck, HarnessName, ResumeView, ResumeWriteReq } from '@shared/types'
+import type { DoctorCheck, HarnessName, ResumeView } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -11,10 +11,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Textarea } from '@/components/ui/textarea'
 import { api, HttpError } from '@/lib/api'
 import {
-  CHECK_DOT, HARNESSES, NEW_SLUG, STATUS_CHIP, resumeHref, stripField, effortAfterModelChange, effortChoice, errorField, harnessAvailability, modelGone, modelOptions, modelsLoading, slugError,
+  CHECK_DOT, HARNESSES, providerSummary, NEW_SLUG, STATUS_CHIP, resumeHref, stripField, effortAfterModelChange, effortChoice, errorField, harnessAvailability, modelGone, modelOptions, modelsLoading, slugError,
   type ResumeField,
 } from '@/lib/catalog'
 import { agoLabel, duration, plural } from '@/lib/format'
+import { blank, fromView, type Form } from '@/lib/resumeForm'
+import { skillChoices, toggleSkill } from '@/lib/skillMatrix'
 import { renderResumeText } from '@/lib/resumeVars'
 import { useStore } from '@/lib/store'
 import { cn } from '@/lib/utils'
@@ -35,6 +37,17 @@ export function StatusChip({ resume }: { resume: Pick<ResumeView, 'status' | 'st
   return (
     <span className={cn('inline-flex h-5 items-center rounded-full border px-2 text-[11px] font-medium whitespace-nowrap', s.cls)} title={resume.status_detail ?? undefined} data-status={resume.status}>
       {s.label}
+    </span>
+  )
+}
+
+/** Shown next to the status chip while the resume's harness + provider is degraded (repeated provider errors). */
+export function DegradedChip({ resume }: { resume: Pick<ResumeView, 'provider_health'> }) {
+  const ph = resume.provider_health
+  if (!ph?.degraded) return null
+  return (
+    <span className="inline-flex h-5 items-center rounded-full border border-amber-300 bg-amber-50 px-2 text-[11px] font-medium whitespace-nowrap text-amber-800" title={providerSummary(ph)} data-testid="degraded-chip">
+      degraded · {ph.provider}
     </span>
   )
 }
@@ -82,7 +95,8 @@ function ResumeList() {
                   </TableCell>
                   <TableCell className="py-2 text-xs">{r.effort ?? <span className="text-muted-foreground">default</span>}</TableCell>
                   <TableCell className="max-w-72 py-2">
-                    <StatusChip resume={r} />
+                    <div className="flex flex-wrap items-center gap-1"><StatusChip resume={r} /><DegradedChip resume={r} /></div>
+                    {r.provider_health?.degraded && <div className="mt-0.5 line-clamp-2 text-[11px] text-amber-800">{providerSummary(r.provider_health)}</div>}
                     {r.status_detail && r.status !== 'ok' && <div className="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground">{r.status_detail}</div>}
                   </TableCell>
                   <TableCell className="py-2 pr-4 text-right tabular-nums">
@@ -100,16 +114,6 @@ function ResumeList() {
 
 // ---------------------------------------------------------------- editor
 
-type Form = ResumeWriteReq & { slug: string }
-
-const blank = (): Form => ({
-  slug: '', title: '', description: '', harness: 'claude', model: null, effort: null, can_hire: [],
-  limits: { quiet_minutes: 15, max_call_minutes: 90 }, body: '',
-})
-const fromView = (r: ResumeView): Form => ({
-  slug: r.slug, title: r.title, description: r.description, harness: r.harness, model: r.model, effort: r.effort,
-  can_hire: [...r.can_hire], limits: { ...r.limits }, body: r.body,
-})
 const same = (a: Form, b: Form) => JSON.stringify(a) === JSON.stringify(b)
 
 function ResumeEditor({ slug }: { slug: string | null }) {
@@ -188,6 +192,11 @@ function ResumeEditor({ slug }: { slug: string | null }) {
   }
 
   const otherSlugs = Object.keys(resumes).filter((s) => s !== slug).sort()
+  const skillsState = useStore((s) => s.skills)
+  useEffect(() => { if (!useStore.getState().skills) void useStore.getState().loadSkills() }, [])
+  const libraryNames = (skillsState?.library ?? []).filter((x) => !x.locked).map((x) => x.name)
+  const lockedNames = (skillsState?.library ?? []).filter((x) => x.locked).map((x) => x.name)
+  const choices = skillChoices(form.skills ?? [], libraryNames, lockedNames)
   const staleNames = (resume?.stale_agents ?? []).map((id) => agents[id] ? `@${agents[id].handle}` : id)
   const changedElsewhere = !!resume && baseHash !== null && resume.hash !== baseHash && dirty
   const deletedElsewhere = !creating && !resume && baseHash !== null
@@ -200,6 +209,7 @@ function ResumeEditor({ slug }: { slug: string | null }) {
           <h1 className="text-sm font-semibold">{creating ? 'New resume' : form.title || slug}</h1>
           {!creating && <span className="font-mono text-xs text-muted-foreground">{slug}</span>}
           {resume && <StatusChip resume={resume} />}
+          {resume && <DegradedChip resume={resume} />}
           {dirty && <span className="text-xs text-amber-700">unsaved changes</span>}
           <div className="ml-auto flex flex-wrap items-center gap-1.5">
             {!creating && (
@@ -323,6 +333,34 @@ function ResumeEditor({ slug }: { slug: string | null }) {
                   )
                 })}
               </div>
+            </Field>
+
+            <Field id="skills" label="Skills" hint={(form.skills ?? []).length ? plural((form.skills ?? []).length, 'library skill') : 'Sparrow\'s own only'} err={err}>
+              <div className="flex flex-wrap gap-1" data-testid="skills-field">
+                {choices.locked.map((n) => (
+                  <span key={n} className="inline-flex h-6 items-center gap-1 rounded-full border border-dashed bg-muted/50 px-2 font-mono text-[11px] text-muted-foreground" title="Always on for every agent">
+                    <Lock className="size-2.5" />{n}
+                  </span>
+                ))}
+                {choices.available.map((n) => {
+                  const on = (form.skills ?? []).includes(n)
+                  return (
+                    <button key={n} type="button" aria-pressed={on} onClick={() => set('skills', toggleSkill(form.skills ?? [], n))}
+                      className={cn('h-6 rounded-full border px-2 font-mono text-[11px] transition-colors', on ? 'border-zinc-800 bg-zinc-800 text-white' : 'text-muted-foreground hover:bg-muted')}>
+                      {n}
+                    </button>
+                  )
+                })}
+                {choices.missing.map((n) => (
+                  <button key={n} type="button" aria-pressed onClick={() => set('skills', toggleSkill(form.skills ?? [], n))}
+                    title="Not in the library: agents hired with it start without it. Click to remove."
+                    className="inline-flex h-6 items-center gap-1 rounded-full border border-amber-500/60 bg-amber-500/15 px-2 font-mono text-[11px] text-amber-900 dark:text-amber-200">
+                    <TriangleAlert className="size-2.5" />{n}
+                  </button>
+                ))}
+                {!skillsState && <span className="text-[11px] text-muted-foreground">Loading the library…</span>}
+              </div>
+              <p className="text-[11px] text-muted-foreground">Takes effect for new hires. Agents already hired keep their skills until you press Apply.</p>
             </Field>
 
             {!creating && <TestPanel slug={slug!} dirty={dirty} />}

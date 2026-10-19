@@ -26,4 +26,15 @@ describe('turn-end with background_tasks_running', () => {
     expect(n.body.action).toBe('block');
     expect(ctx.store.getCall(agentOf(ctx, a.id).call_id!)!.nudges).toBe(1);
   });
+
+  test('provider-error classification waits until background tasks finish', async () => {
+    const ctx = await setup();
+    const a = await hire(ctx, 'builder', 'x');
+    const r = await turnEnd(ctx, a, { background_tasks_running: 1, last_message: 'API Error: 500 Internal Server Error' });
+    expect(r.body).toEqual({ action: 'allow' });
+    expect(agentOf(ctx, a.id)).toMatchObject({ state: 'working', last_end_reason: null });
+    expect(ctx.core.providers.list()).toEqual([]);
+    expect(ctx.sp.captures).toBe(0);
+    expect(ctx.store.getCall(agentOf(ctx, a.id).call_id!)!.nudges).toBe(0);
+  });
 });

@@ -1,11 +1,12 @@
 // Paths and settings the harness layer needs, read lazily from the environment so tests
 // (and a server started with a custom SPARROW_HOME) always see the current values.
 // Falls back to the frozen constants in src/shared/config.ts.
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { AGENTS_DIR, BIN, REPO_ROOT, SERVER_URL, SPARROW_HOME, TMUX_SOCKET } from '../shared/config';
 
 export const sparrowHome = () => process.env.SPARROW_HOME ?? SPARROW_HOME;
+export const isSandboxHome = () => resolve(sparrowHome()) !== resolve(join(homedir(), '.sparrow'));
 export const agentsDir = () => (process.env.SPARROW_HOME ? join(process.env.SPARROW_HOME, 'agents') : AGENTS_DIR);
 export const agentDir = (agentId: string) => join(agentsDir(), agentId);
 export const callsDir = (agentId: string) => join(agentDir(agentId), 'calls');

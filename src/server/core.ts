@@ -7,17 +7,20 @@ import { SPARROW_HOME, TMUX_PREFIX, type Settings } from '../shared/config';
 import { newId } from '../shared/ids';
 import type {
   Agent, AgentState, Call, CallEndReason, Card, CardCreateReq, CardPatchReq, CardState, DoneReq, HireReq,
-  HarnessHealth, HarnessName, Message, MessageKind, MessageView, Project, RegisterCaptainReq, RegisterCaptainRes, Resume,
-  ResumeView, SendReq, ServerEvent, TeamStatus, TurnEndReq, TurnEndRes, UpdateReq,
+  HarnessHealth, HarnessName, Message, MessageKind, MessageView, Project, ProviderErrorReq, RegisterCaptainReq, RegisterCaptainRes,
+  Resume, ResumeView, SendReq, ServerEvent, TeamStatus, TurnEndReq, TurnEndRes, UpdateReq,
 } from '../shared/types';
 import { CARD_STATES } from '../shared/types';
 import { type CatalogService, gateCheck, resumeStatus } from './catalog';
 import { publicCall, type CallRow, Store } from './db';
 import { EventBus } from './events';
+import { codexExitWasInterrupted } from './exit-classifier';
 import {
   crashResume, freshReplay, hhmm, NUDGE_REPORT, nudgeQuiet, PROTOCOL_PATH, renderEnvelope, renderSystemPrompt,
 } from './prompts';
+import { classifyProviderError, ProviderTracker, providerOf } from './provider';
 import { hashText, renderResumeText, Resumes } from './resumes';
+import { grantsFor, resolveGrants, writeSnapshot } from '../skills/grant';
 
 /** Hidden project for doctor / "test resume" probe agents (never listed, never in chat). */
 export const DOCTOR_PROJECT = '_doctor';
@@ -100,6 +103,9 @@ export class Core {
   private otherTimers = new Set<unknown>();
   private deadCounts = new Map<string, number>();         // callId -> consecutive dead checks
   private snapshots = new Map<string, { text: string; at: number }>();
+  /** Provider errors seen in an agent's open call, not yet resolved by a turn end or a success (D2). */
+  private providerFlags = new Map<string, { callId: string; message: string }>();
+  readonly providers: ProviderTracker;
   private waiters = new Map<string, { finish: (result: 'ready' | 'superseded') => void }>(); // one inbox long-poll per agent
   private stopped = false;
   private ticking = false;
@@ -117,6 +123,7 @@ export class Core {
     this.deliverDelayMs = d.deliverDelayMs ?? 1000;
     this.detectRoot = d.detectRoot ?? gitRoot;
     this.doctorRoot = d.doctorRoot ?? join(process.env.SPARROW_HOME ?? SPARROW_HOME, 'doctor');
+    this.providers = new ProviderTracker(() => this.settings.provider_error_threshold, () => this.settings.provider_error_window_minutes * 60_000);
   }
 
   now() { return this.clock.now(); }
@@ -357,10 +364,17 @@ export class Core {
     };
     this.store.insertAgent(agent);
     this.emit({ type: 'agent.updated', project_id: project, agent });
+    // Skills snapshot: what this agent may see is fixed now and changes only on "apply resume". Missing skills
+    // don't block the hire; they are reported (log + the task message's meta, which the hire response carries).
+    const granted = this.snapshotSkills(agent.id, resume);
+    const meta: Record<string, unknown> = {
+      ...(Object.keys(override).length ? { override } : {}),
+      ...(granted.warnings.length ? { skills_warnings: granted.warnings } : {}),
+    };
     const msg = this.post({
       project_id: project, thread: this.dmThread(caller.id, agent.id), from_id: caller.id, kind: 'task',
       text: req.task, to: [agent.id], card_id: card?.id ?? null,
-      ...(Object.keys(override).length ? { meta: { override } } : {}),
+      ...(Object.keys(meta).length ? { meta } : {}),
     });
     if (card) {
       this.saveCard(card.id, {
@@ -374,8 +388,16 @@ export class Core {
       ...(override.effort ? [`OVERRIDE effort ${override.effort.resume ?? '(default)'}→${override.effort.used} (resume ${resume.slug})`] : []),
     ];
     this.say(`hire @${handle} ${resume.slug}/${resume.harness} by @${caller.handle}${overrides.length ? ` ${overrides.join(' ')}` : ''} → ${agent.tmux_session}:${agent.tmux_window}`);
+    for (const w of granted.warnings) this.say(`hire @${handle} ${resume.slug}: ${w}`);
     this.bg(this.wake(agent.id));
     return { agent: this.store.getAgent(agent.id)!, message: this.view(msg) };
+  }
+
+  /** Resolve a resume's skills and store the result as the agent's snapshot (best effort: a disk error must not fail a hire). */
+  private snapshotSkills(agentId: string, resume: Resume): { warnings: string[] } {
+    const res = resolveGrants(resume.skills);
+    try { writeSnapshot(agentId, res); } catch (e) { this.say(`skills snapshot FAILED ${agentId}: ${(e as Error).message}`); }
+    return res;
   }
 
   /** Hire gate: refusal text or null. `fake` always passes; no catalog / no doctor run yet → allow. */
@@ -456,7 +478,12 @@ export class Core {
     const stale = this.store.listAgents()
       .filter((a) => a.kind === 'agent' && a.resume === r.slug && a.state !== 'retired' && a.resume_hash !== hash)
       .map((a) => a.id);
-    return { ...r, hash, builtin: this.resumes.isBuiltin(r), status: st.status, status_detail: st.detail, resolved_model: st.resolved, stale_agents: stale };
+    const provider = providerOf(r.harness, r.model);
+    const ph = this.providers.get(r.harness, provider);
+    return {
+      ...r, hash, builtin: this.resumes.isBuiltin(r), status: st.status, status_detail: st.detail, resolved_model: st.resolved, stale_agents: stale,
+      provider, provider_health: ph?.degraded ? ph : null,
+    };
   }
 
   resumeViews(): ResumeView[] { return this.resumes.list().map((r) => this.resumeView(r)); }
@@ -489,6 +516,7 @@ export class Core {
         harness: r.harness, model: r.model, effort: r.effort, can_hire: r.can_hire, title: r.title, resume_hash: view.hash,
         resume_note: note, ...(harnessChanged ? { session_id: null } : {}),
       });
+      this.snapshotSkills(id, r);
       out.push(id);
     }
     if (out.length) this.say(`apply ${slug} → ${out.length} agent(s)`);
@@ -547,6 +575,7 @@ export class Core {
       text: req.text, to: [], quiet: [parent.id], card_id: cardId,
     });
     this.saveAgent(caller.id, { last_update: req.text, last_update_at: this.now() });
+    this.providerOk(caller);
     if (cardId != null) {
       const c = this.store.getCard(cardId)!;
       this.saveCard(c.id, { notes: [...c.notes, { at: this.now(), by: caller.handle, text: req.text }] });
@@ -571,6 +600,7 @@ export class Core {
     }
     const m = record();
     if (onCall) {
+      this.providerOk(caller);
       this.endCall(caller, reason, { state: newState });
     }
     for (const id of m?.mentions ?? []) this.bg(this.wake(id));
@@ -767,7 +797,9 @@ export class Core {
     try {
       const fresh = this.store.getAgent(a0.id)!;
       const system = renderSystemPrompt(fresh, resumeCard, parent, project ?? { id: agent.project_id, name: agent.project_id, root: agent.cwd, created_at: 0 }, this.protocolPath);
-      res = await this.spawner.start({ agent: fresh, call_id: callId, system_prompt: system, prompt: envelope, resume });
+      res = await this.spawner.start({
+        agent: fresh, call_id: callId, system_prompt: system, prompt: envelope, resume, skills: grantsFor(fresh.id, resumeCard.skills),
+      });
     } catch (err) {
       const msg = (err as Error)?.message ?? String(err);
       this.say(`start FAILED @${agent.handle}: ${msg}`);
@@ -925,9 +957,21 @@ export class Core {
     }
     const call = this.store.getCall(a.call_id)!;
     const isClaude = (req?.harness ?? a.harness) === 'claude';
-    // Deliver when ≥1 waking message is pending (quiet ones go along); quiet-only pending is not a reason to continue.
+    // Deliver waking messages even when the harness is waiting on background work.
     const pending = this.store.countWaking(a.id) > 0 ? this.store.pendingFor(a.id) : [];
+    // T2 fix (I1 bug 4): background shells can make an otherwise empty stop hook normal. Do not
+    // classify the screen or last message until the harness confirms those tasks have finished.
+    const bg = Number((req as { background_tasks_running?: unknown } | undefined)?.background_tasks_running ?? 0);
+    let perr: string | null = null;
+    if (bg <= 0) {
+      // D2: a turn that ended on a model-provider error is not "stopped without reporting": count it, tell the parent
+      // once, never nudge. Otherwise the turn reached the model, which counts as a success.
+      perr = await this.detectProviderError(a, req);
+      if (perr) this.recordProviderError(a, perr);
+      else this.providerOk(a);
+    }
     if (pending.length) {
+      this.providerFlags.delete(a.id);
       this.store.markDelivered(a.id, pending.map((m) => m.id), a.call_id, this.now());
       const env = renderEnvelope(a, pending, this.handleOf, {});
       this.say(`turn-end @${a.handle}: delivering ${pending.length} msg`);
@@ -935,11 +979,15 @@ export class Core {
       this.deliverLater(a.id, a.call_id, env);
       return { action: 'none' };
     }
-    // T2 fix (I1 bug 4): Claude stopped while its own background shells still run — it wakes itself when they
-    // finish, so this is not "stopped without reporting": allow, no nudge, nothing counted.
-    const bg = Number((req as { background_tasks_running?: unknown } | undefined)?.background_tasks_running ?? 0);
     if (bg > 0) {
       this.say(`turn-end @${a.handle}: ${bg} background task(s) running — allow, no nudge`);
+      return { action: 'allow' };
+    }
+    if (perr) {
+      this.providerFlags.delete(a.id);
+      this.say(`turn-end @${a.handle}: provider error, no nudge — ${clip(perr, 80)}`);
+      this.endCall(a, 'provider_error', { state: 'idle' });
+      await this.dequeue();
       return { action: 'allow' };
     }
     if (call.nudges < this.settings.max_nudges) {
@@ -951,6 +999,63 @@ export class Core {
     }
     await this.endUnreported(a, req?.last_message ?? null, false);
     return { action: 'allow' };
+  }
+
+  // ======================================================== provider health (D2)
+
+  /** The provider error this turn ended on: reported by the harness plugin (flag), or visible in the last message / on the screen. */
+  private async detectProviderError(a: Agent, req: TurnEndReq): Promise<string | null> {
+    const flag = this.providerFlags.get(a.id);
+    if (flag && flag.callId === a.call_id) return flag.message;
+    const fromMessage = classifyProviderError(req?.last_message, 'message');
+    if (fromMessage) return fromMessage;
+    // An error turn has no real assistant text; with one, the screen tail is the agent's own output.
+    if (isText(req?.last_message)) return null;
+    let screen = '';
+    try { screen = await this.spawner.capture(a, 40); } catch { /* window gone */ }
+    return classifyProviderError(screen, 'screen');
+  }
+
+  /** Count one provider error for the agent's harness + provider and tell the parent (once per call until a success). */
+  private recordProviderError(a: Agent, message: string): void {
+    if (a.kind === 'human' || a.harness === 'human' || !a.call_id) return;
+    const flag = this.providerFlags.get(a.id);
+    if (flag && flag.callId === a.call_id) return;
+    this.providerFlags.set(a.id, { callId: a.call_id, message });
+    const provider = providerOf(a.harness, a.model);
+    const { health, newlyDegraded } = this.providers.error(a.harness, provider, message, this.now());
+    this.say(`provider error @${a.handle} ${a.harness}/${provider}: ${clip(message, 80)} (${health.errors} in a row${health.degraded ? ', degraded' : ''})`);
+    const mins = this.settings.provider_error_window_minutes;
+    void this.notifyParent(a,
+      `@${a.handle}: model provider error (${provider} ${message}); message it to retry.` +
+      (newlyDegraded ? `\n${a.harness}/${provider} is now marked degraded: ${health.errors} errors in ${mins} min with no success in between. Check \`sparrow resumes\`; expect more of these until one call succeeds.` : ''),
+      { provider_error: message, provider, harness: a.harness, degraded: health.degraded });
+    this.providersChanged(a.harness, provider);
+  }
+
+  /** The agent reached its model (an update/report, or a turn that ended cleanly): clear the error streak, recover a degraded provider. */
+  private providerOk(a: Agent): void {
+    if (a.kind === 'human' || a.harness === 'human') return;
+    this.providerFlags.delete(a.id);
+    const provider = providerOf(a.harness, a.model);
+    const r = this.providers.ok(a.harness, provider, this.now());
+    if (!r) return;
+    if (r.recovered) this.say(`provider ${a.harness}/${provider} recovered (success from @${a.handle})`);
+    this.providersChanged(a.harness, provider);
+  }
+
+  private providersChanged(harness: string, provider: string) {
+    this.emit({ type: 'provider.updated', project_id: '*', providers: this.providers.list() });
+    for (const r of this.resumes.list()) if (r.harness === harness && providerOf(r.harness, r.model) === provider) this.emitResume(r.slug);
+  }
+
+  /** `POST /api/hooks/provider-error`: the harness reported the provider's error itself (OpenCode `session.error`). */
+  providerErrorHook(caller: Agent, callHeader: string | null, req: ProviderErrorReq): { ok: true } {
+    if (!isText(req?.message)) throw new HttpError(400, 'provider-error needs {message} as a non-empty string');
+    if (caller.kind === 'human' || caller.state !== 'working' || !caller.call_id || (callHeader && callHeader !== caller.call_id)) return { ok: true };
+    this.noteSession(caller, req.session_id);
+    this.recordProviderError(caller, req.message.trim().split('\n')[0].replace(/\s+/g, ' ').slice(0, 200));
+    return { ok: true };
   }
 
   /** windowDying: the harness exited (exit hook) — the window closes itself; forget its id instead of closing by id. */
@@ -979,6 +1084,15 @@ export class Core {
     if (!call || call.ended_at != null) return { ok: true };
     const c = Number.isFinite(Number(code)) ? Number(code) : -1;
     if (c === 0) {
+      if (caller.harness === 'codex') {
+        // Capture before classifying: some Codex versions return zero on SIGTERM even when the TUI
+        // still says the model is working. That is a crash and must follow the restart path.
+        await this.snapshotOne(caller);
+        if (codexExitWasInterrupted(c, this.lastScreen(caller.id))) {
+          await this.crash(caller, c, false);
+          return { ok: true };
+        }
+      }
       await this.endUnreported(caller, null, true);
       return { ok: true };
     }
@@ -1246,10 +1360,21 @@ export class Core {
     });
   }
 
+  /** Agents for the read API, each with its latest `done` (`last_result`) so the UI can show how its job ended. */
+  withResults(agents: Agent[], project: string | null = null): Agent[] {
+    const results = this.store.lastResults(project);
+    return agents.map((a) => {
+      const m = results.get(a.id);
+      const status = m?.meta?.status;
+      return { ...a, last_result: m ? { status: status === 'blocked' || status === 'failed' ? status : 'ok', text: m.text, at: m.created_at } : null };
+    });
+  }
+
   agentDetail(id: string) {
     const agent = this.store.getAgent(id);
     if (!agent) throw new HttpError(404, `No agent ${id}.`);
-    return { agent, calls: this.store.callsFor(id, 20).map(publicCall), children: this.store.children(id) };
+    const [a, ...children] = this.withResults([agent, ...this.store.children(id)]);
+    return { agent: a, calls: this.store.callsFor(id, 20).map(publicCall), children };
   }
 
   messages(q: { project?: string | null; thread?: string | null; after?: number | null; limit?: number; caller?: Agent | null }): MessageView[] {

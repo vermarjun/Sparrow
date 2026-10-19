@@ -17,7 +17,18 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    proxy: { '/api': { target, changeOrigin: true } },
+    // The server refuses writes whose Origin is not its own (D13 global guard; the skills routes check it too), so the proxy presents the target as the origin.
+    proxy: {
+      '/api': {
+        target,
+        changeOrigin: true,
+        configure: (proxy) => {
+          proxy.on('proxyReq', (proxyReq) => {
+            if (proxyReq.getHeader('origin')) proxyReq.setHeader('origin', new URL(target).origin)
+          })
+        },
+      },
+    },
   },
   build: { outDir: 'dist', emptyOutDir: true, chunkSizeWarningLimit: 1500 },
 })

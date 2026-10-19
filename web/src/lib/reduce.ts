@@ -1,6 +1,6 @@
 // Pure event reducers: `reduce` applies one ServerEvent to the project's local data,
 // `reduceGlobal` applies the global (project_id '*') events: catalog, doctor, resumes.
-import type { Agent, Call, Card, DoctorRun, HarnessCatalog, MessageView, ResumeView, ServerEvent } from '@shared/types'
+import type { Agent, Call, Card, DoctorRun, HarnessCatalog, MessageView, ProviderHealth, ResumeView, ServerEvent } from '@shared/types'
 import type { ThreadRow } from './api'
 
 export interface Data {
@@ -37,7 +37,8 @@ export function reduce(d: Data, ev: ServerEvent): Data {
   if (!d.project || ev.project_id === '*' || ev.project_id !== d.project) return d
   switch (ev.type) {
     case 'agent.updated':
-      return { ...d, agents: { ...d.agents, [ev.agent.id]: ev.agent } }
+      // Events carry the bare row; keep the `last_result` the read API gave us.
+      return { ...d, agents: { ...d.agents, [ev.agent.id]: { ...ev.agent, last_result: ev.agent.last_result ?? d.agents[ev.agent.id]?.last_result ?? null } } }
     case 'card.updated':
       return { ...d, cards: { ...d.cards, [ev.card.id]: ev.card } }
     case 'call.started':
@@ -45,6 +46,11 @@ export function reduce(d: Data, ev: ServerEvent): Data {
       return { ...d, lastCall: { agent_id: ev.call.agent_id, call: ev.call, at: Date.now() } }
     case 'message.created': {
       const m = ev.message
+      if (m.kind === 'result' && d.agents[m.from_id]) {
+        const status = m.meta?.status
+        const last_result = { status: status === 'blocked' || status === 'failed' ? status : 'ok', text: m.text, at: m.created_at } as const
+        d = { ...d, agents: { ...d.agents, [m.from_id]: { ...d.agents[m.from_id], last_result } } }
+      }
       const loaded = d.messages[m.thread]
       const appended = appendMessage(loaded, m)
       const messages = appended === loaded ? d.messages : { ...d.messages, [m.thread]: appended! }
@@ -69,6 +75,7 @@ export function reduce(d: Data, ev: ServerEvent): Data {
 export interface GlobalData {
   catalogs: HarnessCatalog[]
   doctorRun: DoctorRun | null
+  providers: ProviderHealth[]
   resumes: Record<string, ResumeView>
 }
 
@@ -80,6 +87,8 @@ export function reduceGlobal(g: GlobalData, ev: ServerEvent): GlobalData {
       // An older run's late update must not replace the newer run.
       if (g.doctorRun && g.doctorRun.id !== ev.run.id && g.doctorRun.started_at > ev.run.started_at) return g
       return { ...g, doctorRun: ev.run }
+    case 'provider.updated':
+      return { ...g, providers: ev.providers }
     case 'resume.updated':
       return { ...g, resumes: { ...g.resumes, [ev.resume.slug]: ev.resume } }
     case 'resume.deleted': {
