@@ -60,6 +60,7 @@ export interface Agent {
   last_update_at: number | null;
   last_seen_at: number | null;   // latest CLI request or hook from this agent
   last_result?: AgentResult | null; // the latest `done` this agent sent (API read paths only; web keeps it fresh from events)
+  call_started_at?: number | null; // start of the open call (API read paths only: /api/agents, CaptainDetail.agents)
   resume_hash: string | null;    // ResumeView.hash of the resume copy this agent was hired from (or last applied)
   last_run: RunInfo | null;      // what the latest call actually launched with
   // Multi-captain (docs/plans/multi-captain.md). A fleet = one human captain + everyone hired under it.
@@ -360,7 +361,9 @@ export interface CaptainStartRes { session: string; window: string; window_id: s
 
 // captain_id: SPARROW_CAPTAIN_ID ('ag_…' or a handle) — wins over session_id. adopt: bind this session to an existing
 // captain of the project (after /clear, or from a new terminal). name: handle for a NEW row only.
-export interface RegisterCaptainReq { cwd: string; harness?: string; session_id?: string; captain_id?: string; adopt?: string; name?: string }
+// pid: the captain harness process (CLAUDE_PID). /clear gives Claude a new session id in the same process, so a register
+// whose session id is unknown but whose pid matches a recently seen captain row re-attaches to it (auto-adopt).
+export interface RegisterCaptainReq { cwd: string; harness?: string; session_id?: string; captain_id?: string; adopt?: string; name?: string; pid?: number }
 export interface RegisterCaptainRes { agent: Agent; project: Project; created?: boolean }
 
 export interface HireReq {
