@@ -71,6 +71,14 @@ await page.click('button[aria-label="Hide updates"]'); await sleep(300)
 await page.evaluate(() => { [...document.querySelectorAll('button')].find((b) => /Show last screen/.test(b.textContent ?? ''))?.dispatchEvent(new MouseEvent('click', { bubbles: true })) }); await sleep(300)
 check('crash notice: last screen expands', !!(await page.$('[data-testid=last-screen]')))
 
+// outcomes: one row per agent with a result; a click scrolls to + highlights the message
+const outs = await page.$$eval('[data-outcome]', (e) => e.map((x) => x.getAttribute('data-outcome')))
+check('outcomes: rows for agents with results, newest first', outs.length > 0 && outs.length <= 4, outs.join(','))
+await page.evaluate(() => { document.querySelector<HTMLElement>('[data-feed], [data-testid=feed]')!.scrollTop = 0 }); await sleep(200)
+await page.click('[data-outcome]'); await sleep(700)
+const hl = await page.evaluate(() => { const el = document.querySelector('[data-seq].bg-accent'); const feed = document.querySelector('[data-testid=feed]')!.getBoundingClientRect(); const r = el?.getBoundingClientRect(); return el ? { kind: el.querySelector('[data-kind]')?.getAttribute('data-kind'), visible: r!.top >= feed.top && r!.bottom <= feed.bottom } : null })
+check('outcomes: click highlights the result message in view', !!hl && hl.kind === 'result' && hl.visible, JSON.stringify(hl))
+
 // cards → ticket sheet
 await go('captain/ag_cap?tab=cards')
 await page.click('[role=tabpanel] [data-row]'); await sleep(900)

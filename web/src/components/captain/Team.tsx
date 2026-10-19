@@ -4,8 +4,8 @@ import type { Agent, CaptainSummary } from '@shared/types'
 import { AgentAvatar, CaptainAvatar, HarnessTag, RESULT_TONE, StateDot, STATE_LABEL, StatusGlyph } from '@/components/captains/primitives'
 import { useNow } from '@/components/sparrow/bits'
 import { STATE_ORDER, STATUS_META, captainName, flattenFleet, fleetTree, isUntitled, type FleetRow } from '@/lib/captains'
-import { oneLine } from '@/lib/captainPage'
-import { ago, duration, jobResult } from '@/lib/format'
+import { agentTooltip, oneLine, rowStatus } from '@/lib/captainPage'
+import { jobResult } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { EmptyState } from './parts'
 import { useOpenCalls, useRowNav } from './hooks'
@@ -44,12 +44,13 @@ function TeamRow({ row, summary, now, started, selected, onOpen }: { row: FleetR
   const res = isRoot ? null : jobResult(a)
   // The captain's own line is what it works on (its title), never another agent's message.
   const line = isRoot ? (isUntitled(a) ? '' : captainName(a)) : res ? res.line : oneLine(a.last_update)
-  const lineAt = isRoot ? null : res ? res.at : a.last_update_at
+  const st = isRoot ? null : rowStatus(a, { openStart: started, now })
   return (
     <button
       type="button"
       data-row
       data-agent={a.handle}
+      title={isRoot ? undefined : agentTooltip(a)}
       aria-current={selected || undefined}
       onClick={() => onOpen(a.id)}
       style={{ paddingLeft: row.depth * GUT }}
@@ -61,27 +62,27 @@ function TeamRow({ row, summary, now, started, selected, onOpen }: { row: FleetR
     >
       <Connectors row={row} />
       <span className="mt-3.5 mr-3 shrink-0">
-        {isRoot ? <CaptainAvatar id={a.id} handle={a.handle} size="md" soft={false} /> : <AgentAvatar handle={a.handle} size="md" />}
+        {isRoot ? <CaptainAvatar id={a.id} handle={a.handle} size="md" /> : <AgentAvatar handle={a.handle} size="md" />}
       </span>
       <span className="min-w-0 flex-1 pt-2.5 pr-3">
         <span className="flex h-5 items-center gap-2">
           <span className="shrink-0 text-sm font-medium">@{a.handle}</span>
-          <span className="hidden min-w-0 truncate text-[13px] text-muted-foreground sm:inline">{isRoot ? 'captain · your session' : a.title}</span>
+          <span className="hidden min-w-0 truncate text-[13px] text-muted-foreground sm:inline">{isRoot ? 'captain' : a.title}</span>
           {!isRoot && <HarnessTag harness={a.harness} className="hidden shrink-0 md:inline" />}
           <span className="ml-auto flex shrink-0 items-center gap-3">
-            {res && <span className={cn('inline-flex h-5 items-center rounded-full px-2 text-[11px] leading-none font-medium', RESULT_TONE[res.status].chip)}>{RESULT_TONE[res.status].label}</span>}
             {isRoot ? (
               <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
                 {summary.status === 'working' || summary.status === 'attention' ? <StatusGlyph status={summary.status} /> : <StateDot state="idle" />}
                 {STATUS_META[summary.status].label}
               </span>
-            ) : <StateBadge state={a.state} />}
-            {a.state === 'working' && started != null && <span className="w-12 text-right text-xs text-muted-foreground tabular">{duration(Math.max(0, now - started))}</span>}
+            ) : st!.chip ? (
+              <span className={cn('inline-flex h-5 items-center rounded-full px-2 text-[11px] leading-none font-medium', RESULT_TONE[st!.chip].chip)}>{RESULT_TONE[st!.chip].label}</span>
+            ) : <StateBadge state={st!.state} />}
+            {st && <span className="hidden w-28 text-right text-xs whitespace-nowrap text-muted-foreground tabular sm:inline-block">{st.time}</span>}
           </span>
         </span>
-        <span className="flex h-5 items-center gap-2 text-[13px] text-muted-foreground">
+        <span className="flex h-5 items-center text-[13px] text-muted-foreground">
           <span className="min-w-0 flex-1 truncate">{line || (isRoot ? null : <span className="text-muted-foreground/60">No updates yet</span>)}</span>
-          {lineAt != null && <span className="shrink-0 text-xs tabular text-muted-foreground/70">{ago(lineAt, now)}</span>}
         </span>
       </span>
     </button>

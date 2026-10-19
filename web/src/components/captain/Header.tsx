@@ -179,7 +179,7 @@ export function Header({ summary, onRenamed }: { summary: CaptainSummary; onRena
   const [renaming, setRenaming] = useState(false)
   return (
     <div className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-3 sm:grid-cols-[auto_minmax(0,1fr)_auto]">
-      <CaptainAvatar id={a.id} handle={a.handle} size="lg" soft={false} />
+      <CaptainAvatar id={a.id} handle={a.handle} size="md" className="size-9 rounded-lg text-sm" />
       <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 pt-px">
         <TitleEdit summary={summary} />
         <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 font-mono text-[12px] text-muted-foreground" data-testid="handle">@{a.handle}</span>

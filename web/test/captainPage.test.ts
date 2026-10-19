@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { Agent, Card, MessageView } from '../../src/shared/types'
 import {
-  agentAttach, agentResumeCommand, agentThread, captainStats, endReasonTone, fleetCards, modelLine, openCallStart, originLabel,
+  agentAttach, agentTooltip, outcomes, rowStatus, agentResumeCommand, agentThread, captainStats, endReasonTone, fleetCards, modelLine, openCallStart, originLabel,
   resumeTail, routeLabel, seenLabel, senderKind, shellQuote, tightWithPrev, waitingQuestions,
 } from '../src/lib/captainPage'
 
@@ -112,5 +112,44 @@ describe('resumeTail', () => {
     expect(resumeTail(`cd '/x/it'\\''s' && codex resume abc`)).toBe('codex resume abc')
     expect(resumeTail('cd /x/y && opencode -s ses_1')).toBe('opencode -s ses_1')
     expect(resumeTail('claude --resume abc')).toBe('claude --resume abc')
+  })
+})
+
+describe('outcomes', () => {
+  const ag = (id: string, extra: Partial<Agent> = {}) => ({ id, handle: id.replace('ag_', ''), fleet_id: 'ag_cap', last_result: null, ...extra }) as Agent
+  const res = (from: string, status: string, at: number, text = '## Result\nShipped it.') => msg('result', 'dm:ag_cap:' + from, { from_id: from, created_at: at, meta: { status }, text })
+  test('latest result per agent, newest first, with the message seq; captain and other fleets excluded', () => {
+    const a = res('ag_a', 'failed', 100), a2 = res('ag_a', 'ok', 300), b = res('ag_b', 'blocked', 200)
+    const rows = outcomes([ag('ag_a'), ag('ag_b'), ag('ag_cap'), ag('ag_x', { fleet_id: 'ag_other' })], [a, b, a2], 'ag_cap')
+    expect(rows.map((r) => [r.handle, r.status, r.at, r.seq])).toEqual([['a', 'ok', 300, a2.seq], ['b', 'blocked', 200, b.seq]])
+    expect(rows[0].line).toBe('Shipped it.')
+  })
+  test('falls back to agent.last_result without a message (seq null); agents without results are skipped', () => {
+    const rows = outcomes([ag('ag_a', { last_result: { status: 'ok', text: 'Done: x', at: 5 } }), ag('ag_b')], undefined, 'ag_cap')
+    expect(rows).toEqual([{ agentId: 'ag_a', handle: 'a', status: 'ok', line: 'Done: x', at: 5, seq: null }])
+  })
+})
+
+describe('rowStatus: one state element + one labelled time', () => {
+  const NOW = 10_000_000
+  const a = (extra: Partial<Agent>) => ({ state: 'idle', last_end_reason: null, last_result: null, last_update_at: NOW - 4 * 3600_000, updated_at: 0, ...extra }) as Agent
+  test('working → on call; queued → nothing; waiting → updated', () => {
+    expect(rowStatus(a({ state: 'working' }), { openStart: NOW - (2 * 3600 + 56 * 60) * 1000, now: NOW })).toEqual({ chip: null, state: 'working', time: 'on call 2h 56m' })
+    expect(rowStatus(a({ state: 'working' }), { now: NOW }).time).toBeNull()
+    expect(rowStatus(a({ state: 'queued' }), { now: NOW }).time).toBeNull()
+    expect(rowStatus(a({ state: 'waiting', last_update_at: NOW - 14 * 60_000 }), { now: NOW })).toEqual({ chip: null, state: 'waiting', time: 'updated 14m ago' })
+  })
+  test('idle with a done result → the chip + its age; idle without → state + age; retired with a result keeps the chip', () => {
+    const last_result = { status: 'ok' as const, text: 'x', at: NOW - 4 * 3600_000 }
+    expect(rowStatus(a({ last_end_reason: 'done', last_result }), { now: NOW })).toEqual({ chip: 'ok', state: 'idle', time: '4h ago' })
+    expect(rowStatus(a({}), { now: NOW })).toEqual({ chip: null, state: 'idle', time: '4h ago' })
+    expect(rowStatus(a({ state: 'retired', last_result: { ...last_result, status: 'failed' } }), { now: NOW }).chip).toBe('failed')
+    expect(rowStatus(a({ state: 'crashed' }), { now: NOW }).chip).toBeNull()
+  })
+  test('tooltip carries model and exact times', () => {
+    const t = agentTooltip({ harness: 'claude', model: 'opus', effort: null, last_update_at: 1_700_000_000_000, last_seen_at: null, last_result: null } as Agent)
+    expect(t.split('\n')[0]).toBe('claude · opus')
+    expect(t).toContain('last update')
+    expect(t).toContain('last seen —')
   })
 })

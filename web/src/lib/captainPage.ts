@@ -2,8 +2,8 @@
 // which questions are still waiting, the cards of a fleet, an agent's thread, open-call timing, and the update-run spacing.
 // Unit-tested in web/test/captainPage.test.ts; components only render what these return.
 import type { Agent, CaptainInfo, CaptainSummary, Call, CallEndReason, Card, CardState, MessageView } from '@shared/types'
-import { agoLabel, tmuxAttach } from './format'
-import { threadIds } from './captains'
+import { agoLabel, duration, fullDate, jobResult, resultLine, tmuxAttach } from './format'
+import { resultStatus, threadIds } from './captains'
 
 // ---------------------------------------------------------------- stats
 
@@ -148,3 +148,68 @@ export const timeOfDay = (at: number): string => new Date(at).toLocaleTimeString
 
 /** The part of a resume line that identifies the session: `cd '/x' && claude --resume abc` → `claude --resume abc`. */
 export const resumeTail = (command: string): string => command.replace(/^cd\s+(?:'(?:[^']|'\\'')*'|\S+)\s*&&\s*/, '')
+
+// ---------------------------------------------------------------- outcomes (what the team delivered)
+
+export interface OutcomeRow {
+  agentId: string
+  handle: string
+  status: 'ok' | 'blocked' | 'failed'
+  line: string
+  at: number
+  /** The result message to scroll to; null when only `agent.last_result` is known. */
+  seq: number | null
+}
+
+/**
+ * Latest result per fleet agent (the captain excluded), newest first. The message wins (it has a seq to jump to);
+ * `agent.last_result` fills in when the message list is not loaded yet.
+ */
+export function outcomes(agents: Agent[], messages: MessageView[] | undefined, captainId: string): OutcomeRow[] {
+  const latest = new Map<string, MessageView>()
+  for (const m of messages ?? []) if (m.kind === 'result' && (!latest.has(m.from_id) || m.seq > latest.get(m.from_id)!.seq)) latest.set(m.from_id, m)
+  const rows: OutcomeRow[] = []
+  for (const a of agents) {
+    if (a.id === captainId || a.fleet_id !== captainId) continue
+    const m = latest.get(a.id)
+    if (m) rows.push({ agentId: a.id, handle: a.handle, status: resultStatus(m), line: resultLine(m.text), at: m.created_at, seq: m.seq })
+    else if (a.last_result) rows.push({ agentId: a.id, handle: a.handle, status: a.last_result.status, line: resultLine(a.last_result.text), at: a.last_result.at, seq: null })
+  }
+  return rows.sort((x, y) => y.at - x.at || x.handle.localeCompare(y.handle))
+}
+
+// ---------------------------------------------------------------- team row status
+
+export interface RowStatus {
+  /** The one state element: a result chip (finished with a result), or the agent's state. */
+  chip: 'ok' | 'blocked' | 'failed' | null
+  state: Agent['state']
+  /** The one labelled time ("on call 2h 56m", "updated 14m ago", "4h ago"), or null. */
+  time: string | null
+}
+
+/**
+ * One state element + one labelled time per team row.
+ * working → "on call 2h 56m"; waiting → "updated 14m ago"; queued → nothing; idle/retired with a result → the chip + "4h ago".
+ */
+export function rowStatus(a: Agent, opts: { openStart?: number | null; now?: number } = {}): RowStatus {
+  const now = opts.now ?? Date.now()
+  const ref = a.last_update_at ?? a.updated_at
+  const res = a.state === 'idle' ? jobResult(a) : a.state === 'retired' && a.last_result ? { status: a.last_result.status, at: a.last_result.at } : null
+  if (res) return { chip: res.status, state: a.state, time: agoLabel(res.at, now) }
+  switch (a.state) {
+    case 'working': return { chip: null, state: a.state, time: opts.openStart != null ? `on call ${duration(Math.max(0, now - opts.openStart))}` : null }
+    case 'queued': return { chip: null, state: a.state, time: null }
+    case 'waiting': return { chip: null, state: a.state, time: `updated ${agoLabel(ref, now)}` }
+    default: return { chip: null, state: a.state, time: agoLabel(ref, now) }
+  }
+}
+
+/** Row tooltip: model, exact times, session. Everything the one-line row leaves out. */
+export function agentTooltip(a: Agent): string {
+  const lines = [modelLine(a)]
+  if (a.last_update_at) lines.push(`last update ${fullDate(a.last_update_at)}`)
+  lines.push(`last seen ${fullDate(a.last_seen_at)}`)
+  if (a.last_result) lines.push(`result ${a.last_result.status} · ${fullDate(a.last_result.at)}`)
+  return lines.filter(Boolean).join('\n')
+}

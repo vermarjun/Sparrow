@@ -6,10 +6,11 @@ import type { Agent, CaptainSummary, MessageView } from '@shared/types'
 import { AgentAvatar, StateDot } from '@/components/captains/primitives'
 import { Switch } from '@/components/ui/switch'
 import { activityAgents, activityMessages, groupByDay, hiddenUpdates, type UpdatePolicy } from '@/lib/captains'
-import { tightWithPrev, waitingQuestions } from '@/lib/captainPage'
+import { tightWithPrev, waitingQuestions, type OutcomeRow } from '@/lib/captainPage'
 import { resumeCaptain } from '@/lib/captainActions'
 import { cn } from '@/lib/utils'
 import { Message } from './Message'
+import { Outcomes } from './Outcomes'
 import { EmptyState, FeedSkeleton } from './parts'
 import { SessionRail } from './SessionRail'
 
@@ -56,6 +57,7 @@ export function Activity({ summary, fleet, messages, onAgent, onCard }: Props) {
   const pinned = useRef(true)
   const lastSeq = useRef<number | null>(null)
   const sig = useRef('')
+  const [highlight, setHighlight] = useState<number | null>(null)
   const [unseen, setUnseen] = useState(0)
   const [atBottom, setAtBottom] = useState(true)
 
@@ -67,6 +69,7 @@ export function Activity({ summary, fleet, messages, onAgent, onCard }: Props) {
     const newest = list.at(-1)?.seq ?? 0
     if (lastSeq.current === null || pinned.current) {
       el.scrollTop = el.scrollHeight
+      requestAnimationFrame(() => { if (pinned.current) el.scrollTop = el.scrollHeight })
       setUnseen(0)
     } else if (newest > lastSeq.current) {
       const from = lastSeq.current
@@ -101,10 +104,26 @@ export function Activity({ summary, fleet, messages, onAgent, onCard }: Props) {
     setUnseen(0)
   }
 
+  // Outcomes → scroll to the result message and flash it; results without a loaded message open the agent instead.
+  const openOutcome = (r: OutcomeRow) => {
+    if (r.seq == null) { onAgent(r.agentId); return }
+    const seq = r.seq
+    const reveal = () => {
+      const el = scroller.current?.querySelector<HTMLElement>(`[data-seq="${seq}"]`)
+      if (!el) return
+      pinned.current = false
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      setHighlight(seq)
+      setTimeout(() => setHighlight((h) => (h === seq ? null : h)), 1800)
+    }
+    if (filter && filter !== r.agentId) { setFilter(null); setTimeout(reveal, 60) } else reveal()
+  }
+
   const empty = messages && messages.length === 0
   return (
     <div className="flex h-full min-h-0">
       <div className="relative flex min-w-0 flex-1 flex-col">
+        {!empty && <Outcomes fleet={fleet} messages={messages} captainId={captain.id} onOpen={openOutcome} />}
         {agents.length > 0 && (
           <div className="shrink-0 border-b border-border/60">
             <div className="mx-auto flex w-full max-w-[808px] items-center gap-3 px-4 py-2 sm:px-6">
@@ -134,7 +153,7 @@ export function Activity({ summary, fleet, messages, onAgent, onCard }: Props) {
               action={{ label: 'Resume this captain', onClick: () => void resumeCaptain(summary) }}
             />
           ) : (
-            <div ref={content} className="mx-auto w-full max-w-[808px] px-4 pb-10 sm:px-6">
+            <div ref={content} className="mx-auto w-full max-w-[808px] px-4 pb-6 sm:px-6">
               {hidden > 0 && !hideUpdates && (
                 <div className="flex justify-center pt-4">
                   <button type="button" onClick={() => setAllUpdates((v) => !v)} className="rounded-full px-3 py-1 text-[13px] text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none">
@@ -145,12 +164,13 @@ export function Activity({ summary, fleet, messages, onAgent, onCard }: Props) {
               {list.length === 0 && <p className="py-16 text-center text-[13px] text-muted-foreground">No messages match this filter.</p>}
               {groups.map((g) => (
                 <section key={g.key} aria-label={g.label}>
-                  <div className="sticky top-0 z-10 flex justify-center bg-background py-2.5">
-                    <span className="rounded-full border border-border/60 bg-background px-2.5 py-0.5 text-xs text-muted-foreground">{g.label}</span>
+                  <div className="sticky top-0 z-10 flex h-9 items-center justify-center border-b border-border/40 bg-background">
+                    <span className="text-xs font-medium text-muted-foreground">{g.label}</span>
                   </div>
+                  <div className="h-4" aria-hidden />
                   <div>
                     {g.items.map((m, i) => (
-                      <div key={m.seq} className={cn(tightWithPrev(g.items, i) ? 'mt-0.5' : i === 0 ? '' : 'mt-5')}>
+                      <div key={m.seq} data-seq={m.seq} className={cn('-mx-2 rounded-lg px-2 transition-colors duration-500', highlight === m.seq && 'bg-accent', tightWithPrev(g.items, i) ? 'mt-0.5' : i === 0 ? '' : 'mt-5')}>
                         <Message
                           m={m}
                           captainId={captain.id}

@@ -117,8 +117,8 @@ export function CaptainPage({ route }: { route: Route }) {
     <div className="flex h-full min-w-0 flex-col">
       <div className="shrink-0 space-y-2.5 px-4 pt-4 pb-3 sm:space-y-4 sm:px-8 sm:pt-7 sm:pb-5">
         <Header summary={summary} onRenamed={() => { if (route.captain !== summary.agent.id) go({}, true) }} />
-        <div className="sm:pl-[52px]"><MetaLine summary={summary} /></div>
-        <div className="pt-1 sm:pl-[52px]"><Stats summary={summary} /></div>
+        <div className="sm:pl-12"><MetaLine summary={summary} /></div>
+        <div className="pt-1 sm:pl-12"><Stats summary={summary} /></div>
       </div>
       <Tabs tab={route.tab} counts={counts} onTab={setTab} />
       <div id="captain-panel" role="tabpanel" aria-labelledby={`tab-${route.tab}`} className="min-h-0 flex-1">
