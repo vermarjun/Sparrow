@@ -150,30 +150,31 @@ async function self(ctx: Ctx): Promise<{ me: Agent; project: Project; parent: Ag
   return { me: res.agent, project: res.project, parent: res.parent };
 }
 
-/** Does this shell carry any sign of being a captain session (agent id, SPARROW_CAPTAIN_ID, a harness session id)? */
-const hasIdentitySignal = () => !!(process.env.SPARROW_AGENT_ID || process.env.SPARROW_CAPTAIN_ID || detectHarness().session_id);
-
 /** The project of cwd without creating or needing a captain row (server rule: worktrees belong to their repo's project). */
 async function resolveProject(cwd = process.cwd()): Promise<Project> {
   return api<Project>('GET', `/api/projects/resolve?cwd=${encodeURIComponent(cwd)}`, undefined, { agentId: null });
 }
 
 /**
- * Project-only commands (captains, captain resume, card list/show) never create or require a captain: an identified call
- * goes through identify(); when register answers 409 (ambiguous plain shell) or there is no identity signal at all, the
- * project comes from the server's cwd resolution. `meId` is null for the unidentified call.
+ * Project-only commands (captains, captain resume, card list|show) never register, so a session that merely looks around
+ * does not become a captain. An agent knows its project from whoami; everyone else resolves cwd and calls unidentified.
  */
-async function projectScope(ctx: Ctx, opts: { quietShell?: boolean } = {}): Promise<{ project: Project; meId: string | null }> {
+async function projectScope(ctx: Ctx): Promise<{ project: Project; meId: string | null }> {
   if (ctx.me && ctx.project) return { project: ctx.project, meId: ctx.me.id };
-  if (opts.quietShell && !hasIdentitySignal()) return { project: await resolveProject(), meId: null };
-  try {
+  if (process.env.SPARROW_AGENT_ID) {
     const { me, project } = await self(ctx);
     return { project, meId: me.id };
-  } catch (e) {
-    if (!(e instanceof ApiError) || e.status !== 409 || process.env.SPARROW_AGENT_ID) throw e;
-    ctx.agentId = null; ctx.captain = false; ctx.me = null;
-    return { project: await resolveProject(), meId: null };
   }
+  return { project: await resolveProject(), meId: null };
+}
+
+/** Which listed captain is this shell? SPARROW_CAPTAIN_ID (id or handle) first, then the harness session id. */
+function myCaptainId(list: CaptainSummary[], env = process.env): string | null {
+  const wanted = env.SPARROW_CAPTAIN_ID?.trim().replace(/^@/, '').toLowerCase();
+  if (wanted) return list.find((s) => s.agent.id.toLowerCase() === wanted || s.agent.handle === wanted)?.agent.id ?? null;
+  const sid = detectHarness(env).session_id;
+  if (!sid) return null;
+  return list.find((s) => s.agent.session_id === sid || s.resume.session_id === sid)?.agent.id ?? null;
 }
 
 /** `all` = archived and phantom (no title, no team) captains too. */
@@ -350,11 +351,11 @@ const commands: Record<string, Handler> = {
       }
       let id = target;
       if (!target.startsWith('ag_')) {
-        const { project } = await projectScope(ctx, { quietShell: true });
+        const { project } = await projectScope(ctx);
         const list = await api<CaptainSummary[]>('GET', captainsPath(project, true), undefined, { agentId: null });
         const h = handleArg(target).slice(1).toLowerCase();
         const hit = list.find((c) => c.agent.handle === h);
-        if (!hit) throw new Error(`no captain @${h} in ${project.id}${list.length ? ` (${list.map((c) => '@' + c.agent.handle).join(', ')})` : ''}`);
+        if (!hit) throw new Error(`no captain @${h} in ${project.id}${list.length ? ` (${list.map((c) => '@' + c.agent.handle).join(', ')})` : ''}; run it from the captain's repo or pass its id (\`sparrow captains\` in that repo shows it)`);
         id = hit.agent.id;
       }
       const res = await api<CaptainStartRes>('POST', `/api/captains/${encodeURIComponent(id)}/resume`, undefined, { agentId: null });
@@ -382,8 +383,9 @@ const commands: Record<string, Handler> = {
   async captains(ctx, args) {
     const { values, positionals } = parse('captains', args, { all: { type: 'boolean' } });
     if (positionals.length) throw new UsageError('captains', 'unexpected positional argument');
-    const { project, meId } = await projectScope(ctx, { quietShell: true });
+    const { project, meId: agentId } = await projectScope(ctx);
     const list = await call<CaptainSummary[]>(ctx, 'GET', captainsPath(project, !!values.all));
+    const meId = agentId ?? myCaptainId(list);
     // The API has no hidden count: ask for everything once more to say what the default view left out.
     let hidden = { archived: 0, empty: 0 };
     if (!values.all) {

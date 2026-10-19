@@ -12,6 +12,7 @@ beforeEach(() => {
   stub.reset();
   stub.on('POST', '/api/captains/register', { agent: captain, project, inbox: [] });
   stub.on('GET', '/api/whoami', { agent: agent(), project, parent: captain, inbox: [] });
+  stub.on('GET', '/api/projects/resolve', project);
 });
 
 const ok = (r: { code: number; stderr: string }) => {

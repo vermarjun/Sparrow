@@ -121,14 +121,30 @@ describe('commands against a stub server', () => {
     expect(r.stderr).toContain('cwd is not inside a Sparrow project');
   });
 
-  test('captains from a session registers, marks (you), and passes SPARROW_CAPTAIN_ID through', async () => {
-    const r = await run(['captains'], { url: url(), cwd: root, env: { ...CLAUDE, SPARROW_CAPTAIN_ID: 'ag_ORION' } });
-    expect(r.code).toBe(0);
-    const reg = stub.find('POST', '/api/captains/register')[0];
-    expect(reg.body).toMatchObject({ cwd: root, harness: 'claude', session_id: 'sess-A', captain_id: 'ag_ORION' });
-    expect(stub.find('GET', '/api/captains')[0].agent).toBe('ag_ORION');
-    expect(r.stdout).toMatch(/@cap-orion \(you\)/);
-    expect(r.stdout).not.toContain('a new captain');
+  test('captains from a session never registers (no row is created) and marks (you) by SPARROW_CAPTAIN_ID, id or handle', async () => {
+    for (const id of ['ag_ORION', 'cap-orion', '@cap-orion']) {
+      stub.requests = [];
+      const r = await run(['captains'], { url: url(), cwd: root, env: { ...CLAUDE, SPARROW_CAPTAIN_ID: id } });
+      expect(r.code).toBe(0);
+      expect(stub.find('POST', '/api/captains/register')).toHaveLength(0);
+      expect(stub.find('GET', '/api/captains')[0].agent).toBeNull();
+      expect(r.stdout).toMatch(/@cap-orion \(you\)/);
+      expect(r.stdout).not.toContain('a new captain');
+    }
+  });
+
+  test('(you) by harness session id (Claude, Codex) against the listed rows; an unknown session id is nobody and still creates nothing', async () => {
+    const mine = { ...orion, session_id: 'sess-A' };
+    stub.on('GET', '/api/captains', [summary({}, mine), summary({}, captain)]);
+    const c = await run(['captains'], { url: url(), cwd: root, env: CLAUDE });
+    expect(c.stdout).toMatch(/@cap-orion \(you\)/);
+    const x = await run(['captains'], { url: url(), cwd: root, env: { CODEX_THREAD_ID: 'sess-A' } });
+    expect(x.stdout).toMatch(/@cap-orion \(you\)/);
+    const other = await run(['captains'], { url: url(), cwd: root, env: { CLAUDECODE: '1', CLAUDE_CODE_SESSION_ID: 'sess-unknown', CLAUDE_PID: '4242' } });
+    expect(other.code).toBe(0);
+    expect(other.stdout).not.toContain('(you)');
+    expect(other.stdout).not.toContain('a new captain');
+    expect(stub.find('POST', '/api/captains/register')).toHaveLength(0);
   });
 
   test('created:true prints the one-time hint before the output; --json stays clean', async () => {
@@ -151,25 +167,33 @@ describe('commands against a stub server', () => {
     expect(stub.find('POST', '/api/captains/register')[0].body.pid).toBeUndefined();
   });
 
-  test('ambiguous plain shell (register 409): captains and card list fall back to the resolved project; update keeps the 409', async () => {
+  test('captains, captain resume and card list|show never call register, even with a session id; update keeps the 409', async () => {
     const many = { error: '2 captains in plutus: @captain, @cap-orion. Run from the captain\'s own session, or set SPARROW_CAPTAIN_ID=<id|handle>.' };
     stub.on('POST', '/api/captains/register', many, 409);
     stub.on('GET', '/api/agents', [captain, orion]);
     stub.on('GET', '/api/cards', []);
+    stub.on('GET', '/api/cards/7', { id: 7, project_id: 'plutus', title: 'T', details: '', category: null, state: 'todo', position: 1, assignee_id: null, created_by: 'ag_CAPTAIN', notes: [], created_at: 1, updated_at: 1, context: '', problem: '', approach: '', checks: [], tags: [], urgent: false, impact: null, effort: null, estimate_min: null, blocked_on: null, blocked_at: null, later_at: null, history: [] });
+    stub.on('POST', '/api/captains/ag_ORION/resume', { session: 's', window: 'w', window_id: '@1', cwd: root, attach: 'tmux attach' });
     stub.on('POST', '/api/update', { message: msg({ kind: 'update' }), inbox: [] });
-    const c = await run(['captains'], { url: url(), cwd: root, env: CLAUDE });
+    const SESSION = { CLAUDECODE: '1', CLAUDE_CODE_SESSION_ID: 'sess-none' };
+    const c = await run(['captains'], { url: url(), cwd: root, env: SESSION });
     expect(c.code).toBe(0);
-    expect(stub.find('POST', '/api/captains/register')).toHaveLength(1);
     expect(stub.find('GET', '/api/captains')[0].path).toBe('/api/captains?project=plutus');
     expect(c.stdout).not.toContain('(you)');
-    stub.requests = [];
-    const l = await run(['card', 'list'], { url: url(), cwd: root, env: CLAUDE });
+    const l = await run(['card', 'list'], { url: url(), cwd: root, env: SESSION });
     expect(l.code).toBe(0);
     expect(l.stdout).toContain('Board · project plutus');
     expect(stub.find('GET', '/api/cards')[0].agent).toBeNull();
+    const sh = await run(['card', 'show', '7'], { url: url(), cwd: root, env: SESSION });
+    expect(sh.stderr).toBe('');
+    expect(sh.code).toBe(0);
+    const rs = await run(['captain', 'resume', '@cap-orion'], { url: url(), cwd: root, env: SESSION });
+    expect(rs.code).toBe(0);
+    expect(stub.find('POST', '/api/captains/register')).toHaveLength(0);
     const u = await run(['update', 'x'], { url: url(), cwd: root, env: CLAUDE });
     expect(u.code).toBe(1);
     expect(u.stderr).toContain('2 captains in plutus');
+    expect(stub.find('POST', '/api/captains/register')).toHaveLength(1);
   });
 
   test('no SPARROW_CAPTAIN_ID: register body carries none', async () => {
@@ -286,9 +310,11 @@ describe('commands against a stub server', () => {
     expect(r.stdout).toContain(`attach: ${started.attach}`);
 
     stub.requests = [];
-    const byId = await run(['captain', 'resume', 'ag_ORION'], { url: url() });
+    const byId = await run(['captain', 'resume', 'ag_ORION'], { url: url(), cwd: tempDir(), env: CLAUDE });
     expect(byId.code).toBe(0);
     expect(stub.find('GET', '/api/captains')).toHaveLength(0);
+    expect(stub.find('GET', '/api/projects/resolve')).toHaveLength(0);
+    expect(stub.find('POST', '/api/captains/register')).toHaveLength(0);
 
     stub.on('POST', '/api/captains/ag_ORION/resume', { error: '@cap-orion is open: tmux attach -t x' }, 409);
     const busy = await run(['captain', 'resume', '@cap-orion'], { url: url(), cwd: root });
@@ -297,7 +323,7 @@ describe('commands against a stub server', () => {
 
     const missing = await run(['captain', 'resume', '@nobody'], { url: url(), cwd: root });
     expect(missing.code).toBe(1);
-    expect(missing.stderr).toContain('no captain @nobody in plutus (@cap-orion, @captain)');
+    expect(missing.stderr).toContain('no captain @nobody in plutus (@cap-orion, @captain); run it from the captain\'s repo or pass its id (`sparrow captains` in that repo shows it)');
   });
 
   test('help lines exist for the new commands', async () => {
