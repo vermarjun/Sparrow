@@ -62,9 +62,59 @@ export interface Agent {
   last_result?: AgentResult | null; // the latest `done` this agent sent (API read paths only; web keeps it fresh from events)
   resume_hash: string | null;    // ResumeView.hash of the resume copy this agent was hired from (or last applied)
   last_run: RunInfo | null;      // what the latest call actually launched with
+  // Multi-captain (docs/plans/multi-captain.md). A fleet = one human captain + everyone hired under it.
+  fleet_id: string;              // id of the human captain at the root of this agent's tree; a human captain: its own id
+  captain: CaptainInfo | null;   // set on kind 'human' rows only
   created_at: number;
   updated_at: number;
 }
+
+/** What a human captain is: one Claude Code / Codex / OpenCode session the user runs, with its own team (fleet). */
+export interface CaptainInfo {
+  title: string | null;          // what it works on ("Rate limiting for login"): `sparrow title`, the UI, or `--title`
+  branch: string | null;         // git branch of its cwd at the latest register (null outside git / detached)
+  harness: HarnessName | 'unknown'; // the captain's own harness (Agent.harness stays 'human')
+  origin: 'terminal' | 'sparrow';// the user started it in a terminal, or Sparrow launched it (`sparrow captain`, the UI)
+  archived_at: number | null;    // hidden from the default lists (UI / `sparrow captains`); its fleet is untouched
+}
+
+export type CaptainStatus = 'working' | 'attention' | 'idle' | 'archived';
+// working   = a fleet agent is working or queued
+// attention = nothing working, and the captain has unread waking messages, or a fleet agent is crashed / waiting on an `ask`
+// idle      = neither; archived = archived_at set (wins over everything)
+
+/** How to get back into a captain: the exact lines, so the user never has to remember a session id. */
+export interface CaptainResume {
+  cwd: string;
+  harness: HarnessName | 'unknown';
+  session_id: string | null;
+  command: string | null;        // shell line to reopen it yourself, e.g. "cd '/x/plutus-feat1' && claude --resume 7f3a…"; null without a session id
+  attach: string | null;         // tmux attach line while its Sparrow-launched window is open, else null
+}
+
+export interface FleetCounts { total: number; working: number; queued: number; waiting: number; crashed: number; idle: number; retired: number }
+
+export interface CaptainSummary {
+  agent: Agent;                  // the human captain row (agent.captain is set)
+  status: CaptainStatus;
+  online: boolean;               // seen in the last 15 min, or its Sparrow-launched window is open
+  fleet: FleetCounts;            // hires only (the captain itself is not counted)
+  results: { ok: number; blocked: number; failed: number }; // latest `done` per fleet agent
+  unread: number;                // deliveries to the captain still pending (it has not run a sparrow command since)
+  questions: number;             // pending `question` deliveries to the captain
+  last_activity_at: number;      // newest fleet message, or the captain's last_seen_at
+  last_message: MessageView | null; // newest fleet message that is not an `update`
+  cards: number;                 // cards assigned to a fleet member (captain included)
+  resume: CaptainResume;
+}
+
+export interface CaptainDetail {
+  summary: CaptainSummary;
+  agents: Agent[];               // the whole fleet incl. the captain, with last_result, created_at order
+  cards: Card[];                 // assigned to a fleet member, or proposed by one
+}
+
+export interface CaptainPatchReq { title?: string | null; name?: string; archived?: boolean }
 
 export interface AgentResult { status: DoneStatus; text: string; at: number }
 
@@ -272,7 +322,7 @@ export interface ResumeWriteReq {
 export type SettingKey =
   | 'max_running' | 'max_depth' | 'max_nudges' | 'max_restarts' | 'close_grace_ms' | 'watchdog_ms' | 'snapshot_ms'
   | 'fresh_fallback_ms' | 'quiet_minutes' | 'max_call_minutes' | 'doctor_timeout_ms' | 'provider_error_threshold'
-  | 'provider_error_window_minutes';
+  | 'provider_error_window_minutes' | 'max_running_per_captain';
 
 export interface SettingField {
   key: SettingKey;
@@ -300,15 +350,18 @@ export interface SettingsWriteReq {
   doctor_models?: Partial<Record<'claude' | 'codex' | 'opencode', string | null>>;
 }
 
-export interface CaptainStartReq { cwd: string; model?: string | null; effort?: string | null }
-export interface CaptainStartRes { session: string; window: string; window_id: string; cwd: string; attach: string } // attach = exact shell command
+export interface CaptainStartReq { cwd: string; model?: string | null; effort?: string | null; name?: string; title?: string }
+// attach = exact shell command; agent_id = the captain row Sparrow created before launching (multi-captain)
+export interface CaptainStartRes { session: string; window: string; window_id: string; cwd: string; attach: string; agent_id?: string }
 
 // ---------- HTTP API (JSON). Caller identity: header X-Sparrow-Agent: <agent id>.
 // Hooks also send X-Sparrow-Call: <call id>; the server ignores hooks for calls that are no longer open.
 // Errors: 4xx/5xx with { error: string } — written so an agent can act on it.
 
-export interface RegisterCaptainReq { cwd: string; harness?: string; session_id?: string }
-export interface RegisterCaptainRes { agent: Agent; project: Project }
+// captain_id: SPARROW_CAPTAIN_ID ('ag_…' or a handle) — wins over session_id. adopt: bind this session to an existing
+// captain of the project (after /clear, or from a new terminal). name: handle for a NEW row only.
+export interface RegisterCaptainReq { cwd: string; harness?: string; session_id?: string; captain_id?: string; adopt?: string; name?: string }
+export interface RegisterCaptainRes { agent: Agent; project: Project; created?: boolean }
 
 export interface HireReq {
   resume: string;
