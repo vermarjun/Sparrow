@@ -5,6 +5,7 @@ import type { CSSProperties } from 'react'
 import type { Agent, AgentState, CaptainStatus } from '@shared/types'
 import { captainInitial, hueOf, type StripSegment } from '@/lib/captains'
 import { cn } from '@/lib/utils'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 export const hueStyle = (id: string): CSSProperties => ({ ['--h' as string]: hueOf(id) })
 
@@ -81,12 +82,22 @@ const SEG: Record<AgentState, string> = {
   retired: 'bg-zinc-200 dark:bg-zinc-800',
 }
 
-/** One rounded segment per hire, coloured by state; working ones shimmer (§7.2). Fixed height: never shifts layout. */
+/** One rounded segment per hire, coloured by state; working ones shimmer (§7.2). Fixed height: never shifts layout.
+ *  Each segment has a tooltip (`@handle · state`); its hit area is taller than the 6 px bar. */
 export function FleetStrip({ segments, more, className }: { segments: StripSegment[]; more: number; className?: string }) {
-  if (!segments.length) return <span className={cn('h-1.5 text-[11px] leading-none text-muted-foreground/60', className)}>no hires</span>
+  if (!segments.length) return <span className={cn('inline-flex h-1.5 items-center text-[11px] leading-none text-muted-foreground/60', className)}>no team yet</span>
   return (
-    <span className={cn('inline-flex h-1.5 items-center gap-[3px]', className)} aria-label={`${segments.length + more} hires`}>
-      {segments.map((s) => <span key={s.id} className={cn('h-1.5 w-2.5 rounded-full', SEG[s.state])} />)}
+    <span className={cn('inline-flex h-1.5 items-center', className)} aria-label={`${segments.length + more} hires`}>
+      {segments.map((s) => (
+        <Tooltip key={s.id}>
+          <TooltipTrigger asChild>
+            <span className="inline-flex py-2 pr-[3px]" aria-label={`@${s.handle} · ${STATE_LABEL[s.state]}`}>
+              <span className={cn('h-1.5 w-2.5 rounded-full', SEG[s.state])} />
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="text-xs">@{s.handle} · {STATE_LABEL[s.state].toLowerCase()}</TooltipContent>
+        </Tooltip>
+      ))}
       {more > 0 && <span className="ml-1 text-[10px] leading-none text-muted-foreground tabular">+{more}</span>}
     </span>
   )

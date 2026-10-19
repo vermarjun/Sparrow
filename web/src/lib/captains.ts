@@ -142,13 +142,13 @@ export function projectLine(list: CaptainSummary[]): string {
 /** Order hires show in: live work first, retired last. */
 export const STATE_ORDER: Record<AgentState, number> = { working: 0, queued: 1, waiting: 2, crashed: 3, idle: 4, retired: 5 }
 
-export interface StripSegment { id: string; state: AgentState }
+export interface StripSegment { id: string; handle: string; state: AgentState }
 /** Fleet strip: one segment per hire (captain excluded), working first; > max → the first `max` plus `more`. */
 export function fleetStrip(agents: Agent[], captainId: string, max = 24): { segments: StripSegment[]; more: number } {
   const hires = agents
     .filter((a) => a.fleet_id === captainId && a.id !== captainId)
     .sort((a, b) => STATE_ORDER[a.state] - STATE_ORDER[b.state] || a.created_at - b.created_at)
-  return { segments: hires.slice(0, max).map((a) => ({ id: a.id, state: a.state })), more: Math.max(0, hires.length - max) }
+  return { segments: hires.slice(0, max).map((a) => ({ id: a.id, handle: a.handle, state: a.state })), more: Math.max(0, hires.length - max) }
 }
 
 export interface FleetNode { agent: Agent; children: FleetNode[]; depth: number }

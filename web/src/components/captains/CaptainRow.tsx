@@ -81,7 +81,7 @@ export function CaptainRow({ s, focused, now }: { s: CaptainSummary; focused?: b
           </div>
         )}
       </div>
-      <div className="pointer-events-none hidden w-32 shrink-0 md:block"><FleetStrip {...strip} /></div>
+      <div className="hidden w-32 shrink-0 md:block"><FleetStrip {...strip} /></div>
       <StatusCell s={s} className="pointer-events-none hidden w-40 shrink-0 md:flex" />
       <div className="pointer-events-none flex shrink-0 items-center gap-2 md:hidden"><StatusGlyph status={s.status} /></div>
       <div className="relative flex h-7 w-8 shrink-0 items-center justify-end md:w-[92px]">
