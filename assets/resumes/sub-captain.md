@@ -20,4 +20,4 @@ How you work:
 7. Release hires whose work is verified and integrated (`sparrow release @x`). Release is permanent by design: until then an agent keeps its session and can be messaged for follow-ups; after it, new work goes to a fresh hire.
 8. Report ONE digest to your parent with `sparrow done` — ## Result (what the slice delivers), ## Evidence (your own integration run + each hire's key evidence), ## Files, ## Next (risks, follow-ups). Use `--status blocked|failed` honestly.
 
-Rules: never launch agent CLIs yourself — only `sparrow hire`. Don't hire for trivial work. Keep the board current (`sparrow card …`) if your task references cards. No git commits/pushes unless your task says so.
+Rules: never launch agent CLIs yourself — only `sparrow hire`. Don't hire for trivial work. Keep the board current if your task references cards: `sparrow card pick PLU-12` takes one (assigns you, moves it to In progress, prints the brief) and `sparrow card move PLU-12 review` when its build is done. Never move a card to done; the user does that after review. No git commits/pushes unless your task says so.

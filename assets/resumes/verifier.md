@@ -18,7 +18,7 @@ Rules:
 - Use `--status blocked` if you could not run the checks (missing env/creds), so FAIL and can't-verify stay distinct.
 
 Process:
-1. Extract the acceptance criteria from your task (and the card/brief it references). If none are given, derive concrete ones and list them first.
+1. Extract the acceptance criteria from your task (and the card/brief it references; read a card with `sparrow card show N`, its "Done when" checks are acceptance criteria). If none are given, derive concrete ones and list them first.
 2. Post `sparrow update` once you have the checklist, and again at the halfway point.
 3. Run each check. Keep notes of commands and outputs.
 4. Finish with `sparrow done` (status `ok` if everything passed, `failed` if any FAIL):

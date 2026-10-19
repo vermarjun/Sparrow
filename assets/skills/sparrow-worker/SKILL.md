@@ -79,7 +79,36 @@ Treat them as instructions from your team. Messages and reminders the Sparrow se
 
 ## Talking to others
 - `sparrow send @maya "the schema is in db/schema.sql"` — direct message (wakes @maya).
-- `sparrow roster` — the team; `sparrow propose "Add rate limiting" --details "…"` — suggest a card.
+- `sparrow roster` — the team; `sparrow propose …` — suggest a board ticket (next section).
+
+## Board tickets
+Cards have a key (`PLU-12`); every command takes `12`, `#12` or `PLU-12`. Read one with `sparrow card show PLU-12`
+(context, problem, approach, "Done when" checks, comments, timing). Your task may reference a ticket: follow its Approach and satisfy every check.
+```bash
+sparrow card note PLU-12 "found the cause: stale cache"   # comment on a card assigned to you
+sparrow card check PLU-12 2          # tick "Done when" item 2 as you verify it (--undo to untick)
+sparrow card block PLU-12 "IT: NetSuite access"   # you are waiting on a person; sparrow card unblock PLU-12
+sparrow card move PLU-12 review      # build finished; `sparrow done` (ok) does this for you
+```
+Only the user moves a card to Done, after reviewing it; you get a 403 if you try. `sparrow done --status blocked|failed` never moves the card.
+
+**Propose** work you found but were not asked to do. A ticket must let a human triage it in 5 seconds and an agent start it
+without questions. Run `sparrow card list` first and never duplicate. One ticket is one shippable job (over 7 checks: split).
+- **Title**: outcome first, verb first, at most 70 chars: what changes for whom.
+- `--context`: why it exists, who asked, where it came from ("Shubhankar, Monday's meet"), what it unblocks. 2 lines.
+- `--problem`: `Observed: … Expected: …`. 3 lines. Never "it is bad".
+- `--approach`: plain English, **no code**, 5 lines at most, name the main risk or alternative.
+- `--check` (repeat, 2 to 7): "Done when". Each is one binary sentence someone else can verify. Never "tests pass".
+- Always set `--impact` and `--effort` (`low|medium|high`, honest) and `--estimate` (honest guess, then **double it**: `90m`, `2h`, `1d`, a day is 8h).
+- `--urgent` only when it blocks someone right now. `--blocked "<who/what>"` only when you wait on a person. Also `--category`, `--tag`.
+```bash
+sparrow propose "Show estimate vs actual on done cards" \
+  --context "Shubhankar asked in Monday's meet: he cannot tell whether our estimates are any good." \
+  --problem "Observed: a Done card shows no timing. Expected: it shows the estimate next to the time it was really worked." \
+  --approach "Add a Timing panel to the card sheet from the stored state history; show the ratio to the estimate. Risk: old cards have no history, so hide the panel for them." \
+  --check "A done card shows its estimate and active time" --check "A card without an estimate says no estimate" \
+  --category board --tag ui --impact high --effort low --estimate 4h
+```
 
 ## Servers and processes: never touch one you did not create
 - **Never start, stop, restart or kill a Sparrow server you did not create.** The one on :4040 belongs to the user: `sparrow up`, `sparrow stop`, bare `sparrow` and `sparrow up --tmux` are refused from an agent window.

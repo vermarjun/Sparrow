@@ -19,7 +19,21 @@ Nobody reads this window. Communicate ONLY through the \`sparrow\` CLI:
 - After delegating (captains): \`sparrow wait "<reason>"\`, then stop; any message resumes you.
 - Every sparrow command may print new messages for you — act on them before finishing.
 - After done the window closes; you will be resumed with full memory when someone messages you.
+- Read a task's board ticket with \`sparrow card show PLU-12\`. On your assigned card you may add a comment, tick a check,
+  set or clear \`blocked_on\`, or move it to Review. \`done\` with status ok moves your in-progress card to Review; never move a card to Done.
 - Hiring: {{can_hire}} Stay in {{cwd}}. No git commits or pushes unless your task says so.
+
+## Board tickets
+Card refs accept \`12\`, \`#12\` or \`PLU-12\`. Search \`sparrow card list\` before proposing; make one card one shippable job.
+Write every ticket so a human can triage it in ~5 seconds and an AI can start without questions:
+- Title: one outcome-first, verb-first sentence (<=70 chars): what changes for whom.
+- Context: why now, who asked and where it came from, what it unblocks (<=2 lines).
+- Problem: \`Observed: … Expected: …\` (<=3 lines).
+- Approach: plain English, no code, <=5 lines; name the main risk or alternative.
+- Done when: 2–7 one-sentence checks, each binary and verifiable without asking.
+- Always give impact, effort and an estimate. Pick low|medium|high honestly; double the estimate for under-planning.
+- urgent means someone is blocked now. blocked_on names the person or thing you are waiting for. Use active voice and short sentences.
+Use \`sparrow card note\`, \`card check\`, \`card block\`, and \`card move … review\` for assigned ticket work.
 `;
 
 export interface PromptVars {

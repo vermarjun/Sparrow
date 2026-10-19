@@ -2,6 +2,7 @@
 import { renderResumeText } from '../server/resumes';
 import type { Agent, Card, CardState, MessageView, Resume, ResumeView, TeamStatus } from '../shared/types';
 import { TMUX_SOCKET } from '../shared/config';
+import { cardBrief, cardKey, cardTimings, formatEstimate, formatSpan, isQuickWin } from '../shared/cards';
 
 export function age(at: number | null | undefined, now = Date.now()): string {
   if (!at) return '-';
@@ -231,30 +232,64 @@ export const STATE_TITLES: Record<CardState, string> = {
   proposed: 'Proposed', todo: 'To do', in_progress: 'In progress', review: 'Review', done: 'Done', dropped: 'Dropped',
 };
 
-export function cardLine(c: Card, handles: Map<string, string>): string {
-  const bits = [`#${c.id} ${c.title}`];
-  if (c.category) bits.push(`[${c.category}]`);
-  if (c.assignee_id) bits.push('@' + (handles.get(c.assignee_id) ?? c.assignee_id));
-  if (c.notes?.length) bits.push(`· ${c.notes.length} note${c.notes.length === 1 ? '' : 's'}`);
+export function cardLine(c: Card, handles: Map<string, string>, now = Date.now()): string {
+  const markers = [c.urgent ? '‼' : '', c.blocked_on ? `⛔ blocked on ${oneLine(c.blocked_on, 32)}` : '', isQuickWin(c) ? '★' : ''].filter(Boolean);
+  const bits = [cardKey(c), ...markers, c.title];
+  if (c.category) bits.push(`· ${c.category}`);
+  if (c.impact || c.effort) bits.push(`· R ${c.impact ?? '—'}/E ${c.effort ?? '—'}`);
+  if (c.estimate_min) bits.push(`· ~${formatEstimate(c.estimate_min)}`);
+  bits.push(`· ${shortAge(c.created_at, now)}`);
+  if (c.assignee_id) bits.push(`· @${handles.get(c.assignee_id) ?? c.assignee_id}`);
   return bits.join(' ');
 }
 
-export function cardBoard(cards: Card[], handles: Map<string, string>): string {
+function shortAge(at: number, now = Date.now()): string {
+  const m = Math.max(0, Math.floor((now - at) / 60_000));
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  return `${Math.floor(h / 24)}d`;
+}
+
+export function cardBoard(cards: Card[], handles: Map<string, string>, now = Date.now()): string {
   if (!cards.length) return 'No cards.';
   const out: string[] = [];
   for (const state of Object.keys(STATE_TITLES) as CardState[]) {
-    const col = cards.filter((c) => c.state === state).sort((a, b) => a.position - b.position || a.id - b.id);
+    const col = cards.filter((c) => c.state === state);
     if (!col.length) continue;
     out.push(`${STATE_TITLES[state]} (${col.length})`);
-    for (const c of col) out.push('  ' + cardLine(c, handles));
+    const active = col.filter((c) => !c.later_at);
+    const later = col.filter((c) => !!c.later_at);
+    for (const c of active) out.push('  ' + cardLine(c, handles, now));
+    if (later.length) {
+      out.push(`  · later · ${later.length}`);
+      for (const c of later) out.push('    ' + cardLine(c, handles, now));
+    }
   }
   return out.join('\n');
 }
 
-export function cardDetail(c: Card, handles: Map<string, string>): string {
-  const lines = [`#${c.id} ${c.title} — ${STATE_TITLES[c.state] ?? c.state}${c.assignee_id ? ` · @${handles.get(c.assignee_id) ?? c.assignee_id}` : ''}`];
-  if (c.details) lines.push(`  ${oneLine(c.details, 200)}`);
-  const last = c.notes?.[c.notes.length - 1];
-  if (last) lines.push(`  last note: ${oneLine(last.text, 120)}`);
+const timestamp = (at: number | null) => at == null ? '—' : new Date(at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' });
+const displayWho = (id: string, handles: Map<string, string>) => {
+  if (id === 'user') return 'you';
+  return `@${handles.get(id) ?? id.replace(/^@/, '')}`;
+};
+
+export function cardDetail(c: Card, handles: Map<string, string>, now = Date.now()): string {
+  const timing = cardTimings(c, now);
+  const build = timing.build_ms === 0 ? 'not started' : formatSpan(timing.build_ms);
+  const lines = [cardBrief(c, (id) => displayWho(id, handles)), '', `Timing: proposed ${timestamp(c.created_at)} · started ${timestamp(timing.started_at)} · in review ${timestamp(timing.review_at)} · build ${build} · review ${formatSpan(timing.review_ms)}`];
+  const estimate = c.estimate_min == null ? 'no estimate' : `est ${formatEstimate(c.estimate_min)}`;
+  const ratio = timing.ratio == null ? '' : ` (${timing.ratio < 0.1 ? '<0.1' : timing.ratio.toFixed(1)}×)`;
+  lines[2] += ` · ${estimate} → ${timing.build_ms === 0 ? 'not started' : `${formatSpan(timing.build_ms)} build${ratio}`}`;
+  const events = (c.notes ?? []).filter((n) => n.kind === 'event').slice(-8);
+  if (events.length) {
+    lines.push('', '## Recent events');
+    for (const n of events) lines.push(`- ${displayWho(n.by, handles)} · ${timestamp(n.at)}: ${n.text}`);
+  }
   return lines.join('\n');
+}
+
+export function cardBriefText(c: Card, handles: Map<string, string>): string {
+  return cardBrief(c, (id) => displayWho(id, handles));
 }

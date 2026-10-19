@@ -7,7 +7,7 @@ import type {
   Message, MessageKind, Project,
 } from '../shared/types';
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);
@@ -103,7 +103,20 @@ CREATE TABLE IF NOT EXISTS cards (
   created_by TEXT NOT NULL,
   notes TEXT NOT NULL DEFAULT '[]',
   created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
+  updated_at INTEGER NOT NULL,
+  context TEXT NOT NULL DEFAULT '',
+  problem TEXT NOT NULL DEFAULT '',
+  approach TEXT NOT NULL DEFAULT '',
+  checks TEXT NOT NULL DEFAULT '[]',
+  tags TEXT NOT NULL DEFAULT '[]',
+  urgent INTEGER NOT NULL DEFAULT 0,
+  impact TEXT,
+  effort TEXT,
+  estimate_min INTEGER,
+  blocked_on TEXT,
+  blocked_at INTEGER,
+  later_at INTEGER,
+  history TEXT NOT NULL DEFAULT '[]'
 );
 CREATE TABLE IF NOT EXISTS catalogs (
   harness TEXT PRIMARY KEY,
@@ -132,6 +145,19 @@ const ADDED_COLUMNS: [table: string, column: string, type: string][] = [
   ['calls', 'model', 'TEXT'],
   ['calls', 'effort', 'TEXT'],
   ['deliveries', 'wake', 'INTEGER NOT NULL DEFAULT 1'], // v3: 0 = quiet delivery (never wakes)
+  ['cards', 'context', "TEXT NOT NULL DEFAULT ''"],
+  ['cards', 'problem', "TEXT NOT NULL DEFAULT ''"],
+  ['cards', 'approach', "TEXT NOT NULL DEFAULT ''"],
+  ['cards', 'checks', "TEXT NOT NULL DEFAULT '[]'"],
+  ['cards', 'tags', "TEXT NOT NULL DEFAULT '[]'"],
+  ['cards', 'urgent', 'INTEGER NOT NULL DEFAULT 0'],
+  ['cards', 'impact', 'TEXT'],
+  ['cards', 'effort', 'TEXT'],
+  ['cards', 'estimate_min', 'INTEGER'],
+  ['cards', 'blocked_on', 'TEXT'],
+  ['cards', 'blocked_at', 'INTEGER'],
+  ['cards', 'later_at', 'INTEGER'],
+  ['cards', 'history', "TEXT NOT NULL DEFAULT '[]'"],
 ];
 
 type Row = Record<string, any>;
@@ -182,6 +208,10 @@ export function rowToCard(r: Row): Card {
     id: r.id, project_id: r.project_id, title: r.title, details: r.details, category: r.category ?? null,
     state: r.state as CardState, position: r.position, assignee_id: r.assignee_id ?? null, created_by: r.created_by,
     notes: json<CardNote[]>(r.notes, []), created_at: r.created_at, updated_at: r.updated_at,
+    context: r.context ?? '', problem: r.problem ?? '', approach: r.approach ?? '', checks: json(r.checks, []),
+    tags: json(r.tags, []), urgent: !!r.urgent, impact: r.impact ?? null, effort: r.effort ?? null,
+    estimate_min: r.estimate_min ?? null, blocked_on: r.blocked_on ?? null, blocked_at: r.blocked_at ?? null,
+    later_at: r.later_at ?? null, history: json(r.history, []),
   };
 }
 
@@ -412,14 +442,19 @@ export class Store {
     return r.p ?? 0;
   }
   insertCard(c: Omit<Card, 'id'>): Card {
-    const res = this.db.query('INSERT INTO cards (project_id, title, details, category, state, position, assignee_id, created_by, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(c.project_id, c.title, c.details, c.category, c.state, c.position, c.assignee_id, c.created_by, JSON.stringify(c.notes), c.created_at, c.updated_at);
+    const res = this.db.query(`INSERT INTO cards (
+      project_id, title, details, category, state, position, assignee_id, created_by, notes, created_at, updated_at,
+      context, problem, approach, checks, tags, urgent, impact, effort, estimate_min, blocked_on, blocked_at, later_at, history
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(c.project_id, c.title, c.details, c.category, c.state, c.position, c.assignee_id, c.created_by, JSON.stringify(c.notes), c.created_at, c.updated_at,
+        c.context, c.problem, c.approach, JSON.stringify(c.checks), JSON.stringify(c.tags), c.urgent ? 1 : 0, c.impact, c.effort,
+        c.estimate_min, c.blocked_on, c.blocked_at, c.later_at, JSON.stringify(c.history));
     return this.getCard(Number(res.lastInsertRowid))!;
   }
   patchCard(id: number, patch: Partial<Card>, now: number): Card {
     const entries = Object.entries({ ...patch, updated_at: now }).filter(([k]) => k !== 'id');
     const sets = entries.map(([k]) => `${k} = ?`).join(', ');
-    const vals = entries.map(([k, v]) => (k === 'notes' ? JSON.stringify(v) : v ?? null));
+    const vals = entries.map(([k, v]) => (['notes', 'checks', 'tags', 'history'].includes(k) ? JSON.stringify(v) : k === 'urgent' ? (v ? 1 : 0) : v ?? null));
     this.db.query(`UPDATE cards SET ${sets} WHERE id = ?`).run(...(vals as any[]), id);
     return this.getCard(id)!;
   }

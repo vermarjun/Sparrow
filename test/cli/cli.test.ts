@@ -165,7 +165,7 @@ describe('hire', () => {
 describe('messages', () => {
   test('send DM normalises the handle; --card', async () => {
     stub.on('POST', '/api/send', { message: msg({ kind: 'chat' }), inbox: [] });
-    const r = await run(['send', 'james', 'use', 'redis', '--card', '3'], { url, env: AGENT });
+    const r = await run(['send', 'james', 'use', 'redis', '--card', 'PLU-3'], { url, env: AGENT });
     ok(r);
     expect(stub.find('POST', '/api/send')[0].body).toEqual({ to: '@james', text: 'use redis', card_id: 3 });
     expect(r.stdout).toContain('Sent to @james.');
@@ -514,14 +514,14 @@ describe('roster / resumes / log / status', () => {
 });
 
 describe('board', () => {
-  const card = { id: 4, project_id: 'plutus', title: 'Rate limit', details: '5/15min', category: 'api', state: 'todo', position: 1, assignee_id: 'ag_JAMES', created_by: 'ag_CAPTAIN', notes: [{ at: 1, by: 'x', text: 'n1' }], created_at: 1, updated_at: 1 };
+  const card = { id: 4, project_id: 'plutus', title: 'Rate limit', details: '5/15min', category: 'api', state: 'todo', position: 1, assignee_id: 'ag_JAMES', created_by: 'ag_CAPTAIN', notes: [{ at: 1, by: 'x', text: 'n1' }], created_at: 1, updated_at: 1, context: '', problem: '', approach: '', checks: [], tags: [], urgent: false, impact: null, effort: null, estimate_min: null, blocked_on: null, blocked_at: null, later_at: null, history: [] };
 
   test('propose', async () => {
     stub.on('POST', '/api/propose', { card: { ...card, state: 'proposed' }, inbox: [] });
     const r = await run(['propose', 'Add', 'rate', 'limit', '--details', 'why', '--category', 'api'], { url, env: AGENT });
     ok(r);
     expect(stub.find('POST', '/api/propose')[0].body).toEqual({ title: 'Add rate limit', details: 'why', category: 'api' });
-    expect(r.stdout).toContain('Proposed card #4');
+    expect(r.stdout).toContain('Proposed PLU-4');
   });
 
   test('card list / add / move / assign / note', async () => {
@@ -531,11 +531,11 @@ describe('board', () => {
     stub.on('PATCH', '/api/cards/4', { card });
     let r = await run(['card', 'list'], { url });
     ok(r);
-    expect(r.stdout).toContain('To do (1)\n  #4 Rate limit [api] @james · 1 note');
+    expect(r.stdout).toContain('To do (1)\n  PLU-4 Rate limit · api · 20745d · @james');
     expect(r.stdout).not.toContain('Old');
     r = await run(['card'], { url });
     ok(r);
-    expect(r.stdout).toContain('#4 Rate limit');
+    expect(r.stdout).toContain('PLU-4 Rate limit');
 
     ok(await run(['card', 'add', 'Rate limit', '--details', 'd', '--state', 'in-progress', '--assignee', 'james'], { url }));
     expect(stub.find('POST', '/api/cards')[0].body).toEqual({ title: 'Rate limit', details: 'd', state: 'in_progress', assignee: '@james' });
@@ -555,6 +555,65 @@ describe('board', () => {
       expect(r.code).toBe(2);
     }
     expect(stub.find('PATCH', '/api/cards/4').length).toBe(0);
+  });
+
+  test('propose passes all ticket flags and repeated values', async () => {
+    stub.on('POST', '/api/propose', { card: { ...card, state: 'proposed' }, inbox: [] });
+    const r = await run(['propose', 'Add', 'a', 'cap', '--context', 'why now', '--problem', 'Observed x; expected y', '--approach', 'Use plain English',
+      '--check', 'First check', '--check', 'Second check', '--category', 'Board', '--tag', 'UI', '--tag', 'planning', '--urgent',
+      '--return', 'high', '--effort', 'low', '--estimate', '2h', '--details', 'legacy', '--blocked', 'IT access'], { url, env: AGENT });
+    ok(r);
+    expect(stub.find('POST', '/api/propose')[0].body).toEqual({
+      title: 'Add a cap', context: 'why now', problem: 'Observed x; expected y', approach: 'Use plain English', checks: ['First check', 'Second check'],
+      category: 'Board', tags: ['UI', 'planning'], urgent: true, impact: 'high', effort: 'low', estimate_min: '2h', details: 'legacy', blocked_on: 'IT access',
+    });
+  });
+
+  test('card show, pick, edit, block, later, urgent and check use normalized refs', async () => {
+    stub.on('GET', '/api/agents', [agent(), captain]);
+    stub.on('GET', '/api/cards/4', card);
+    stub.on('PATCH', '/api/cards/4', { card });
+    const shown = await run(['card', 'show', '#4'], { url });
+    ok(shown);
+    expect(stub.find('GET', '/api/cards/4')).toHaveLength(1);
+    expect(shown.stdout).toContain('# PLU-4 · Rate limit');
+    expect(shown.stdout).toContain('Timing: proposed');
+
+    ok(await run(['card', 'pick', 'PLU-4'], { url }));
+    ok(await run(['card', 'edit', '#4', '--title', 'Cap requests', '--context', 'why', '--check', 'One', '--check', 'Two', '--tag', 'UI', '--tag', 'API',
+      '--category', 'none', '--impact', 'none', '--effort', 'high', '--estimate', '90m', '--urgent', 'off', '--later', 'on', '--blocked', 'off', '--details', 'more'], { url }));
+    ok(await run(['card', 'block', 'PLU-4', 'IT access'], { url }));
+    ok(await run(['card', 'unblock', '#4'], { url }));
+    ok(await run(['card', 'later', 'PLU-4'], { url }));
+    ok(await run(['card', 'urgent', '#4', '--undo'], { url }));
+    ok(await run(['card', 'check', 'PLU-4', '2'], { url }));
+    expect(stub.find('PATCH', '/api/cards/4').map((x) => x.body)).toEqual([
+      { assignee: 'me', state: 'in_progress' },
+      { title: 'Cap requests', context: 'why', checks: ['One', 'Two'], tags: ['UI', 'API'], category: null, impact: null, effort: 'high', estimate_min: '90m', blocked_on: null, urgent: false, later: true, details: 'more' },
+      { blocked_on: 'IT access' }, { blocked_on: null }, { later: true }, { urgent: false }, { check: { index: 1, done: true } },
+    ]);
+  });
+
+  test('card show labels an untouched build and small estimate ratios', async () => {
+    stub.on('GET', '/api/agents', [agent(), captain]);
+    const started = Date.now() - 30_000;
+    stub.on('GET', '/api/cards/4', {
+      ...card, state: 'todo', created_at: started, estimate_min: 120,
+      history: [{ at: started, by: 'captain', from: null, to: 'todo' }],
+    });
+    const untouched = await run(['card', 'show', '4'], { url });
+    ok(untouched);
+    expect(untouched.stdout).toContain('build not started');
+    expect(untouched.stdout).toContain('est 2h → not started');
+
+    const tinyBuildStarted = Date.now() - 10_000;
+    stub.on('GET', '/api/cards/4', {
+      ...card, state: 'in_progress', created_at: tinyBuildStarted, estimate_min: 60,
+      history: [{ at: tinyBuildStarted, by: 'captain', from: 'todo', to: 'in_progress' }],
+    });
+    const smallRatio = await run(['card', 'show', 'PLU-4'], { url });
+    ok(smallRatio);
+    expect(smallRatio.stdout).toContain('est 1h → <1m build (<0.1×)');
   });
 });
 
@@ -622,7 +681,7 @@ describe('V3 fixes', () => {
     ok(await run(['hire', 'builder', '- step one', '--name', 'leo'], { url, env: AGENT }));
     expect(stub.find('POST', '/api/hire')[0].body).toMatchObject({ task: '- step one', name: 'leo' });
     // a declared string option takes a value that starts with "-"
-    stub.on('POST', '/api/propose', { card: { id: 1, title: 't', state: 'proposed' }, inbox: [] });
+    stub.on('POST', '/api/propose', { card: { id: 1, project_id: 'plutus', title: 't', state: 'proposed' }, inbox: [] });
     ok(await run(['propose', 'T', '--details', '- bullet'], { url, env: AGENT }));
     expect(stub.find('POST', '/api/propose')[0].body).toEqual({ title: 'T', details: '- bullet' });
     // a flag-shaped unknown token is still a usage error, with a hint

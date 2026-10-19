@@ -7,12 +7,13 @@ import { api, ApiError, type ApiOpts } from './client';
 import { AGENT_ENV_VARS, inAgentWindow, lifecycleRefusal, lostIdentityRefusal } from './guard';
 import { BIN, LOG_FILE, PORT, REPO_ROOT, SERVER_URL, SPARROW_HOME, TMUX_SOCKET } from '../shared/config';
 import { CARD_STATES } from '../shared/types';
+import { CARD_SORTS, cardKey, parseCardRef, sortCardsBy } from '../shared/cards';
 import type {
   Agent, Card, CardState, DoneStatus, EndCallRes, HireRes, InboxRes, MessageRes, MessageView, Project,
   RegisterCaptainRes, ResumeView,
 } from '../shared/types';
 import {
-  age, agentSummary, cardBoard, cardDetail, hhmm, inboxBlock, logLines, oneLine, resumesDirectory,
+  age, agentSummary, cardBoard, cardBriefText, cardDetail, hhmm, inboxBlock, logLines, oneLine, resumesDirectory,
   rosterTable, teamDigest, tmuxAttach,
 } from './format';
 
@@ -42,8 +43,8 @@ const USAGE: Record<string, string> = {
   wait: 'sparrow wait ["<reason>"]',
   inbox: 'sparrow inbox [--wait SEC] [--last [N]]   (SEC ≤ 600; N 1–50, default 10)',
   log: 'sparrow log [@handle] [-n 30]',
-  propose: 'sparrow propose "<title>" [--details d] [--category c]',
-  card: 'sparrow card list | add "<title>" [--details d] [--state s] [--assignee @h] [--category c] | move <N> <state> | assign <N> <@h|none> | note <N> "<text>"',
+  propose: 'sparrow propose "<title>" [--context c] [--problem p] [--approach a] [--check "…"]… [--category c] [--tag t]… [--urgent] [--impact|--return low|medium|high] [--effort low|medium|high] [--estimate 2h] [--details d] [--blocked "on"]',
+  card: 'sparrow card list [--state s] [--sort newest|oldest|urgent|roi|impact|effort|estimate|updated] [--category c] [--urgent] [--blocked] [--all] | show <N> [--json] | pick <N> | add "<title>" [ticket flags] | edit <N> [ticket flags] | move <N> <state> | assign <N> <@h|me|none> | note|comment <N> "<text>" | block <N> "<who/what>" | unblock <N> | later <N> [--undo] | urgent <N> [--undo] | check <N> <i> [--undo]',
   release: 'sparrow release <@handle>',
   hook: 'sparrow hook <kind> [...]   internal (harness hooks)',
 };
@@ -221,6 +222,52 @@ function cardState(cmd: string, v: string): CardState {
   return st;
 }
 
+function cardIdArg(cmd: string, value: string, what = '<N>'): number {
+  const id = parseCardRef(value);
+  if (id == null) throw new UsageError(cmd, `${what} must be 12, #12 or PLU-12 (got "${value}")`);
+  return id;
+}
+
+const cardCreateOptions: Opts = {
+  context: { type: 'string' }, problem: { type: 'string' }, approach: { type: 'string' },
+  check: { type: 'string', multiple: true }, category: { type: 'string' }, tag: { type: 'string', multiple: true },
+  urgent: { type: 'boolean' }, impact: { type: 'string' }, return: { type: 'string' }, effort: { type: 'string' },
+  estimate: { type: 'string' }, details: { type: 'string' }, blocked: { type: 'string' },
+};
+
+const cardEditOptions: Opts = {
+  ...cardCreateOptions,
+  urgent: { type: 'string' }, later: { type: 'string' },
+  title: { type: 'string' },
+};
+
+const flagValues = (v: unknown): string[] => v === undefined ? [] : Array.isArray(v) ? v as string[] : [v as string];
+const flagText = async (v: string) => v === '-' ? readStdin() : v;
+
+async function cardFields(values: Record<string, any>, mode: 'create' | 'edit' = 'create'): Promise<Record<string, unknown>> {
+  const body: Record<string, unknown> = {};
+  for (const f of ['title', 'context', 'problem', 'approach', 'details'] as const) {
+    if (values[f] !== undefined) body[f] = await flagText(String(values[f]));
+  }
+  if (values.category !== undefined) body.category = mode === 'edit' && String(values.category).toLowerCase() === 'none' ? null : await flagText(String(values.category));
+  if (values.check !== undefined) body.checks = await Promise.all(flagValues(values.check).map(flagText));
+  if (values.tag !== undefined) body.tags = flagValues(values.tag);
+  const impact = values.return ?? values.impact;
+  if (impact !== undefined) body.impact = mode === 'edit' && String(impact).toLowerCase() === 'none' ? null : impact;
+  if (values.effort !== undefined) body.effort = mode === 'edit' && String(values.effort).toLowerCase() === 'none' ? null : values.effort;
+  if (values.estimate !== undefined) body.estimate_min = mode === 'edit' && String(values.estimate).toLowerCase() === 'none' ? null : values.estimate;
+  if (values.blocked !== undefined) body.blocked_on = mode === 'edit' && String(values.blocked).toLowerCase() === 'off' ? null : values.blocked;
+  if (mode === 'create' && values.urgent) body.urgent = true;
+  if (mode === 'edit') {
+    for (const field of ['urgent', 'later'] as const) if (values[field] !== undefined) {
+      const value = String(values[field]).toLowerCase();
+      if (!['on', 'off'].includes(value)) throw new UsageError('card', `--${field} must be on or off`);
+      body[field] = value === 'on';
+    }
+  }
+  return body;
+}
+
 // ---------------------------------------------------------------- commands
 
 type Handler = (ctx: Ctx, args: string[]) => Promise<Out | number>;
@@ -300,7 +347,7 @@ const commands: Record<string, Handler> = {
     if (values.name) body.name = String(values.name).replace(/^@/, '');
     if (values['tmux-session']) body.tmux_session = values['tmux-session'];
     if (values['tmux-window']) body.tmux_window = values['tmux-window'];
-    const card = intArg('hire', values.card as string | undefined, '--card', 1);
+    const card = values.card === undefined ? undefined : cardIdArg('hire', values.card as string, '--card');
     if (card !== undefined) body.card_id = card;
     if (values.model) body.model = values.model;
     if (values.effort) body.effort = values.effort;
@@ -332,7 +379,7 @@ const commands: Record<string, Handler> = {
     const to = handleArg(target);
     const text = await textArg('send', rest, '"<text>"');
     const body: Record<string, unknown> = { to, text };
-    const card = intArg('send', values.card as string | undefined, '--card', 1);
+    const card = values.card === undefined ? undefined : cardIdArg('send', values.card as string, '--card');
     if (card !== undefined) body.card_id = card;
     await identify(ctx);
     const res = await call<MessageRes>(ctx, 'POST', '/api/send', body);
@@ -343,7 +390,7 @@ const commands: Record<string, Handler> = {
     const { values, positionals } = parse('update', args, { card: { type: 'string' } });
     const text = await textArg('update', positionals, '"<text>"');
     const body: Record<string, unknown> = { text };
-    const card = intArg('update', values.card as string | undefined, '--card', 1);
+    const card = values.card === undefined ? undefined : cardIdArg('update', values.card as string, '--card');
     if (card !== undefined) body.card_id = card;
     await identify(ctx);
     const res = await call<MessageRes>(ctx, 'POST', '/api/update', body);
@@ -446,14 +493,12 @@ const commands: Record<string, Handler> = {
   },
 
   async propose(ctx, args) {
-    const { values, positionals } = parse('propose', args, { details: { type: 'string' }, category: { type: 'string' } });
+    const { values, positionals } = parse('propose', args, cardCreateOptions);
     const title = await textArg('propose', positionals, '"<title>"');
-    const body: Record<string, unknown> = { title };
-    if (values.details) body.details = values.details === '-' ? await readStdin() : values.details;
-    if (values.category) body.category = values.category;
+    const body: Record<string, unknown> = { title, ...await cardFields(values) };
     await identify(ctx);
     const res = await call<{ card: Card }>(ctx, 'POST', '/api/propose', body);
-    return { raw: res, text: `Proposed card #${res.card.id} "${res.card.title}" (proposed). A captain decides whether to take it.` };
+    return { raw: res, text: `Proposed ${cardKey(res.card)} "${res.card.title}" (proposed). A captain decides whether to take it.` };
   },
 
   async card(ctx, args) {
@@ -465,48 +510,98 @@ const commands: Record<string, Handler> = {
     };
     switch (sub) {
       case 'list': case 'ls': {
-        const { values } = parse('card', rest, { all: { type: 'boolean' } });
+        const { values } = parse('card', rest, {
+          state: { type: 'string' }, sort: { type: 'string' }, category: { type: 'string' },
+          urgent: { type: 'boolean' }, blocked: { type: 'boolean' }, all: { type: 'boolean' },
+        });
         const { project, handles: hs } = await handles();
-        let cards = await call<Card[]>(ctx, 'GET', `/api/cards?project=${encodeURIComponent(project.id)}`);
-        const raw = cards;
-        if (!values.all) cards = cards.filter((c) => c.state !== 'dropped');
-        return { raw, text: `Board · project ${project.id}\n${cardBoard(cards, hs)}` };
+        const all = await call<Card[]>(ctx, 'GET', `/api/cards?project=${encodeURIComponent(project.id)}`);
+        let cards = all.filter((c) => values.all || c.state !== 'dropped');
+        if (values.state) {
+          const state = cardState('card', values.state as string);
+          cards = cards.filter((c) => c.state === state);
+        }
+        if (values.category) cards = cards.filter((c) => c.category === String(values.category).trim().toLowerCase());
+        if (values.urgent) cards = cards.filter((c) => c.urgent);
+        if (values.blocked) cards = cards.filter((c) => !!c.blocked_on);
+        const sort = String(values.sort ?? 'manual').toLowerCase();
+        if (!CARD_SORTS.some((x) => x.id === sort)) throw new UsageError('card', `--sort must be one of ${CARD_SORTS.map((x) => x.id).filter((x) => x !== 'manual').join(', ')}`);
+        cards = sortCardsBy(cards, sort as any);
+        return { raw: all, text: `Board · project ${project.id}\n${cardBoard(cards, hs)}` };
+      }
+      case 'show': {
+        const { positionals } = parse('card', rest);
+        if (positionals.length !== 1) throw new UsageError('card', 'card show <N>');
+        const id = cardIdArg('card', positionals[0]);
+        await identify(ctx);
+        const card = await call<Card>(ctx, 'GET', `/api/cards/${id}`);
+        const { handles: hs } = await handles();
+        return { raw: card, text: cardDetail(card, hs) };
+      }
+      case 'pick': {
+        const { positionals } = parse('card', rest);
+        if (positionals.length !== 1) throw new UsageError('card', 'card pick <N>');
+        const id = cardIdArg('card', positionals[0]);
+        await identify(ctx);
+        const res = await call<{ card: Card }>(ctx, 'PATCH', `/api/cards/${id}`, { assignee: 'me', state: 'in_progress' });
+        const { handles: hs } = await handles();
+        const key = cardKey(res.card);
+        return { raw: res, text: `${cardBriefText(res.card, hs)}\n\nNext: work it; when the build is done run \`sparrow card move ${key} review\`. Never move it to done yourself; the user does that after review.` };
       }
       case 'add': {
-        const { values, positionals } = parse('card', rest, {
-          details: { type: 'string' }, state: { type: 'string' }, assignee: { type: 'string' }, category: { type: 'string' },
-        });
+        const { values, positionals } = parse('card', rest, { ...cardCreateOptions, state: { type: 'string' }, assignee: { type: 'string' } });
         const title = await textArg('card', positionals, '"<title>"');
-        const body: Record<string, unknown> = { title };
-        if (values.details) body.details = values.details === '-' ? await readStdin() : values.details;
+        const body: Record<string, unknown> = { title, ...await cardFields(values) };
         if (values.state) body.state = cardState('card', values.state as string);
-        if (values.assignee) body.assignee = handleArg(values.assignee as string);
-        if (values.category) body.category = values.category;
+        if (values.assignee) body.assignee = String(values.assignee).toLowerCase() === 'me' ? 'me' : handleArg(values.assignee as string);
         await identify(ctx);
         const res = await call<{ card: Card }>(ctx, 'POST', '/api/cards', body);
-        const { handles: hs } = await handles();
-        return { raw: res, text: `Added ${cardDetail(res.card, hs)}` };
+        return { raw: res, text: `Added ${cardKey(res.card)} ${res.card.title} (${res.card.state}).` };
       }
-      case 'move': case 'assign': case 'note': {
-        const { positionals } = parse('card', rest);
+      case 'edit': {
+        const { values, positionals } = parse('card', rest, cardEditOptions);
+        const [idArg, ...extra] = positionals;
+        if (!idArg) throw new UsageError('card', 'card edit <N> [--title t] [ticket fields]');
+        if (extra.length) throw new UsageError('card', 'card edit takes one card reference; use --title to change its title');
+        const id = cardIdArg('card', idArg);
+        const body = await cardFields(values, 'edit');
+        if (!Object.keys(body).length) throw new UsageError('card', 'card edit needs at least one field flag');
+        await identify(ctx);
+        const res = await call<{ card: Card }>(ctx, 'PATCH', `/api/cards/${id}`, body);
+        return { raw: res, text: `Edited ${cardKey(res.card)} ${res.card.title} (${res.card.state}).` };
+      }
+      case 'move': case 'assign': case 'note': case 'comment': case 'block': case 'unblock': case 'later': case 'urgent': case 'check': {
+        const opts: Opts = ['later', 'urgent', 'check'].includes(sub) ? { undo: { type: 'boolean' } } : {};
+        const { values, positionals } = parse('card', rest, opts);
         const [idArg, ...more] = positionals;
         if (!idArg) throw new UsageError('card', `missing <N> for card ${sub}`);
-        const id = intArg('card', idArg, '<N>', 1)!;
+        const id = cardIdArg('card', idArg);
         const body: Record<string, unknown> = {};
         if (sub === 'move') {
           if (more.length !== 1) throw new UsageError('card', 'card move <N> <state>');
           body.state = cardState('card', more[0]);
         } else if (sub === 'assign') {
           if (more.length !== 1) throw new UsageError('card', 'card assign <N> <@h|none>');
-          body.assignee = ['none', '-', 'nobody'].includes(more[0].toLowerCase()) ? null : handleArg(more[0]);
-        } else {
+          body.assignee = ['none', '-', 'nobody'].includes(more[0].toLowerCase()) ? null : more[0].toLowerCase() === 'me' ? 'me' : handleArg(more[0]);
+        } else if (sub === 'note' || sub === 'comment') {
           body.note = await textArg('card', more, '"<text>"');
+        } else if (sub === 'block') {
+          body.blocked_on = await textArg('card', more, '"<who/what>"');
+        } else if (sub === 'unblock') {
+          if (more.length) throw new UsageError('card', 'card unblock <N>');
+          body.blocked_on = null;
+        } else if (sub === 'later' || sub === 'urgent') {
+          if (more.length) throw new UsageError('card', `card ${sub} <N> [--undo]`);
+          body[sub] = !values.undo;
+        } else {
+          if (more.length !== 1) throw new UsageError('card', 'card check <N> <i> [--undo]');
+          const index = intArg('card', more[0], '<i>', 1);
+          body.check = { index: index! - 1, done: !values.undo };
         }
         await identify(ctx);
         const res = await call<{ card: Card }>(ctx, 'PATCH', `/api/cards/${id}`, body);
-        const { handles: hs } = await handles();
-        const verb = sub === 'move' ? 'Moved' : sub === 'assign' ? 'Assigned' : 'Noted';
-        return { raw: res, text: `${verb} ${cardDetail(res.card, hs)}` };
+        const labels: Record<string, string> = { move: 'Moved', assign: 'Assigned', note: 'Noted', comment: 'Commented', block: 'Blocked', unblock: 'Unblocked', later: values.undo ? 'Restored' : 'Shelved', urgent: values.undo ? 'Cleared urgent' : 'Marked urgent', check: values.undo ? 'Unchecked' : 'Checked' };
+        return { raw: res, text: `${labels[sub]} ${cardKey(res.card)} ${res.card.title} (${res.card.state}).` };
       }
       default:
         throw new UsageError('card', `unknown subcommand "${sub}"`);

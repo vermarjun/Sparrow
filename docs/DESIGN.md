@@ -13,7 +13,7 @@ Code layout: `src/shared` (types, config), `src/server` (state, API, lifecycle),
 - When an agent finishes (`sparrow done`) the server **closes its window to free RAM**. Messaging that agent later **respawns it on the same harness session** (resume) with the new message, so it remembers.
 - Failure cases are handled: the agent crashes / dies / forgets to report.
 - Captain flags on hire: `--cwd`, `--tmux-session`, `--tmux-window` (defaults: captain's cwd, `sparrow-<project>`, the handle).
-- Kanban is tracking only. Dragging a card in the UI never spawns or messages anything. Agents propose cards; captains move them.
+- Kanban is tracking only. Dragging a card in the UI never spawns or messages anything. Agents propose cards; captains move them. A card is a ticket (context, problem, approach, checks, markers) that a captain or the user can hand to an agent by key; the board follows the work (§3.12) and times every move.
 - Everything runs on one Mac. No auth, no sandbox, no worktree management (a captain may pass `--cwd` to a worktree it made).
 
 ## 1. Vocabulary
@@ -42,7 +42,7 @@ Code layout: `src/shared` (types, config), `src/server` (state, API, lifecycle),
 2. `depth = caller.depth + 1`; refuse when `> max_depth` (403, say why). Default `max_depth` 3: you (0) → sub-captain (1) → builder (2) → helper (3).
 3. Resume must exist (404 lists available slugs). Handle: `name` if given (lowercased, validated, must be unused in the project → 409), else the first unused name from a fixed friendly list (`james, maya, leo, iris, omar, nina, theo, zara, ravi, lena, ivan, mira, kai, ada, ben, cleo`) then `<resume>-<n>`.
 4. `cwd` default = caller's cwd (the CLI always sends `--cwd` resolved to an absolute path, else `process.cwd()`). `tmux_session` default `TMUX_PREFIX + project_id`; `tmux_window` default = handle.
-5. Use the resume's configured model and effort by default. The captain can set those choices in the UI; explicit `model` or `effort` request values override them. When an override differs from the resume, include it in the task message's `meta.override` and the server hire log. Insert the agent (state `idle`) and a DM message kind `task` from caller to new agent (text = task) with a pending delivery, assign card if `card_id` (→ `in_progress`, note "assigned to @x"). Then **wake** (3.4). Return immediately (`HireRes`).
+5. Use the resume's configured model and effort by default. The captain can set those choices in the UI; explicit `model` or `effort` request values override them. When an override differs from the resume, include it in the task message's `meta.override` and the server hire log. Insert the agent (state `idle`) and a DM message kind `task` from caller to new agent (text = task) with a pending delivery, assign card if `card_id` (→ `in_progress`, history, clears Later, and the ticket is appended to the task text, §3.12). Then **wake** (3.4). Return immediately (`HireRes`).
 
 ### 3.3 Messages and wake rules
 - `send {to:'@h', text}` → DM thread between caller and target; waking delivery to target. Unknown handle → 404 listing the roster. Retired target → 409.
@@ -103,6 +103,47 @@ Permanent by design (owner decision, 17 Oct 2026): an agent is hired for one job
 ### 3.11 Limits
 `max_running` counts agents in state `working` across all projects (human captains excluded). `loadSettings()` gives all tunables: defaults, then `<SPARROW_HOME>/config.json`, then `SPARROW_SETTINGS` (env). The web **Settings** page edits them live (`src/server/settings.ts`): `PUT /api/settings` validates every value (whole numbers within each field's range; all-or-nothing), writes `config.json` atomically keeping other keys (`skills_dir`, unknown ones), and mutates the shared settings object, so every reader sees the new value at once. Raising `max_running` dequeues at once; `watchdog_ms` / `snapshot_ms` re-arm their timers. `null` resets a key (removes it from the file). Keys set by `SPARROW_SETTINGS` are read-only (409). A caller identified as an agent (`x-sparrow-agent`) gets 403; like the rest of the local API this is a guard against mistakes, not authentication.
 
+### 3.12 Board v2: tickets, timeline, timing
+A **card** is a ticket. Display key `PLU-12` = first 3 alphanumerics of the project id + the global card id (cosmetic; ids are global). Every place that takes a card accepts `12`, `#12` or `PLU-12` (`parseCardRef`). Pure helpers (key, levels, estimates, timings, quick-win, sorts, `cardBrief`) live in `src/shared/cards.ts`, shared by server, CLI and web.
+
+**Fields** (`Card` in `src/shared/types.ts`; one validation/normalisation helper serves propose, create and patch; errors are 400 with the field and what is allowed):
+| Field | Meaning |
+|---|---|
+| `title` | outcome-first, 1-200 chars |
+| `context`, `problem`, `approach` | markdown, <= 20 000 chars, `''` when empty. Why it exists (who asked, where from) / observed vs expected / plain-English plan, no code |
+| `checks` | "Done when": `{text, done}[]`, <= 30, each 1-500 chars; tick with `check {index, done}` |
+| `details` | legacy free text, shown as "More details" |
+| `category`, `tags` | one primary bucket (lowercase) / free labels (lowercase, deduped, <= 12, <= 32 chars, no commas) |
+| `urgent` | boolean: blocks someone now; never auto-cleared |
+| `impact` (the "return"), `effort` | `low\|medium\|high` or null; quick win = effort low and impact medium/high |
+| `estimate_min` | proposer's estimate in minutes (CLI `2h`, `90m`, `1d`; a day is 8h) |
+| `blocked_on`, `blocked_at` | who/what we wait on; non-empty = blocked, `null`/`''` = unblocked |
+| `later_at` | shelved under the Later line of its column (icebox) |
+| `history` | `{at, by, from, to}[]`: one entry per state change, creation included (`from: null`); `by` is a handle or `user` |
+
+Old rows (no migration) read with column defaults: empty sections, `history: []`, all markers null; every reader copes.
+
+**Timeline.** `notes` hold both kinds: `kind:'comment'` (`card note`, `update --card`; written by people and agents) and `kind:'event'` (written by the server, `by:'user'` when from the UI): `moved todo → in_progress`, `assigned to @maya` / `unassigned`, `marked urgent` / `cleared urgent`, `blocked on <x>` / `unblocked after <span>`, `shelved under Later` / `back from Later`, `edited title, approach` (one per patch, field names only), `checked "<text>"` / `unchecked "<text>"`, and the auto moves below. A note without `kind` is a comment.
+
+**History and timing.** `history` gets an entry on every state change whatever caused it (patch, hire `--card`, auto-review). `cardTimings` derives from it: time in each state, start (first `in_progress`), review, done, build / review / active time, cycle and lead time, reopened count, and `ratio = active / estimate` (green <= 1.1x, amber <= 1.5x, red above). Active time is build plus review, the number compared with the estimate.
+
+**Side effects of a state change.** Entering `in_progress`, `review` or `done` clears `later_at` (event `back from Later`). Entering `done` or `dropped` clears `blocked_on` (event). Blocked cards do not move by themselves.
+
+**Auto moves** (the board follows the work and still never spawns, wakes or messages anyone):
+1. `hire --card N`: assigns, moves to `in_progress`, pushes history, clears Later, appends `"\n\n---\n" + cardBrief(card, who)` to the task so the agent's first prompt holds the whole ticket (context, problem, approach, checks, comments).
+2. `done` with status `ok`: every card assigned to the caller and in `in_progress` moves to `review` (event `@maya reported done → review`, history by the agent). `blocked` / `failed` move nothing and add an event `@maya reported blocked|failed` with the first ~200 chars of the summary.
+3. Moving to `done` is only ever done by a captain or the UI, after the user confirmed. An agent gets 403.
+
+**Permissions** (403 messages say what the caller may do instead):
+| Caller | May |
+|---|---|
+| Captain, UI (no identity header) | everything: create, edit any field, move to any state, assign, block, shelve |
+| The card's assignee | `note`, `state: 'review'`, `check`, `blocked_on` (say it is blocked) |
+| Any agent | `propose` with every ticket field (always lands in `proposed`; never state or assignee) |
+| Anyone else | read only |
+
+**Reading.** `GET /api/cards/:id` returns one `Card` (`PLU-12` accepted; 404 when missing or in another project for an agent caller). The CLI's `card show` prints `cardBrief` plus a `Timing:` line and the last 8 events; `card pick` (a captain) assigns the caller, moves to `in_progress` and prints the brief with the next step: `card move PLU-12 review` when the build is done, never `done`.
+
 ## 4. HTTP API (JSON, 127.0.0.1 only, no auth)
 
 Identity header `x-sparrow-agent`; hooks add `x-sparrow-call`. Every response to an identified agent includes `inbox` (piggyback, 3.3). Types are in `src/shared/types.ts`.
@@ -128,10 +169,11 @@ Identity header `x-sparrow-agent`; hooks add `x-sparrow-call`. Every response to
 | GET `/api/inbox` | `?wait=<sec ≤600>` or `?last[=<N, 1..50>]` (default 10 when `last` is present) | `{inbox, team: TeamStatus[]}` — waits for ≥1 waking pending delivery or timeout; one long-poll per agent, with a newer wait superseding the older one and returning `{inbox:[], superseded:true}` without taking deliveries. `last` reads the newest already-delivered messages in seq order without changing delivery state. |
 | GET `/api/messages` | `?project=&thread=&after=<seq>&limit=100` | `MessageView[]` ascending |
 | GET `/api/threads` | `?project=` | `{thread, label, members: string[], last: MessageView, count}[]` |
-| POST `/api/propose` | `ProposeReq` | `{card}` + inbox (state `proposed`) |
+| POST `/api/propose` | `ProposeReq` (title + any ticket field) | `{card}` + inbox (state `proposed`) |
 | GET `/api/cards` | `?project=` | `Card[]` |
+| GET `/api/cards/:id` | `:id` is `12`, `#12` or `PLU-12` | `Card` (404 when missing / other project for an agent) |
 | POST `/api/cards` | `CardCreateReq` (+`project` when no caller) | `{card}` — captains only (or UI with no caller) |
-| PATCH `/api/cards/:id` | `CardPatchReq` | `{card}` — captains, the assignee (notes / `review`), or UI. NEVER spawns or messages. |
+| PATCH `/api/cards/:id` | `CardPatchReq` (any ticket field, `state`, `position`, `assignee` (`'me'` ok), `note`, `check {index, done}`, `later`) | `{card}`. Captains and the UI: all; the assignee: `note`, `review`, `check`, `blocked_on` (§3.12). NEVER spawns or messages. `card.updated` SSE on every change. |
 | POST `/api/release` | `ReleaseReq` | `{agent}` |
 | POST `/api/hooks/turn-end` | `TurnEndReq` | `TurnEndRes` |
 | POST `/api/hooks/exit` | `ExitReq` | `{ok:true}` |
@@ -163,11 +205,18 @@ sparrow done "<summary>" [--status ok|blocked|failed]
 sparrow wait ["<reason>"]
 sparrow inbox [--wait SEC] [--last [N]]
 sparrow log [@handle] [-n 30]
-sparrow propose "<title>" [--details d] [--category c]
-sparrow card list | add "<title>" [--details d] [--state s] [--assignee @h] | move <N> <state> | assign <N> <@h|none> | note <N> "<text>"
+sparrow propose "<title>" [--context c] [--problem p] [--approach a] [--check "…"]… [--category c] [--tag t]… [--urgent] [--impact|--return low|medium|high] [--effort low|medium|high] [--estimate 2h] [--details d] [--blocked "<on>"]
+sparrow card list [--state s] [--sort newest|oldest|urgent|roi|impact|effort|estimate|updated] [--category c] [--urgent] [--blocked] [--all]
+sparrow card show <N> [--json]                     the full ticket (brief + timing + recent events)
+sparrow card pick <N>                              captain: assign to me, move to in_progress, print the brief
+sparrow card add "<title>" [ticket flags] [--state s] [--assignee @h]   (ticket flags = the propose flags)
+sparrow card edit <N> [--title t] [--context …] [--problem …] [--approach …] [--details …] [--category c|none] [--tag t]… [--check "…"]… [--impact l|m|h|none] [--effort …] [--estimate 2h|none] [--urgent on|off] [--later on|off] [--blocked "<on>"|off]   (--tag / --check replace the list)
+sparrow card move <N> <state> | assign <N> <@h|me|none> | note|comment <N> "<text>"
+sparrow card block <N> "<who/what>" | unblock <N> | later <N> [--undo] | urgent <N> [--undo] | check <N> <i> [--undo]   (i is 1-based)
 sparrow release <@handle>
 sparrow hook <kind> [...]                          internal (harness hooks)
 ```
+- Card refs (`<N>`, and `--card` on hire/send/update) accept `12`, `#12` or `PLU-12`. `card list` groups by column, shelved cards under a `· later ·` sub-heading, one line per card: `PLU-12  ‼ ⛔ Title · ui · R high/E low · ~2h · 3d · @maya` (‼ urgent, ⛔ blocked with `blocked on …`, ★ quick win).
 - Long text: any text argument may be `-` to read stdin, so agents can use a quoted heredoc: `sparrow done - <<'EOF' … EOF`.
 - `sparrow hire` uses the resume's configured model and effort. Pass `--model` or `--effort` only for an explicit user request; a value that differs from the resume is shown as an `Override:` line in the CLI output, recorded in the task message's `meta.override`, and included in the server hire log.
 - Every command prints its result, then, if `inbox` is non-empty, a block grouped by the agent the messages are about (sender, or `meta.about` for system notices), with messages in seq order and `hh:mm:ss` times. A group containing a result gets `── @handle · resume · done <status> · call <duration> ──` (duration comes from result `meta.call_ms`); a group containing only DMs, tasks, or questions gets `── @handle (DM) ──`; other groups get `── @handle · resume ──`:
@@ -265,7 +314,14 @@ Eight resumes: `sub-captain` (claude, can_hire: [builder, builder-codex, verifie
 ## 9. Web
 
 React + Vite + TypeScript + Tailwind + shadcn/ui (+ dnd-kit for the board). Light theme, dense, calm. Three pages, project switcher in the header, live via `/api/events`:
-- **Board**: columns Proposed · To do · In progress · Review · Done (Dropped collapsed). Card: #id, title, category chip, assignee @handle with state dot, notes count. Drag between/within columns → `PATCH /api/cards/:id {state, position}`. Only that. Card click → side sheet with details + notes.
+- **Board**: columns Proposed (violet) · To do (slate) · In progress (blue) · Review (amber) · Done (green), Dropped collapsed; each column has a coloured header, count pill and lightly tinted body. One meaning per hue, always paired with an icon or text: Urgent red, Blocked orange (`Blocked · <on>`), Quick win green bolt, Later muted; categories get a stable hashed chip colour, tags are neutral outlines.
+  - **Toolbar**: search (`/`; key, title, every section, tags), Sort (`CARD_SORTS`, applies to Proposed and To do; Done is most recently done first), filter chips (Urgent, Blocked, Quick wins, Category, Assignee), Compact / Detailed density, Board / List view, Show dropped, New ticket (`n`), and a summary line (`33 tickets · 4 urgent · 2 blocked · 7 later`). Sort, filters, view and density persist per project in localStorage (optional: the board renders without it).
+  - **Card face**: key (mono) + category chip + age; title (2-line clamp); markers: Urgent / Blocked, Return and Effort meters, quick-win bolt, assignee with state dot, comment count. Detailed adds a one-line preview, estimate, checks progress and tags. Urgent cards get a red left accent, blocked an orange one. Hover actions: Accept / Later / Drop on Proposed, Later on To do.
+  - **Later line**: Proposed and To do end with a dashed, collapsible `Later · N` divider (collapsed by default) holding the shelved cards.
+  - **Drag** between columns is one `PATCH {state}` (optimistic, reverted with a toast on error); reordering within a column only in Manual sort.
+  - **Ticket sheet** (~720px): sticky header (key + copy, state pill dropdown, editable title, "Copy for agent" = `cardBrief` markdown, "Copy pick command" = `Pick up PLU-12 from the Sparrow board: run sparrow card pick PLU-12`); inline-editable properties (Urgent, Blocked, Later, Return, Effort, Estimate, Category, Tags, Assignee) and a proposed-by / age line; an orange blocked banner with Unblock; the brief sections Context, Problem, Approach, Done when (checklist with progress; ticking uses `check`), More details, each Markdown with click-to-edit (Cmd+Enter or blur saves, Esc cancels); a **Timing** panel (milestones, a stacked bar of time per state, `Estimate 2h · Active 2h 35m (1.3x over)`, reopened count); an **Activity** timeline (comments as blocks, events as compact grey lines, "Comments only" toggle, composer); and contextual footer actions (Accept, Start, Send to review, **Approve → Done** and Send back on Review, Reopen on Done).
+  - **New ticket** dialog with every field; only the title is required. **List view**: a sortable dense table (Key, Title, State, Category, flags, Return, Effort, Est., Age, Assignee, Updated) for planning a big Proposed backlog.
+  - The UI never spawns or messages anything; the user, not an agent, moves cards to Done.
 - **Chat**: WhatsApp-like, with direct message threads only (for example, "@captain ↔ @james"), last message + time. Right: bubbles; kind styling — task (blue tag), update (small, muted, no bubble), question (amber), result (green with status), system (grey centered). @mentions highlighted. Read-only.
 - **Agents**: hierarchy (captain → hires → their hires). Row: @handle, resume title, harness icon/label, model/effort, state badge (working pulses), cwd, tmux target with copy button (`tmux attach -t <session> \; select-window -t <window>`), session id (copy), last update + age, quiet warning. Click → sheet with live screen peek (poll `/screen` every 2 s while working) and recent calls (start, duration, end reason).
 - **Settings** (global page, `#/settings`): every tunable grouped (Capacity, Call limits, Provider health, Timing) plus doctor models; number inputs with unit, default, `custom`/`env` chips, per-field reset, client-side range check, sticky Save/Discard bar. Saves apply live.
@@ -283,7 +339,7 @@ A5 Kill an agent's window mid-work → auto-restarted once on the same session; 
 A6 An agent that ends its turn without reporting gets nudged (Claude: Stop hook block; Codex/OpenCode: typed reminder); still silent → parent gets an "unreported" notice with its last message and the window closes.
 A7 Guards: a builder cannot hire; depth 3 is refused; with max_running=1 a second hire is `queued` and starts when the first finishes.
 A8 A sub-captain hires a builder, runs `wait`, gets woken by the builder's `done`, then reports `done` to the human captain.
-A9 Board: `propose` → Proposed; captain `card move` shows live in the UI; a UI drag changes only the card (no spawn, no message).
+A9 Board: `propose` → Proposed; captain `card move` shows live in the UI; a UI drag changes only the card (no spawn, no message). `card pick PLU-12` assigns, moves to In progress and prints the brief; the agent's `done` (ok) moves its card to Review; every move lands in `history` and the sheet's Timing panel.
 A10 `--cwd`, `--tmux-session`, `--tmux-window` are honoured, and the respawn reuses them.
 A11 UI: Board, Chat and Agents render live data; the screen peek shows a working agent's TUI.
 

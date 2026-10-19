@@ -61,9 +61,34 @@ with your result or another waking message, or shown in the parent's `Still work
 - `sparrow send @<handle> "<text>"` — DM a teammate. Communication is by direct message; `group`
   is a reserved handle and cannot be used as a recipient.
 - `sparrow roster` — who is on the team. `sparrow whoami` — your identity.
-- `sparrow propose "<title>" --details "<why>"` — suggest a board card; a captain decides.
-- `sparrow card note <N> "<text>"` / `sparrow card move <N> review` — on cards assigned to you.
+- `sparrow propose "<title>" …` — suggest a board ticket; a captain decides. How to write one: "Proposing tickets" below.
+- `sparrow card show <N>` — read a ticket (`12`, `#12` or `PLU-12`). On a card assigned to you: `card note <N> "<text>"`,
+  `card check <N> <i>` (tick a "Done when" item, 1-based), `card block <N> "<who/what>"` / `card unblock <N>`,
+  `card move <N> review`. Your `sparrow done` (status ok) moves your in-progress card to Review by itself; never move a card to done.
 - Any text argument may be `-` to read a quoted heredoc (safe for quotes, backticks, `$`).
+
+## Proposing tickets
+Write each ticket so a human can triage it in 5 seconds and an agent can start it without asking questions. Search
+`sparrow card list` first; never duplicate. One ticket = one shippable job; more than 7 checks means split it.
+```
+Title      Outcome first, verb first, <= 70 chars: what changes for whom.
+--context  Why it exists, who asked, where it came from ("Shubhankar, Monday's meet"), what it unblocks. <= 2 lines.
+--problem  "Observed: <what happens>. Expected: <what should happen>." <= 3 lines. Never "it is bad".
+--approach Plain English, NO code, <= 5 lines. Name the main risk or alternative.
+--check    "Done when": 2-7 `--check` flags, each one binary sentence someone else can verify. Not "tests pass".
+--impact / --effort   low|medium|high, always, honestly (--return = --impact). They drive quick-win sorting.
+--estimate   always: your honest guess, then double it (people under-estimate). 90m, 2h, 1d (a day = 8h).
+--urgent     only if it blocks someone right now.   --blocked "<who/what>"  only when waiting on a person.
+```
+```bash
+sparrow propose "Show estimate vs actual on done cards" \
+  --context "Shubhankar asked in Monday's meet: he cannot tell whether our estimates are any good." \
+  --problem "Observed: a Done card shows no timing. Expected: it shows the estimate next to the time it was really worked." \
+  --approach "Add a Timing panel to the card sheet from the stored state history. Show active time, the ratio to the estimate, and colour it by how far over. Risk: old cards have no history, so hide the panel for them." \
+  --check "A done card shows its estimate and active time" --check "A card without an estimate says no estimate" \
+  --check "Cards with no history show no panel and no error" \
+  --category board --tag ui --impact high --effort low --estimate 4h
+```
 
 ## Rules
 - Report through `sparrow` only; never stop silently. If you stop without `done`, `ask`

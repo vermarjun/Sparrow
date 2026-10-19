@@ -3,6 +3,7 @@ import { mkdtempSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { gitRoot } from '../../src/server/core';
+import { cardKey } from '../../src/shared/cards';
 import { agentOf, flush, hire, setup } from './helpers';
 
 describe('register captain', () => {
@@ -198,14 +199,22 @@ describe('hire → start call', () => {
     expect(ctx.sp.starts[1].prompt).toContain('second');
   });
 
-  test('card_id on hire assigns the card and moves it to in_progress', async () => {
+  test('card_id on hire assigns and moves the card, records history, and appends the brief', async () => {
     const ctx = await setup();
-    const card = (await ctx.req('POST', '/api/cards', { title: 'Login page' }, ctx.captain.id)).body.card;
-    const a = await hire(ctx, 'builder', 'do it', { card_id: card.id });
+    const card = (await ctx.req('POST', '/api/cards', { title: 'Login page', context: 'Asked in triage', checks: ['Login works'], later: true }, ctx.captain.id)).body.card;
+    const hired = await ctx.req('POST', '/api/hire', { resume: 'builder', task: 'do it', card_id: card.id }, ctx.captain.id);
+    const a = hired.body.agent;
     const c = ctx.store.getCard(card.id)!;
     expect(c.assignee_id).toBe(a.id);
     expect(c.state).toBe('in_progress');
-    expect(c.notes.at(-1)!.text).toBe(`assigned to @${a.handle}`);
+    expect(c.notes.some((n: any) => n.text === `assigned to @${a.handle}` && n.kind === 'event')).toBe(true);
+    expect(c.notes.at(-1)!.text).toBe('back from Later');
+    expect(c.later_at).toBeNull();
+    expect(c.history.at(-1)).toMatchObject({ from: 'todo', to: 'in_progress', by: 'captain' });
+    expect(hired.body.message.card_id).toBe(card.id);
+    expect(hired.body.message.text).toContain(`# ${cardKey(card)} · Login page`);
+    expect(hired.body.message.text).toContain('Asked in triage');
+    expect(hired.body.message.text).toContain('1. [ ] Login works');
     expect(ctx.sp.starts[0].prompt).toContain(`card #${card.id}`);
   });
 

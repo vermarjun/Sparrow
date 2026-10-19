@@ -85,11 +85,12 @@ export interface CardTimings {
   done_at: number | null;              // latest time it entered done (null unless it is in done now)
   build_ms: number;                    // = in_state.in_progress
   review_ms: number;                   // = in_state.review
-  active_ms: number;                   // build + review: the number compared with the estimate
+  active_ms: number;                   // build + review (wall clock, review includes waiting for the user)
   cycle_ms: number | null;             // started_at → done_at (or now); null if never started
   lead_ms: number;                     // created → done_at (or now)
   estimate_ms: number | null;
-  ratio: number | null;                // active_ms / estimate_ms (1.0 = on estimate; > 1 = over)
+  ratio: number | null;                // build_ms / estimate_ms (1.0 = on estimate; > 1 = over). Review is the user's
+                                       // latency, not the work, so it is reported next to the ratio, never inside it.
   reopened: number;                    // times it went back from review/done to an earlier working state
 }
 
@@ -117,7 +118,7 @@ export function cardTimings(c: Pick<Card, 'created_at' | 'state' | 'history' | '
     in_state, started_at, review_at, done_at, build_ms, review_ms, active_ms,
     cycle_ms: started_at == null ? null : (done_at ?? now) - started_at,
     lead_ms: (done_at ?? now) - c.created_at,
-    estimate_ms, ratio: estimate_ms && active_ms ? active_ms / estimate_ms : null, reopened,
+    estimate_ms, ratio: estimate_ms && build_ms ? build_ms / estimate_ms : null, reopened,
   };
 }
 

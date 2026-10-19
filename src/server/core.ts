@@ -4,9 +4,10 @@ import { existsSync, mkdirSync, statSync } from 'node:fs';
 import { basename, isAbsolute, join, resolve as resolvePath, sep } from 'node:path';
 import type { Spawner } from '../harness/index';
 import { SPARROW_HOME, TMUX_PREFIX, type Settings } from '../shared/config';
+import { cardBrief, formatSpan, parseEstimate, parseLevel } from '../shared/cards';
 import { newId } from '../shared/ids';
 import type {
-  Agent, AgentState, Call, CallEndReason, Card, CardCreateReq, CardPatchReq, CardState, DoneReq, HireReq,
+  Agent, AgentState, Call, CallEndReason, Card, CardCreateReq, CardPatchReq, CardState, DoneReq, HireReq, ProposeReq,
   HarnessHealth, HarnessName, Message, MessageKind, MessageView, Project, ProviderErrorReq, RegisterCaptainReq, RegisterCaptainRes,
   Resume, ResumeView, SendReq, ServerEvent, TeamStatus, TurnEndReq, TurnEndRes, UpdateReq,
 } from '../shared/types';
@@ -81,6 +82,97 @@ const optStr = (x: unknown, field: string): string | undefined => {
 };
 const TMUX_NAME_RE = /^[A-Za-z0-9_-]{1,40}$/;
 const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
+
+const has = (o: object, k: string) => Object.prototype.hasOwnProperty.call(o, k);
+const CARD_EDIT_FIELDS = ['title', 'context', 'problem', 'approach', 'checks', 'tags', 'category', 'impact', 'effort', 'estimate_min', 'details'] as const;
+
+/** The same input rules apply to proposals, UI creates and every patch. */
+function normalizeCardFields(input: Record<string, unknown>, current: Card | null, now: number): Partial<Card> {
+  const out: Partial<Card> = current ? {} : {
+    title: '', details: '', category: null, context: '', problem: '', approach: '', checks: [], tags: [], urgent: false,
+    impact: null, effort: null, estimate_min: null, blocked_on: null, blocked_at: null, later_at: null, history: [],
+  };
+  const fieldError = (field: string, rule: string): never => { throw new HttpError(400, `${field} ${rule}`); };
+  if (has(input, 'title') || !current) {
+    if (typeof input.title !== 'string') fieldError('title', 'must be 1–200 characters');
+    const title = (input.title as string).trim();
+    if (!title || title.length > 200) fieldError('title', 'must be 1–200 characters after trimming');
+    out.title = title;
+  }
+  for (const f of ['details', 'context', 'problem', 'approach'] as const) if (has(input, f)) {
+    const v = input[f];
+    if (typeof v !== 'string') fieldError(f, 'must be a string of at most 20000 characters');
+    if ((v as string).length > 20_000) fieldError(f, 'must be at most 20000 characters');
+    out[f] = v as string;
+  }
+  if (has(input, 'category')) {
+    const v = input.category;
+    if (v !== null && typeof v !== 'string') fieldError('category', 'must be a string or null');
+    out.category = typeof v === 'string' ? v.trim().toLowerCase() || null : null;
+  }
+  if (has(input, 'checks')) {
+    if (!Array.isArray(input.checks)) fieldError('checks', 'must be an array of at most 30 items');
+    const items = input.checks as unknown[];
+    if (items.length > 30) fieldError('checks', 'must contain at most 30 items');
+    const checks: { text: string; done: boolean }[] = [];
+    for (const [i, item] of items.entries()) {
+      const text = typeof item === 'string' ? item : item && typeof item === 'object' ? (item as any).text : null;
+      if (typeof text !== 'string') fieldError(`checks[${i}]`, 'must be text or {text, done}');
+      const clean = text.trim();
+      if (!clean) continue;
+      if (clean.length > 500) fieldError(`checks[${i}] text`, 'must be 1–500 characters');
+      const done = typeof item === 'object' && item !== null && (item as any).done !== undefined ? (item as any).done : false;
+      if (typeof done !== 'boolean') fieldError(`checks[${i}].done`, 'must be a boolean');
+      checks.push({ text: clean, done });
+    }
+    out.checks = checks;
+  }
+  if (has(input, 'tags')) {
+    if (!Array.isArray(input.tags)) fieldError('tags', 'must be an array of at most 12 strings');
+    const items = input.tags as unknown[];
+    const tags: string[] = [];
+    for (const [i, item] of items.entries()) {
+      if (typeof item !== 'string') fieldError(`tags[${i}]`, 'must be a string');
+      const tag = (item as string).trim().toLowerCase();
+      if (!tag) continue;
+      if (tag.length > 32) fieldError(`tags[${i}]`, 'must be at most 32 characters');
+      if (tag.includes(',')) fieldError(`tags[${i}]`, 'must not contain commas');
+      if (!tags.includes(tag)) tags.push(tag);
+    }
+    if (tags.length > 12) fieldError('tags', 'must contain at most 12 unique tags');
+    out.tags = tags;
+  }
+  if (has(input, 'urgent')) {
+    if (typeof input.urgent !== 'boolean') fieldError('urgent', 'must be a boolean');
+    out.urgent = input.urgent as boolean;
+  }
+  for (const f of ['impact', 'effort'] as const) if (has(input, f)) {
+    const v = input[f];
+    const level = v == null ? null : parseLevel(v);
+    if (v != null && !level) fieldError(f, 'must be low, medium or high (or null)');
+    out[f] = level;
+  }
+  if (has(input, 'estimate_min')) {
+    const v = input.estimate_min;
+    const estimate = v == null || v === '' ? null : parseEstimate(v);
+    if (v != null && v !== '' && estimate == null) fieldError('estimate_min', 'must be a positive duration such as 45m, 2h or 1d (or null)');
+    if (estimate != null && estimate > 30 * 480) fieldError('estimate_min', 'must be at most 30 working days (14400 minutes)');
+    out.estimate_min = estimate;
+  }
+  if (has(input, 'blocked_on')) {
+    const v = input.blocked_on;
+    if (v != null && typeof v !== 'string') fieldError('blocked_on', 'must be a non-empty string or null');
+    const blocked = typeof v === 'string' ? v.trim() : '';
+    if (blocked.length > 500) fieldError('blocked_on', 'must be at most 500 characters');
+    out.blocked_on = blocked || null;
+    out.blocked_at = blocked ? (current?.blocked_on ? current.blocked_at ?? now : now) : null;
+  }
+  if (has(input, 'later')) {
+    if (typeof input.later !== 'boolean') fieldError('later', 'must be a boolean');
+    out.later_at = input.later ? current?.later_at ?? now : null;
+  }
+  return out;
+}
 
 export class Core {
   readonly store: Store;
@@ -381,18 +473,27 @@ export class Core {
       ...(Object.keys(override).length ? { override } : {}),
       ...(granted.warnings.length ? { skills_warnings: granted.warnings } : {}),
     };
+    let task = req.task;
+    if (card) {
+      const assigned = this.changeCard(card, {
+        assignee_id: agent.id,
+        state: 'in_progress',
+        ...(card.state === 'in_progress' ? {} : { position: this.store.maxPosition(project, 'in_progress') + 1 }),
+      }, caller.handle);
+      const who = (id: string) => {
+        if (id === 'user') return 'you';
+        const byId = this.store.getAgent(id);
+        if (byId) return `@${byId.handle}`;
+        const byHandle = this.store.getAgentByHandle(project, id.replace(/^@/, ''));
+        return byHandle ? `@${byHandle.handle}` : id;
+      };
+      task += `\n\n---\n${cardBrief(assigned, who)}`;
+    }
     const msg = this.post({
       project_id: project, thread: this.dmThread(caller.id, agent.id), from_id: caller.id, kind: 'task',
-      text: req.task, to: [agent.id], card_id: card?.id ?? null,
+      text: task, to: [agent.id], card_id: card?.id ?? null,
       ...(Object.keys(meta).length ? { meta } : {}),
     });
-    if (card) {
-      this.saveCard(card.id, {
-        assignee_id: agent.id, state: 'in_progress',
-        position: card.state === 'in_progress' ? card.position : this.store.maxPosition(project, 'in_progress') + 1,
-        notes: [...card.notes, { at: now, by: caller.handle, text: `assigned to @${handle}` }],
-      });
-    }
     const overrides = [
       ...(override.model ? [`OVERRIDE model ${override.model.resume ?? '(default)'}→${override.model.used} (resume ${resume.slug})`] : []),
       ...(override.effort ? [`OVERRIDE effort ${override.effort.resume ?? '(default)'}→${override.effort.used} (resume ${resume.slug})`] : []),
@@ -588,7 +689,7 @@ export class Core {
     this.providerOk(caller);
     if (cardId != null) {
       const c = this.store.getCard(cardId)!;
-      this.saveCard(c.id, { notes: [...c.notes, { at: this.now(), by: caller.handle, text: req.text }] });
+      this.saveCard(c.id, { notes: [...c.notes, { at: this.now(), by: caller.handle, text: req.text, kind: 'comment' }] });
     }
     this.say(`update @${caller.handle}: ${clip(req.text.replace(/\s+/g, ' '), 80)}`);
     return this.view(m);
@@ -640,6 +741,11 @@ export class Core {
         text: req.summary, to: [parent.id],
         meta: { status, ...(call ? { call_ms: this.now() - call.started_at } : {}), ...(oneShot ? { released: true } : {}) },
       });
+      const cards = this.store.listCards(caller.project_id).filter((c) => c.assignee_id === caller.id && c.state === 'in_progress');
+      for (const card of cards) {
+        if (status === 'ok') this.changeCard(card, { state: 'review' }, caller.handle, { stateEvent: `@${caller.handle} reported done → review` });
+        else this.changeCard(card, {}, caller.handle, { event: `@${caller.handle} reported ${status}: ${req.summary.slice(0, 200)}` });
+      }
       this.say(`done @${caller.handle} (${status}) → @${parent.handle}`);
       return m;
     }, oneShot ? 'retired' : 'idle');
@@ -1304,22 +1410,70 @@ export class Core {
 
   // ======================================================== cards
 
-  private resolveAssignee(project: string, ref: string | null | undefined): string | null {
+  private resolveAssignee(project: string, ref: string | null | undefined, me?: Agent | null): string | null {
     if (ref != null && typeof ref !== 'string') throw new HttpError(400, 'assignee must be "@handle", an agent id, or null');
     if (ref == null || ref === '' || ref === 'none' || ref === '@none') return null;
+    if (ref.toLowerCase() === 'me') {
+      if (!me || me.project_id !== project) throw new HttpError(400, 'assignee "me" needs an identified caller in this project');
+      return me.id;
+    }
     const a = this.resolveAgent(project, ref);
     if (!a || a.project_id !== project) throw new HttpError(404, `No agent ${ref} in project ${project}. Roster: ${this.rosterText(project)}`);
     return a.id;
   }
 
-  propose(caller: Agent, req: { title: string; details?: string; category?: string }): Card {
-    if (!isText(req?.title)) throw new HttpError(400, 'propose needs {title} as a non-empty string');
-    optStr(req.details, 'details'); optStr(req.category, 'category');
+  private changeCard(card: Card, requested: Partial<Card>, by: string, extra: { stateEvent?: string; event?: string; checkEvent?: string; comment?: string } = {}): Card {
     const now = this.now();
+    const patch: Partial<Card> = { ...requested };
+    const notes = [...(card.notes ?? [])];
+    const history = [...(card.history ?? [])];
+    const state = patch.state ?? card.state;
+    const stateChanged = state !== card.state;
+    if (stateChanged) {
+      if (patch.position === undefined) patch.position = this.store.maxPosition(card.project_id, state) + 1;
+      if (!history.length) history.push({ at: card.created_at, by: card.created_by === 'user' ? 'user' : this.handleOf(card.created_by), from: null, to: card.state });
+      history.push({ at: now, by, from: card.state, to: state });
+      patch.history = history;
+      if (['in_progress', 'review', 'done'].includes(state)) patch.later_at = null;
+      if (['done', 'dropped'].includes(state) && (card.blocked_on || patch.blocked_on)) {
+        patch.blocked_on = null;
+        patch.blocked_at = null;
+      }
+    }
+    const next = { ...card, ...patch };
+    const addEvent = (text: string) => notes.push({ at: now, by, text, kind: 'event' });
+    if (extra.comment) notes.push({ at: now, by, text: extra.comment, kind: 'comment' });
+    if (stateChanged) addEvent(extra.stateEvent ?? `moved ${card.state} → ${state}`);
+    if (card.assignee_id !== next.assignee_id) {
+      addEvent(next.assignee_id ? `assigned to @${this.handleOf(next.assignee_id)}` : 'unassigned');
+    }
+    if (card.urgent !== next.urgent) addEvent(next.urgent ? 'marked urgent' : 'cleared urgent');
+    if (card.blocked_on !== next.blocked_on) {
+      if (next.blocked_on) addEvent(`blocked on ${next.blocked_on}`);
+      else if (card.blocked_on) addEvent(`unblocked after ${formatSpan(now - (card.blocked_at ?? now))}`);
+    }
+    if (!!card.later_at !== !!next.later_at) addEvent(next.later_at ? 'shelved under Later' : 'back from Later');
+    const edited = CARD_EDIT_FIELDS.filter((f) => has(patch, f) && !(f === 'checks' && extra.checkEvent)
+      && JSON.stringify(card[f]) !== JSON.stringify(next[f]));
+    if (edited.length) addEvent(`edited ${edited.map((f) => f === 'estimate_min' ? 'estimate' : f).join(', ')}`);
+    if (extra.event) addEvent(extra.event);
+    if (extra.checkEvent) addEvent(extra.checkEvent);
+    patch.notes = notes;
+    const saved = this.saveCard(card.id, patch);
+    this.say(`card #${saved.id} ${stateChanged ? `${card.state} → ${state} ` : ''}by ${by === 'user' ? 'UI' : '@' + by}`);
+    return saved;
+  }
+
+  propose(caller: Agent, req: ProposeReq): Card {
+    if (has((req ?? {}) as object, 'state') || has((req ?? {}) as object, 'assignee'))
+      throw new HttpError(400, 'propose accepts ticket fields only; state and assignee cannot be set until a captain takes the ticket');
+    const now = this.now();
+    const fields = normalizeCardFields((req ?? {}) as unknown as Record<string, unknown>, null, now);
     const c = this.store.insertCard({
-      project_id: caller.project_id, title: req.title.trim(), details: req.details ?? '', category: req.category ?? null,
-      state: 'proposed', position: this.store.maxPosition(caller.project_id, 'proposed') + 1, assignee_id: null,
+      ...fields as Omit<Card, 'id' | 'project_id' | 'state' | 'position' | 'assignee_id' | 'created_by' | 'notes' | 'created_at' | 'updated_at'>,
+      project_id: caller.project_id, state: 'proposed', position: this.store.maxPosition(caller.project_id, 'proposed') + 1, assignee_id: null,
       created_by: caller.id, notes: [], created_at: now, updated_at: now,
+      history: [{ at: now, by: caller.handle, from: null, to: 'proposed' }],
     });
     this.emit({ type: 'card.updated', project_id: c.project_id, card: c });
     this.say(`propose #${c.id} by @${caller.handle}: ${clip(c.title, 60)}`);
@@ -1327,22 +1481,29 @@ export class Core {
   }
 
   createCard(caller: Agent | null, req: CardCreateReq & { project?: string }): Card {
-    if (!isText(req?.title)) throw new HttpError(400, 'card needs {title} as a non-empty string');
-    optStr(req.details, 'details'); optStr(req.category, 'category'); optStr(req.assignee, 'assignee'); optStr(req.project, 'project');
     if (caller && !this.isCaptain(caller)) throw new HttpError(403, `@${caller.handle} is not a captain; use \`sparrow propose\` to suggest a card.`);
     const project = caller ? caller.project_id : req.project;
     if (!project || !this.store.getProject(project)) throw new HttpError(400, `card needs a valid {project}${project ? ` (no project ${project})` : ''}`);
     const state: CardState = req.state ?? 'todo';
     if (!CARD_STATES.includes(state)) throw new HttpError(400, `state must be one of ${CARD_STATES.join(', ')}`);
+    if (req.assignee !== undefined && req.assignee !== null && typeof req.assignee !== 'string') throw new HttpError(400, 'assignee must be "@handle", an agent id, or null');
     const now = this.now();
+    const fields = normalizeCardFields((req ?? {}) as unknown as Record<string, unknown>, null, now);
     const c = this.store.insertCard({
-      project_id: project, title: req.title.trim(), details: req.details ?? '', category: req.category ?? null, state,
-      position: this.store.maxPosition(project, state) + 1, assignee_id: this.resolveAssignee(project, req.assignee),
-      created_by: caller?.id ?? 'user', notes: [], created_at: now, updated_at: now,
+      ...fields as Omit<Card, 'id' | 'project_id' | 'state' | 'position' | 'assignee_id' | 'created_by' | 'notes' | 'created_at' | 'updated_at'>,
+      project_id: project, state, position: this.store.maxPosition(project, state) + 1,
+      assignee_id: this.resolveAssignee(project, req.assignee, caller), created_by: caller?.id ?? 'user', notes: [], created_at: now, updated_at: now,
+      history: [{ at: now, by: caller?.handle ?? 'user', from: null, to: state }],
     });
     this.emit({ type: 'card.updated', project_id: c.project_id, card: c });
     this.say(`card #${c.id} created by ${caller ? '@' + caller.handle : 'UI'}: ${clip(c.title, 60)}`);
     return c;
+  }
+
+  readCard(caller: Agent | null, id: number): Card {
+    const card = this.store.getCard(id);
+    if (!card || (caller && caller.project_id !== card.project_id)) throw new HttpError(404, `No card #${id}${caller ? ` in project ${caller.project_id}` : ''}.`);
+    return card;
   }
 
   /** Tracking only: NEVER spawns, wakes or messages anyone. */
@@ -1350,35 +1511,41 @@ export class Core {
     const card = this.store.getCard(Number(id));
     if (!card) throw new HttpError(404, `No card #${id}.`);
     if (caller && caller.project_id !== card.project_id) throw new HttpError(404, `No card #${id} in project ${caller.project_id}.`);
-    const by = caller ? caller.handle : 'user';
+    const by = caller?.handle ?? 'user';
     const captain = !caller || this.isCaptain(caller);
+    const keys = Object.keys(req ?? {});
     if (!captain) {
       if (card.assignee_id !== caller!.id) throw new HttpError(403, `@${caller!.handle} may only update cards assigned to it (card #${id} is not); use \`sparrow propose\` or ask your captain.`);
-      const allowed = (req.state === undefined || req.state === 'review') && req.assignee === undefined && req.title === undefined
-        && req.details === undefined && req.position === undefined;
-      if (!allowed) throw new HttpError(403, `As the assignee, @${caller!.handle} may only add notes and move card #${id} to review.`);
+      const allowed = new Set(['note', 'state', 'check', 'blocked_on']);
+      if (keys.some((k) => !allowed.has(k)) || (req.state !== undefined && req.state !== 'review'))
+        throw new HttpError(403, `As the assignee, @${caller!.handle} may add a note, check an item, set or clear blocked_on, or move card #${id} to review.`);
     }
-    const patch: Partial<Card> = {};
+    const patch = normalizeCardFields((req ?? {}) as Record<string, unknown>, card, this.now());
     if (req.state !== undefined) {
       if (!CARD_STATES.includes(req.state)) throw new HttpError(400, `state must be one of ${CARD_STATES.join(', ')}`);
       patch.state = req.state;
-      if (req.position === undefined && req.state !== card.state) patch.position = this.store.maxPosition(card.project_id, req.state) + 1;
     }
     if (req.position !== undefined) {
-      if (typeof req.position !== 'number' || !Number.isFinite(req.position)) throw new HttpError(400, 'position must be a number');
+      if (!Number.isFinite(req.position) || Math.abs(req.position) > 1_000_000_000)
+        throw new HttpError(400, 'position must be a finite number between -1000000000 and 1000000000');
       patch.position = req.position;
     }
-    if (req.title !== undefined) { if (!isText(req.title)) throw new HttpError(400, 'title must be a non-empty string'); patch.title = req.title; }
-    if (req.details !== undefined) { if (typeof req.details !== 'string') throw new HttpError(400, 'details must be a string'); patch.details = req.details; }
-    if (req.assignee !== undefined) patch.assignee_id = this.resolveAssignee(card.project_id, req.assignee);
-    const notes = [...card.notes];
+    if (req.assignee !== undefined) patch.assignee_id = this.resolveAssignee(card.project_id, req.assignee, caller);
     if (req.note !== undefined && req.note !== null && typeof req.note !== 'string') throw new HttpError(400, 'note must be a string');
-    if (isText(req.note)) notes.push({ at: this.now(), by, text: req.note.trim() });
-    if (req.state !== undefined && req.state !== card.state && caller) notes.push({ at: this.now(), by, text: `moved ${card.state} → ${req.state}` });
-    if (notes.length !== card.notes.length) patch.notes = notes;
-    const c = this.saveCard(card.id, patch);
-    this.say(`card #${c.id} ${req.state && req.state !== card.state ? `${card.state} → ${c.state} ` : ''}by ${caller ? '@' + by : 'UI'}`);
-    return c;
+    const comment = typeof req.note === 'string' ? req.note.trim() : '';
+    let checkEvent: string | undefined;
+    if (req.check !== undefined) {
+      const check = req.check as { index?: unknown; done?: unknown };
+      if (!check || !Number.isInteger(check.index) || (check.index as number) < 0 || typeof check.done !== 'boolean')
+        throw new HttpError(400, 'check must be {index: zero-based non-negative integer, done: boolean}');
+      const checks = [...(patch.checks ?? card.checks ?? [])];
+      const item = checks[check.index as number];
+      if (!item) throw new HttpError(400, `check index ${check.index} is out of range (card has ${checks.length} checks)`);
+      checks[check.index as number] = { ...item, done: check.done };
+      patch.checks = checks;
+      checkEvent = `${check.done ? 'checked' : 'unchecked'} "${item.text}"`;
+    }
+    return this.changeCard(card, patch, by, { comment: comment || undefined, checkEvent });
   }
 
   // ======================================================== reads

@@ -3,6 +3,7 @@
 import { Hono, type Context } from 'hono';
 import { existsSync, statSync } from 'node:fs';
 import { join, normalize, resolve as resolvePath } from 'node:path';
+import { parseCardRef } from '../shared/cards';
 import { launchCaptain as defaultLaunchCaptain } from '../harness/captain';
 import type { Agent, CaptainStartReq, ResumeWriteReq, SettingsWriteReq } from '../shared/types';
 import type { CatalogService } from './catalog';
@@ -348,14 +349,19 @@ export function createApi(core: Core, opts: ApiOpts = {}) {
   // ---------------------------------------------------------------- cards
   app.post('/api/propose', async (c) => reply(c, { card: core.propose(need(c), await body(c)) }));
   app.get('/api/cards', (c) => c.json(core.store.listCards(c.req.query('project') || c.get('caller')?.project_id || null)));
+  app.get('/api/cards/:id', (c) => {
+    const id = parseCardRef(c.req.param('id'));
+    if (id == null) throw new HttpError(400, 'card id must be a number or key such as PLU-12');
+    return c.json(core.readCard(c.get('caller'), id));
+  });
   app.post('/api/cards', async (c) => {
     const caller = c.get('caller') ? need(c) : null;
     return reply(c, { card: core.createCard(caller, await body(c)) });
   });
   app.patch('/api/cards/:id', async (c) => {
     const caller = c.get('caller') ? need(c) : null;
-    const id = Number(c.req.param('id'));
-    if (!Number.isInteger(id)) throw new HttpError(400, 'card id must be a number');
+    const id = parseCardRef(c.req.param('id'));
+    if (id == null) throw new HttpError(400, 'card id must be a number or key such as PLU-12');
     return reply(c, { card: core.patchCard(caller, id, await body(c)) });
   });
 

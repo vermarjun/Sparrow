@@ -55,7 +55,7 @@ const WRITE = (over: Record<string, unknown> = {}) => ({
 
 // ---------------------------------------------------------------- migration
 
-test('a v1 database is migrated in place: new columns + tables, data kept, version 3', () => {
+test('a v1 database is migrated in place: new columns + tables, data kept, version 4', () => {
   const dir = mkdtempSync(join(tmpdir(), 'sparrow-u1-mig-'));
   const path = join(dir, 'v1.db');
   const v1 = new Database(path);
@@ -72,7 +72,7 @@ test('a v1 database is migrated in place: new columns + tables, data kept, versi
     INSERT INTO calls (id, agent_id, started_at, prompt) VALUES ('call_old','ag_old',5,'hi');`);
   v1.close();
   const s = new Store(path);
-  expect(s.schemaVersion()).toBe(3);
+  expect(s.schemaVersion()).toBe(4);
   const old = s.getAgent('ag_old')!;
   expect(old.handle).toBe('james');
   expect(old.resume_hash).toBeNull();
@@ -85,7 +85,7 @@ test('a v1 database is migrated in place: new columns + tables, data kept, versi
   s.close();
   const again = new Store(path); // idempotent re-open
   expect(again.getAgent('ag_old')!.resume_hash).toBe('abc');
-  expect(again.schemaVersion()).toBe(3);
+  expect(again.schemaVersion()).toBe(4);
   again.close();
 });
 
@@ -99,7 +99,7 @@ test('a v2 database gains deliveries.wake: existing deliveries stay waking, new 
     INSERT INTO deliveries VALUES ('msg_old', 'ag_cap', 'pending', NULL, NULL);`);
   v2.close();
   const s = new Store(path);
-  expect(s.schemaVersion()).toBe(3);
+  expect(s.schemaVersion()).toBe(4);
   expect(s.deliveriesFor('msg_old')).toEqual([{ message_id: 'msg_old', to_id: 'ag_cap', state: 'pending', wake: true, call_id: null, delivered_at: null }]);
   expect(s.countWaking('ag_cap')).toBe(1);
   s.insertDelivery('msg_new', 'ag_cap', false);

@@ -65,15 +65,26 @@ Communication uses direct messages; `group` is a reserved handle and cannot be u
 
 Verify before you trust: for important results, hire a `verifier` with the builder's evidence and acceptance checks.
 
-## 6. Board (tracking only — never spawns anything)
+## 6. Board (tracking only, never spawns anything)
+Every card has a key (`PLU-12`); all commands also take `12` or `#12`. Agents `propose` tickets (column Proposed, written per the worker skill); you accept (`move N todo`) or drop them.
 ```bash
-sparrow card list
-sparrow card add "Rate limiting on login" --details "5/15min per IP" --state todo
-sparrow card move 4 review          # proposed|todo|in_progress|review|done|dropped
-sparrow card assign 4 @maya         # or: none
-sparrow card note 4 "merged in a1b2c3"
+sparrow card list [--state s] [--sort roi|urgent|estimate|newest|…] [--urgent] [--blocked] [--all]   # --all adds dropped
+sparrow card show PLU-12                  # full ticket: context, problem, approach, checks, comments, timing
+sparrow card pick PLU-12                  # you take it: assigns you, moves to In progress, prints the brief
+sparrow card add "Rate limiting on login" --context "…" --problem "Observed … Expected …" --approach "…" \
+    --check "6th attempt returns 429" --impact high --effort low --estimate 2h --state todo
+sparrow card edit PLU-12 --urgent on --impact high --effort low --estimate 2h --category auth   # markers; "none"/off clears
+sparrow card move PLU-12 review           # proposed|todo|in_progress|review|done|dropped
+sparrow card assign PLU-12 @maya          # or me, or none
+sparrow card block PLU-12 "IT: NetSuite access"   # waiting on a person; sparrow card unblock PLU-12
+sparrow card later PLU-12 [--undo]        # shelve under Later (icebox); urgent PLU-12 [--undo]; check PLU-12 2 [--undo]
+sparrow card note PLU-12 "merged in a1b2c3"        # a comment (alias: comment)
 ```
-Agents `propose` cards (column Proposed); you accept (`move N todo`) or drop them.
+- User says "pick PLU-12": run `sparrow card pick PLU-12`, read the brief it prints, do the work, and satisfy every "Done when" check (`card check`).
+- Build finished: `sparrow card move PLU-12 review`. **Never move a card to done** unless the user told you they reviewed and accepted it; the user approves from the board.
+- `hire … --card PLU-12` assigns the card, moves it to In progress and appends the whole ticket to the agent's first prompt. When that agent reports `done` (ok) its card moves to Review by itself; `blocked` or `failed` leaves it where it is and adds a timeline event.
+- Every move is timestamped (the user can drag cards back and forth), so the card keeps its history and a timing summary: estimate against time actually worked. Be honest with `--estimate`.
+- Cards you write follow the same ticket rules as agents' (outcome title, plain-English approach with no code, 2-7 binary checks, always impact, effort and estimate).
 
 ## 7. Release when the job is done (permanent by design)
 ```bash
