@@ -70,6 +70,8 @@ with your result or another waking message, or shown in the parent's `Still work
 ## Proposing tickets
 Write each ticket so a human can triage it in 5 seconds and an agent can start it without asking questions. Search
 `sparrow card list` first; never duplicate. One ticket = one shippable job; more than 7 checks means split it.
+The card face shows only the title, category, a payoff word from impact × effort, a red rail (urgent) or orange
+striped rail (blocked), age and assignee; everything else is in the ticket sheet. Title and impact/effort carry triage.
 ```
 Title      Outcome first, verb first, <= 70 chars: what changes for whom.
 --context  Why it exists, who asked, where it came from ("Shubhankar, Monday's meet"), what it unblocks. <= 2 lines.
@@ -84,8 +86,8 @@ Title      Outcome first, verb first, <= 70 chars: what changes for whom.
 sparrow propose "Show estimate vs actual on done cards" \
   --context "Shubhankar asked in Monday's meet: he cannot tell whether our estimates are any good." \
   --problem "Observed: a Done card shows no timing. Expected: it shows the estimate next to the time it was really worked." \
-  --approach "Add a Timing panel to the card sheet from the stored state history. Show active time, the ratio to the estimate, and colour it by how far over. Risk: old cards have no history, so hide the panel for them." \
-  --check "A done card shows its estimate and active time" --check "A card without an estimate says no estimate" \
+  --approach "Add a Timing panel to the card sheet from the stored state history. Show build time, the ratio to the estimate, and colour it by how far over. Risk: old cards have no history, so hide the panel for them." \
+  --check "A done card shows its estimate and build time" --check "A card without an estimate says no estimate" \
   --check "Cards with no history show no panel and no error" \
   --category board --tag ui --impact high --effort low --estimate 4h
 ```

@@ -92,6 +92,11 @@ sparrow card move PLU-12 review      # build finished; `sparrow done` (ok) does 
 ```
 Only the user moves a card to Done, after reviewing it; you get a 403 if you try. `sparrow done --status blocked|failed` never moves the card.
 
+On the board a card shows only: title (2 lines max), category dot, a payoff word from impact × effort (Quick win,
+Worth it, Big bet, Heavy lift, Money pit; other combinations show nothing), a red rail if urgent, an orange striped
+rail if blocked, age and assignee. Everything else (context, problem, approach, checks, tags, details, blocker text)
+is in the hover peek and the ticket sheet, so the title and impact/effort carry the triage.
+
 **Propose** work you found but were not asked to do. A ticket must let a human triage it in 5 seconds and an agent start it
 without questions. Run `sparrow card list` first and never duplicate. One ticket is one shippable job (over 7 checks: split).
 - **Title**: outcome first, verb first, at most 70 chars: what changes for whom.
@@ -106,7 +111,7 @@ sparrow propose "Show estimate vs actual on done cards" \
   --context "Shubhankar asked in Monday's meet: he cannot tell whether our estimates are any good." \
   --problem "Observed: a Done card shows no timing. Expected: it shows the estimate next to the time it was really worked." \
   --approach "Add a Timing panel to the card sheet from the stored state history; show the ratio to the estimate. Risk: old cards have no history, so hide the panel for them." \
-  --check "A done card shows its estimate and active time" --check "A card without an estimate says no estimate" \
+  --check "A done card shows its estimate and build time" --check "A card without an estimate says no estimate" \
   --category board --tag ui --impact high --effort low --estimate 4h
 ```
 

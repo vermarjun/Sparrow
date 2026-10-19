@@ -86,6 +86,22 @@ sparrow card note PLU-12 "merged in a1b2c3"        # a comment (alias: comment)
 - Every move is timestamped (the user can drag cards back and forth), so the card keeps its history and a timing summary: estimate against time actually worked. Be honest with `--estimate`.
 - Cards you write follow the same ticket rules as agents' (outcome title, plain-English approach with no code, 2-7 binary checks, always impact, effort and estimate).
 
+**What the board shows for each field** (write for this; the card face is deliberately sparse):
+| Field (flag) | Where the user sees it |
+|---|---|
+| title | The card's only big line, clamped to 2 lines: <= 70 chars, outcome first. |
+| `--category` | Coloured dot + word on the card. One primary bucket, lowercase. |
+| `--impact` × `--effort` | One payoff word on the card: **Quick win** (effort low, impact medium/high), **Worth it** (high/medium), **Big bet** (high/high), **Heavy lift** (medium/high), **Money pit** (low/high). Medium/medium, low/low, low/medium and unset show nothing. Drives sorting and triage, so always set both. |
+| `--urgent` | Solid red rail on the card's left edge; an "urgent" filter in the title line. Only if it blocks someone now. |
+| `--blocked "<who/what>"` | Orange striped rail; the text shows only in the hover peek, the tooltip and the sheet's banner, so keep it short ("IT: NetSuite access"). |
+| `card later` | Card moves under the column's dashed "Later" line, muted. |
+| `--context` `--problem` `--approach` `--check` | Ticket sheet sections in that order; the hover peek previews `--problem` (else context). Checks are tickable boxes. |
+| `--estimate` | Peek and sheet; at Review/Done the sheet compares it with build time (In progress), review shown beside it. |
+| `--tag`, `--details` | Sheet only (never on the card). Details = "More details", for anything that fits no section. |
+| comments (`card note`) | Sheet activity; also handed to any agent hired with `--card`. |
+| proposer, date, moves | Automatic: age on the card, full date in the peek, timing and history in the sheet. |
+The user triages Proposed newest-first with the keyboard (`t` = Triage mode: accept, later, drop, urgent, return/effort), so a ticket with no impact/effort or an unclear problem is the one that gets dropped.
+
 ## 7. Release when the job is done (permanent by design)
 ```bash
 sparrow release @maya               # closes its window for good; it never wakes again
