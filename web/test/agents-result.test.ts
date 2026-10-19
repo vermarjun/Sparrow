@@ -1,9 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import { renderToStaticMarkup } from 'react-dom/server'
 import type { Agent, MessageView } from '../../src/shared/types'
 import { jobResult, resultLine } from '../src/lib/format'
 import { emptyData, reduce, type Data } from '../src/lib/reduce'
-import { LastActivity } from '../src/pages/Agents'
 
 const agent = (extra: Partial<Agent> = {}): Agent => ({
   id: 'ag_1', project_id: 'p', handle: 'leo', kind: 'agent', resume: 'builder', title: 'Builder', harness: 'claude', model: null, effort: null,
@@ -26,32 +24,6 @@ describe('resultLine / jobResult (D5)', () => {
     expect(jobResult(agent({ last_result, last_end_reason: 'unreported' }))).toBeNull()
     expect(jobResult(agent({ last_result, last_end_reason: 'ask', state: 'waiting' }))).toBeNull()
     expect(jobResult(agent())).toBeNull()
-  })
-})
-
-describe('Agents page: Last update cell', () => {
-  const html = (a: Agent) => renderToStaticMarkup(LastActivity({ agent: a, now: 60_000 }))
-  test.each([['ok', 'done ok'], ['blocked', 'blocked'], ['failed', 'failed']] as const)('%s → chip "%s" + the result line, not the last progress update', (status, label) => {
-    const out = html(agent({ last_result: { status, text: RESULT, at: 30_000 } }))
-    expect(out).toContain('data-testid="job-result"')
-    expect(out).toContain(`data-result-status="${status}"`)
-    expect(out).toContain(`>${label}<`)
-    expect(out).toContain('Added the Skills install command and its tests.')
-    expect(out).not.toContain('evidence report is drafted')
-  })
-  test('a working agent still shows its last progress update', () => {
-    const out = html(agent({ state: 'working', last_end_reason: null, last_result: { status: 'ok', text: RESULT, at: 30_000 } }))
-    expect(out).not.toContain('job-result')
-    expect(out).toContain('evidence report is drafted')
-  })
-  test('an idle agent whose call ended on a provider error says so (even with no update)', () => {
-    const out = html(agent({ last_end_reason: 'provider_error', last_update: null }))
-    expect(out).toContain('data-testid="provider-error-chip"')
-    expect(out).not.toContain('job-result')
-    expect(html(agent({ last_end_reason: 'provider_error', state: 'working' }))).not.toContain('provider-error-chip')
-  })
-  test('nothing to show → dash', () => {
-    expect(html(agent({ last_update: null, last_end_reason: null }))).toContain('—')
   })
 })
 

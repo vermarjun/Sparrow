@@ -91,7 +91,7 @@ export function MentionText({ text, handles, className }: { text: string; handle
   return (
     <span className={className}>
       {splitMentions(text, handles).map((s, i) =>
-        s.mention ? <span key={i} className="rounded bg-blue-50 px-0.5 font-medium text-blue-700">{s.text}</span> : <span key={i}>{s.text}</span>,
+        s.mention ? <span key={i} className="rounded bg-muted px-0.5 font-medium text-foreground">{s.text}</span> : <span key={i}>{s.text}</span>,
       )}
     </span>
   )
