@@ -1,14 +1,14 @@
 // Sticky footer: the next move for the ticket's state.
-import { ArrowRight, Ban, Check, CheckCircle2, CircleAlert, Moon, Play, RotateCcw, Send, Undo2, X } from 'lucide-react'
+import { ArrowRight, Check, CheckCircle2, CircleAlert, LockOpen, Moon, Play, RotateCcw, Send, Undo2, X } from 'lucide-react'
 import type { Card } from '@shared/types'
 import { STATE_LABEL } from '@shared/cards'
 import { patchCard } from '@/lib/cardActions'
 import { COLUMN_BY_STATE } from '@/lib/boardStyle'
-import { type SheetAction, actionTarget, checkProgress, nextActions } from '@/lib/sheetLogic'
+import { type SheetAction, actionTarget, checkProgress, footerActions } from '@/lib/sheetLogic'
 import { cn } from '@/lib/utils'
 
 const ICON: Record<SheetAction['icon'], typeof Check> = {
-  accept: Check, later: Moon, drop: X, start: Play, review: Send, approve: CheckCircle2, back: Undo2, reopen: RotateCcw, restore: RotateCcw,
+  accept: Check, later: Moon, drop: X, start: Play, review: Send, approve: CheckCircle2, back: Undo2, reopen: RotateCcw, restore: RotateCcw, unblock: LockOpen,
 }
 
 const TONE: Record<SheetAction['tone'], string> = {
@@ -26,18 +26,17 @@ function Hint({ card }: { card: Card }) {
       ? <span className="inline-flex items-center gap-1.5 text-amber-800"><CircleAlert className="size-3.5" aria-hidden />{open} of {p.total} done-when {open === 1 ? 'check is' : 'checks are'} still open</span>
       : <span className="text-zinc-500">{p.total ? 'Every done-when check is ticked. ' : ''}Approve when it is what you asked for.</span>
   }
-  if (card.blocked_on && card.state !== 'done' && card.state !== 'dropped') return <span className="inline-flex items-center gap-1.5 text-orange-700"><Ban className="size-3.5" aria-hidden />Blocked: unblock it before work continues</span>
+  if (card.blocked_on && card.state !== 'done' && card.state !== 'dropped') return null // the banner says it; the button is Unblock
   if (card.state === 'proposed') return <span className="text-zinc-500">Accept it to queue it, or park or drop it.</span>
   if (card.state === 'todo') return <span className="text-zinc-500">Hand it to an agent: copy the brief or the key.</span>
   if (card.state === 'in_progress') return <span className="text-zinc-500">{card.assignee_id ? 'Being worked on.' : 'Nobody is assigned yet.'}</span>
-  if (card.state === 'done') return <span className="inline-flex items-center gap-1.5 text-emerald-700"><CheckCircle2 className="size-3.5" aria-hidden />Done</span>
   return null
 }
 
 export function SheetFooter({ card }: { card: Card }) {
-  const actions = nextActions(card)
+  const actions = footerActions(card)
   return (
-    <footer className="flex shrink-0 items-center gap-3 border-t border-zinc-200 bg-white/95 px-6 py-3 backdrop-blur" data-footer>
+    <footer className="flex shrink-0 items-center gap-3 border-t border-zinc-200/80 bg-white px-6 py-3" data-footer>
       <div className="min-w-0 flex-1 truncate text-[12.5px]"><Hint card={card} /></div>
       <div className="flex items-center gap-2">
         {[...actions].reverse().map((a) => {

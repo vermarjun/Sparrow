@@ -2,23 +2,24 @@
 // payoff label; urgent / blocked become a left rail; people are initials; categories are a dot.
 import type { Agent, Card, CardLevel } from '@shared/types'
 import { formatEstimate } from '@shared/cards'
-import { categoryIndex, hashString } from './boardStyle'
+import { categoryIndex } from './boardStyle'
 import { ago } from './format'
 
 export type PayoffId = 'quick' | 'worth' | 'bet' | 'steady' | 'heavy' | 'filler' | 'lowvalue' | 'pit'
 export type PayoffTone = 'good' | 'invest' | 'neutral' | 'costly' | 'dim'
 
-export interface Payoff { id: PayoffId; label: string; tone: PayoffTone }
+/** `face`: shown on the board card. The other words (Steady, Filler, Low value) mean "nothing special" and only appear in the list and the peek. */
+export interface Payoff { id: PayoffId; label: string; tone: PayoffTone; face: boolean }
 
 const P: Record<PayoffId, Payoff> = {
-  quick: { id: 'quick', label: 'Quick win', tone: 'good' },
-  worth: { id: 'worth', label: 'Worth it', tone: 'invest' },
-  bet: { id: 'bet', label: 'Big bet', tone: 'invest' },
-  steady: { id: 'steady', label: 'Steady', tone: 'neutral' },
-  heavy: { id: 'heavy', label: 'Heavy lift', tone: 'costly' },
-  filler: { id: 'filler', label: 'Filler', tone: 'dim' },
-  lowvalue: { id: 'lowvalue', label: 'Low value', tone: 'dim' },
-  pit: { id: 'pit', label: 'Money pit', tone: 'costly' },
+  quick: { id: 'quick', label: 'Quick win', tone: 'good', face: true },
+  worth: { id: 'worth', label: 'Worth it', tone: 'invest', face: true },
+  bet: { id: 'bet', label: 'Big bet', tone: 'invest', face: true },
+  steady: { id: 'steady', label: 'Steady', tone: 'neutral', face: false },
+  heavy: { id: 'heavy', label: 'Heavy lift', tone: 'costly', face: true },
+  filler: { id: 'filler', label: 'Filler', tone: 'dim', face: false },
+  lowvalue: { id: 'lowvalue', label: 'Low value', tone: 'dim', face: false },
+  pit: { id: 'pit', label: 'Money pit', tone: 'costly', face: true },
 }
 
 /** impact (rows) x effort (columns low, medium, high). */
@@ -66,6 +67,13 @@ export function railTip(c: Pick<Card, 'urgent' | 'blocked_on' | 'blocked_at' | '
   return out
 }
 
+/** The payoff in words for the peek: 'Return high · Effort low → Quick win'. Empty while nothing is set. */
+export function payoffSentence(c: Pick<Card, 'impact' | 'effort'>): string {
+  const parts = [c.impact && `Return ${c.impact}`, c.effort && `Effort ${c.effort}`].filter(Boolean).join(' · ')
+  const p = payoffOf(c)
+  return p ? `${parts} → ${p.label}` : parts
+}
+
 /** Two letters from the handle: 'james' → 'JA', 'ux-lead' → 'UL'. */
 export function initials(handle: string): string {
   const parts = handle.split(/[^a-z0-9]+/i).filter(Boolean)
@@ -73,21 +81,8 @@ export function initials(handle: string): string {
   return s.toUpperCase()
 }
 
-/** Avatar palette: hues that keep clear of the state colours (red urgent, orange blocked, green done). */
-export const AVATAR_TONES = [
-  'bg-indigo-100 text-indigo-700',
-  'bg-sky-100 text-sky-700',
-  'bg-teal-100 text-teal-700',
-  'bg-pink-100 text-pink-700',
-  'bg-violet-100 text-violet-700',
-  'bg-cyan-100 text-cyan-700',
-  'bg-fuchsia-100 text-fuchsia-700',
-  'bg-stone-200 text-stone-700',
-] as const
-
-export function avatarTone(handle: string): string {
-  return AVATAR_TONES[hashString(handle.trim().toLowerCase()) % AVATAR_TONES.length]
-}
+/** Avatars are neutral (colour is reserved for what needs the user); the initials tell people apart. */
+export const AVATAR_TONE = 'bg-zinc-100 text-zinc-600'
 
 /** Solid dot colours in the same order as CATEGORY_PALETTE, so a category is the same hue on the face and in the sheet. */
 export const CATEGORY_DOTS = [

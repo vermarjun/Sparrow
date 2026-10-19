@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { NO_FILTERS, cardMatches, categoriesOf, filterCards, groupColumns, hasFilters, isShelved, matchesQuery, orderColumn, summarize, summaryText } from '../src/lib/boardFilter'
+import { NO_FILTERS, cardMatches, categoriesOf, filterCards, groupColumns, hasFilters, isShelved, matchesQuery, orderColumn, popoverFilterCount, summarize, summaryCounts, summaryText } from '../src/lib/boardFilter'
 import { DAY, mkCard } from './cardFixtures'
 
 describe('search', () => {
@@ -117,5 +117,40 @@ describe('summary', () => {
   test('filtered view says "x of y" and drops zero parts', () => {
     expect(summaryText(summarize([cards[0]], cards))).toBe('1 of 5 tickets · 1 urgent')
     expect(summaryText({ total: 1, shown: 1, urgent: 0, blocked: 0, later: 0 })).toBe('1 ticket')
+  })
+})
+
+describe('summaryCounts (the title line)', () => {
+  const cards = [
+    mkCard(1, { urgent: true, title: 'login' }), mkCard(2, { urgent: true, blocked_on: 'IT', title: 'login again' }),
+    mkCard(3, { blocked_on: 'x', title: 'other' }), mkCard(4, { later_at: 1, title: 'login later' }),
+    mkCard(5, { state: 'done', urgent: true }),
+  ]
+  test('no filters: the plain counts', () => {
+    expect(summaryCounts(cards, NO_FILTERS)).toEqual({ total: 5, shown: 5, urgent: 2, blocked: 2, later: 1 })
+  })
+  test('switching urgent on narrows `shown` but keeps the blocked and later counts as they were', () => {
+    expect(summaryCounts(cards, { ...NO_FILTERS, urgent: true })).toEqual({ total: 5, shown: 2, urgent: 2, blocked: 2, later: 1 })
+    expect(summaryCounts(cards, { ...NO_FILTERS, urgent: true, blocked: true }).shown).toBe(1)
+  })
+  test('search narrows every count', () => {
+    expect(summaryCounts(cards, { ...NO_FILTERS, q: 'login' })).toEqual({ total: 5, shown: 3, urgent: 2, blocked: 1, later: 1 })
+  })
+})
+
+describe('state filter ("N older" opens the List on Done)', () => {
+  const cards = [mkCard(1, { state: 'done' }), mkCard(2, { state: 'todo' }), mkCard(3, { state: 'done' })]
+  test('keeps one column; counts as a filter', () => {
+    const f = { ...NO_FILTERS, state: 'done' as const }
+    expect(filterCards(cards, f).map((c) => c.id)).toEqual([1, 3])
+    expect(hasFilters(f)).toBe(true)
+  })
+})
+
+describe('popoverFilterCount', () => {
+  test('counts the popover settings once each, not the title line toggles or search', () => {
+    expect(popoverFilterCount(NO_FILTERS, false)).toBe(0)
+    expect(popoverFilterCount({ ...NO_FILTERS, urgent: true, blocked: true, q: 'x' }, false)).toBe(0)
+    expect(popoverFilterCount({ ...NO_FILTERS, categories: ['a', 'b'], assignee: 'none', quick: true }, true)).toBe(4)
   })
 })

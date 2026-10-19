@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { sortListCards } from '../src/lib/listSort'
+import { nextSort, sortListCards, visibleColumns } from '../src/lib/listSort'
 import { mkCard } from './cardFixtures'
 
 describe('sortListCards', () => {
@@ -60,5 +60,20 @@ describe('sortListCards', () => {
     ]
     const labels = (id: string | null) => ({ ag_a: 'ada', ag_z: 'zara' }[id ?? ''] ?? null)
     expect(sortListCards(assigned, 'assignee', 'asc', labels).map((c) => c.id)).toEqual([9, 8, 10])
+  })
+})
+
+describe('list columns and sort cycle', () => {
+  test('empty optional columns are hidden', () => {
+    expect(visibleColumns([mkCard(1, { category: null, impact: null, effort: null, estimate_min: null, assignee_id: null })])).toEqual(['key', 'title', 'age', 'updated'])
+    expect(visibleColumns([mkCard(1, { category: 'ui', impact: 'high', estimate_min: 30, assignee_id: 'ag_1' })])).toEqual(['key', 'title', 'category', 'payoff', 'estimate', 'age', 'assignee', 'updated'])
+  })
+  test('a header cycles first direction, other direction, then back to state order', () => {
+    // Board handler: same key toggles direction, a new key starts at its first direction.
+    expect(nextSort('state', 'asc', 'title')).toBe('title')
+    expect(nextSort('title', 'asc', 'title')).toBe('title') // asc is first: click flips to desc (board toggles)
+    expect(nextSort('title', 'desc', 'title')).toBe('state')
+    expect(nextSort('payoff', 'desc', 'payoff')).toBe('payoff')
+    expect(nextSort('payoff', 'asc', 'payoff')).toBe('state')
   })
 })

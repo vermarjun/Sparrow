@@ -1,22 +1,23 @@
 import { type RefObject } from 'react'
-import { ArrowUpDown, Check, ChevronLeft, ChevronRight, Columns3, Keyboard, List, Plus, Search, Tag, User, X } from 'lucide-react'
-import type { Agent, Card } from '@shared/types'
+import { ArrowUpDown, Columns3, List, Plus, Search, SlidersHorizontal, X } from 'lucide-react'
+import type { Agent } from '@shared/types'
 import { CARD_SORTS, type CardSort } from '@shared/cards'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { type BoardFilters, hasFilters, NO_FILTERS } from '@/lib/boardFilter'
+import { Switch } from '@/components/ui/switch'
+import { type BoardFilters, hasFilters, NO_FILTERS, popoverFilterCount, type Summary } from '@/lib/boardFilter'
 import type { BoardPrefs } from '@/lib/boardPrefs'
-import { TRIAGE_KEYS } from '@/lib/triage'
+import { COLUMN_BY_STATE } from '@/lib/boardStyle'
+import type { SwatchKind } from '@/lib/swatchStyle'
 import { cn } from '@/lib/utils'
-import { Insights } from './Insights'
 import { CategoryChip, Segmented } from './markers'
 import { Swatch } from './swatch'
-import type { SwatchKind } from '@/lib/swatchStyle'
 
-export interface Counts { urgent: number; blocked: number; quick: number; later: number }
+type Update = (fn: (p: BoardPrefs) => BoardPrefs) => void
 
-function FilterChip({ on, onClick, kind, label, count, tone, hint }: { on: boolean; onClick: () => void; kind: SwatchKind; label: string; count: number; tone: string; hint?: string }) {
+/** One count of the title line: a toggle with its swatch dot; on = coloured text and an underline. */
+function SummaryToggle({ kind, on, onClick, count, word, tone, hint }: { kind: SwatchKind; on: boolean; onClick: () => void; count: number; word: string; tone: string; hint: string }) {
   return (
     <button
       type="button"
@@ -25,182 +26,216 @@ function FilterChip({ on, onClick, kind, label, count, tone, hint }: { on: boole
       title={hint}
       onClick={onClick}
       className={cn(
-        'inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium whitespace-nowrap transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none',
-        on ? tone : 'border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50',
+        'inline-flex h-6 items-center gap-1.5 rounded-md px-1 text-xs whitespace-nowrap transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none',
+        on ? cn('font-medium underline decoration-2 underline-offset-[5px]', tone) : 'text-zinc-500 hover:text-zinc-800',
       )}
     >
-      <Swatch kind={kind} />
-      {label}
-      <span className={cn('tabular-nums', on ? 'opacity-80' : 'text-zinc-400')}>{count}</span>
+      <Swatch kind={kind} shape="dot" />
+      <span className="tabular-nums">{count}</span> {word}
     </button>
   )
 }
 
-export function Toolbar({ prefs, update, categories, agents, counts, searchRef }: {
-  prefs: BoardPrefs
-  update: (fn: (p: BoardPrefs) => BoardPrefs) => void
-  categories: string[]
-  agents: Agent[]
-  counts: Counts
-  searchRef: RefObject<HTMLInputElement | null>
-}) {
+/** `Board  30 tickets · 4 urgent · 3 blocked · 4 later`: the urgent / blocked / later counts are the filter. */
+function Title({ summary, prefs, update }: { summary: Summary; prefs: BoardPrefs; update: Update }) {
   const f = prefs.filters
   const setF = (patch: Partial<BoardFilters>) => update((p) => ({ ...p, filters: { ...p.filters, ...patch } }))
-  const laterOn = prefs.laterOpen.proposed && prefs.laterOpen.todo
-  const toggleCat = (c: string) => setF({ categories: f.categories.includes(c.toLowerCase()) ? f.categories.filter((x) => x !== c.toLowerCase()) : [...f.categories, c.toLowerCase()] })
+  const laterOn = prefs.laterOpen.proposed || prefs.laterOpen.todo
+  const head = summary.shown === summary.total ? `${summary.total} ticket${summary.total === 1 ? '' : 's'}` : `${summary.shown} of ${summary.total} tickets`
+  const parts = [
+    (summary.urgent > 0 || f.urgent) && (
+      <SummaryToggle key="urgent" kind="urgent" on={f.urgent} onClick={() => setF({ urgent: !f.urgent })} count={summary.urgent} word="urgent" tone="text-red-700 decoration-red-500" hint={f.urgent ? 'Show all tickets again' : 'Show only urgent tickets'} />
+    ),
+    (summary.blocked > 0 || f.blocked) && (
+      <SummaryToggle key="blocked" kind="blocked" on={f.blocked} onClick={() => setF({ blocked: !f.blocked })} count={summary.blocked} word="blocked" tone="text-orange-700 decoration-orange-500" hint={f.blocked ? 'Show all tickets again' : 'Show only blocked tickets'} />
+    ),
+    (summary.later > 0 || laterOn) && (
+      <SummaryToggle key="later" kind="later" on={laterOn} onClick={() => update((p) => ({ ...p, laterOpen: { proposed: !laterOn, todo: !laterOn } }))} count={summary.later} word="later" tone="text-slate-700 decoration-slate-400" hint={laterOn ? 'Hide the Later lists' : 'Show the Later lists'} />
+    ),
+  ].filter(Boolean)
   return (
-    <div className="flex shrink-0 flex-wrap items-center gap-2 px-4 pb-2.5" data-testid="toolbar">
-      <div className="relative">
-        <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-zinc-400" />
-        <input
-          ref={searchRef}
-          value={f.q}
-          onChange={(e) => setF({ q: e.target.value })}
-          onKeyDown={(e) => { if (e.key === 'Escape') { if (f.q) setF({ q: '' }); else e.currentTarget.blur() } }}
-          placeholder="Search tickets"
-          aria-label="Search tickets"
-          data-testid="search"
-          className="h-7 w-56 rounded-lg border border-zinc-200 bg-white pr-8 pl-7 text-xs outline-none placeholder:text-zinc-400 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/40"
-        />
-        {f.q ? (
-          <button type="button" aria-label="Clear search" onClick={() => setF({ q: '' })} className="absolute top-1/2 right-1.5 grid size-4 -translate-y-1/2 place-items-center rounded text-zinc-400 hover:text-zinc-700"><X className="size-3" /></button>
-        ) : (
-          <kbd className="pointer-events-none absolute top-1/2 right-1.5 -translate-y-1/2 rounded border border-zinc-200 bg-zinc-50 px-1 font-mono text-[10px] text-zinc-400">/</kbd>
-        )}
-      </div>
-
-      {prefs.view === 'board' && (
-        <Select value={prefs.sort} onValueChange={(v) => update((p) => ({ ...p, sort: v as CardSort }))}>
-          <SelectTrigger size="sm" aria-label="Sort" data-testid="sort" className="h-7 w-auto gap-1.5 bg-white text-xs [&_svg:not([class*='size-'])]:size-3.5">
-            <ArrowUpDown className="text-zinc-400" />
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent position="popper" align="start">
-            {CARD_SORTS.map((s) => <SelectItem key={s.id} value={s.id} className="text-xs">{s.label}</SelectItem>)}
-          </SelectContent>
-        </Select>
+    <div className="flex min-w-0 items-center gap-1.5">
+      <h1 className="mr-1 text-sm font-semibold">Board</h1>
+      <span className="text-xs whitespace-nowrap text-zinc-500" data-testid="summary">{head}</span>
+      {parts.map((part, i) => (
+        <span key={i} className="flex items-center gap-1.5">
+          <span aria-hidden className="text-zinc-300">·</span>
+          {part}
+        </span>
+      ))}
+      {f.state && (
+        <button
+          type="button"
+          data-testid="state-filter"
+          onClick={() => setF({ state: null })}
+          title="Show every state again"
+          className="ml-1 inline-flex h-5 items-center gap-1 rounded-full bg-zinc-100 pr-1.5 pl-2 text-[11px] font-medium text-zinc-600 hover:bg-zinc-200"
+        >
+          {COLUMN_BY_STATE[f.state].name}
+          <X className="size-3" />
+        </button>
       )}
-
-      <span className="mx-0.5 h-4 w-px bg-zinc-200" />
-      <FilterChip kind="urgent" on={f.urgent} onClick={() => setF({ urgent: !f.urgent })} label="Urgent" count={counts.urgent} tone="border-red-300 bg-red-50 text-red-700" />
-      <FilterChip kind="blocked" on={f.blocked} onClick={() => setF({ blocked: !f.blocked })} label="Blocked" count={counts.blocked} tone="border-orange-300 bg-orange-50 text-orange-700" />
-      <FilterChip kind="quick" on={f.quick} onClick={() => setF({ quick: !f.quick })} label="Quick wins" count={counts.quick} tone="border-emerald-300 bg-emerald-50 text-emerald-700" />
-      <FilterChip kind="later" on={laterOn} onClick={() => update((p) => ({ ...p, laterOpen: { proposed: !laterOn, todo: !laterOn } }))} label="Later" count={counts.later} tone="border-slate-300 bg-slate-100 text-slate-700" hint={laterOn ? 'Hide the Later lists' : 'Show the Later lists'} />
-
-      <Popover>
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            data-filter="category"
-            className={cn(
-              'inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none [&_svg]:size-3.5',
-              f.categories.length ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : 'border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50',
-            )}
-          >
-            <Tag />
-            {f.categories.length === 1 ? f.categories[0] : f.categories.length > 1 ? `${f.categories.length} categories` : 'Category'}
-          </button>
-        </PopoverTrigger>
-        <PopoverContent className="w-52" align="start">
-          {categories.length === 0 && <p className="px-2 py-1.5 text-xs text-muted-foreground">No categories yet.</p>}
-          {categories.map((c) => {
-            const on = f.categories.includes(c.toLowerCase())
-            return (
-              <button key={c} type="button" onClick={() => toggleCat(c)} aria-pressed={on} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-zinc-100">
-                <span className={cn('grid size-3.5 place-items-center rounded border', on ? 'border-indigo-500 bg-indigo-500 text-white' : 'border-zinc-300')}>{on && <Check className="size-3" />}</span>
-                <CategoryChip name={c} />
-              </button>
-            )
-          })}
-        </PopoverContent>
-      </Popover>
-
-      <Select value={f.assignee ?? 'any'} onValueChange={(v) => setF({ assignee: v === 'any' ? null : v })}>
-        <SelectTrigger size="sm" aria-label="Assignee" data-testid="assignee-filter" className={cn('h-7 w-auto gap-1.5 bg-white text-xs [&_svg:not([class*="size-"])]:size-3.5', f.assignee && 'border-indigo-300 bg-indigo-50 text-indigo-700')}>
-          <User className="text-zinc-400" />
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent position="popper" align="start">
-          <SelectItem value="any" className="text-xs">Anyone</SelectItem>
-          <SelectItem value="none" className="text-xs">Unassigned</SelectItem>
-          {agents.map((a) => <SelectItem key={a.id} value={a.id} className="text-xs">@{a.handle}</SelectItem>)}
-        </SelectContent>
-      </Select>
-
-      {hasFilters(f) && (
-        <Button variant="ghost" size="xs" className="text-zinc-500" data-testid="clear-filters" onClick={() => setF({ ...NO_FILTERS })}>
-          <X /> Clear
-        </Button>
+      {(hasFilters(f) || prefs.showDropped) && (
+        <button
+          type="button"
+          data-testid="clear-filters"
+          onClick={() => update((p) => ({ ...p, showDropped: false, filters: { ...NO_FILTERS } }))}
+          className="ml-1 rounded-md px-1 text-xs text-zinc-400 hover:text-zinc-700 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+        >
+          Clear
+        </button>
       )}
-
-      {prefs.view === 'board' && <KeyboardHint />}
     </div>
   )
 }
 
-/** "Keyboard: j/k a l d u": the triage keys of the board, in a popover. */
-function KeyboardHint() {
+/** A toggle chip of the Filter popover: on = ringed (categories keep their own colour) or filled dark (assignees). */
+function Chip({ on, onClick, children, className }: { on: boolean; onClick: () => void; children: React.ReactNode; className?: string }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      onClick={onClick}
+      className={cn('rounded-md transition-shadow focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none', on ? 'ring-2 ring-zinc-900 ring-offset-1' : 'opacity-80 hover:opacity-100', className)}
+    >
+      {children}
+    </button>
+  )
+}
+
+const Label = ({ children }: { children: React.ReactNode }) => <p className="px-2 pt-1.5 pb-1 text-[11px] font-medium text-zinc-400">{children}</p>
+
+/** Category, Assignee, Quick wins and Show dropped: everything that is not the title line's counts. */
+function FilterPopover({ prefs, update, categories, agents, quickCount, droppedCount }: { prefs: BoardPrefs; update: Update; categories: string[]; agents: Agent[]; quickCount: number; droppedCount: number }) {
+  const f = prefs.filters
+  const setF = (patch: Partial<BoardFilters>) => update((p) => ({ ...p, filters: { ...p.filters, ...patch } }))
+  const n = popoverFilterCount(f, prefs.showDropped)
+  const toggleCat = (c: string) => {
+    const k = c.toLowerCase()
+    setF({ categories: f.categories.includes(k) ? f.categories.filter((x) => x !== k) : [...f.categories, k] })
+  }
   return (
     <Popover>
       <PopoverTrigger asChild>
         <button
           type="button"
-          data-testid="keyboard-hint"
-          className="ml-auto inline-flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none [&_svg]:size-3.5"
+          data-testid="filter"
+          aria-label={n ? `Filter, ${n} on` : 'Filter'}
+          className={cn(
+            'inline-flex h-7 items-center gap-1.5 rounded-lg border bg-white px-2.5 text-xs font-medium transition-colors hover:bg-zinc-50 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none [&_svg]:size-3.5',
+            n ? 'border-zinc-900 text-zinc-900' : 'border-zinc-200 text-zinc-600',
+          )}
         >
-          <Keyboard />
-          Keyboard: <span className="font-mono text-[11px] tracking-tight">j/k a l d u</span>
+          <SlidersHorizontal className={n ? '' : 'text-zinc-400'} />
+          Filter
+          {n > 0 && <span className="grid size-4 place-items-center rounded-full bg-zinc-900 text-[10px] text-white tabular-nums" data-testid="filter-count">{n}</span>}
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-72" align="end" data-testid="keyboard-help">
-        <p className="px-1 pb-1.5 text-xs font-semibold text-zinc-700">Triage from the keyboard</p>
-        <dl className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1.5 px-1 text-xs">
-          {TRIAGE_KEYS.map(([keys, what]) => (
-            <div key={keys} className="contents">
-              <dt><kbd className="rounded border border-zinc-200 bg-zinc-50 px-1.5 py-px font-mono text-[11px] whitespace-nowrap text-zinc-600">{keys}</kbd></dt>
-              <dd className="text-zinc-600">{what}</dd>
+      <PopoverContent className="w-72 p-1.5" align="end" data-testid="filter-popover">
+        {categories.length > 0 && (
+          <>
+            <Label>Category</Label>
+            <div className="flex flex-wrap gap-1.5 px-2 pb-1.5" role="group" aria-label="Category">
+              {categories.map((c) => <Chip key={c} on={f.categories.includes(c.toLowerCase())} onClick={() => toggleCat(c)}><CategoryChip name={c} /></Chip>)}
             </div>
+          </>
+        )}
+        <Label>Assignee</Label>
+        <div className="flex flex-wrap gap-1.5 px-2 pb-1.5" role="group" aria-label="Assignee">
+          {[{ id: 'none', label: 'Unassigned' }, ...agents.map((a) => ({ id: a.id, label: `@${a.handle}` }))].map((o) => (
+            <Chip key={o.id} on={f.assignee === o.id} onClick={() => setF({ assignee: f.assignee === o.id ? null : o.id })} className="bg-zinc-100 px-1.5 py-px text-[11px] font-medium text-zinc-700">{o.label}</Chip>
           ))}
-        </dl>
-        <p className="px-1 pt-2 text-[11px] text-zinc-400">a, l, d work on Proposed and To do cards. Keys pause while a field or the ticket sheet is open.</p>
+        </div>
+        <div className="mt-1.5 border-t border-zinc-100 pt-1">
+          <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-zinc-100">
+            <Swatch kind="quick" shape="dot" />
+            <span className="flex-1">Quick wins only</span>
+            <span className="text-zinc-400 tabular-nums">{quickCount}</span>
+            <Switch checked={f.quick} onCheckedChange={(quick) => setF({ quick })} aria-label="Quick wins only" data-testid="filter-quick" />
+          </label>
+          <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-zinc-100">
+            <span className="flex-1">Show dropped</span>
+            <span className="text-zinc-400 tabular-nums">{droppedCount}</span>
+            <Switch checked={prefs.showDropped} onCheckedChange={(showDropped) => update((p) => ({ ...p, showDropped }))} aria-label="Show dropped" data-testid="filter-dropped" />
+          </label>
+        </div>
+        {n > 0 && (
+          <button
+            type="button"
+            data-testid="filter-reset"
+            onClick={() => update((p) => ({ ...p, showDropped: false, filters: { ...p.filters, categories: [], assignee: null, quick: false } }))}
+            className="mt-1 w-full rounded-md px-2 py-1.5 text-left text-xs text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800"
+          >
+            Reset these filters
+          </button>
+        )}
       </PopoverContent>
     </Popover>
   )
 }
 
-export function BoardHeader({ summary, prefs, update, droppedCount, onNew, cards }: {
-  cards: Card[]
-  summary: string
+/**
+ * The one chrome row: the title line (whose counts filter) on the left; Search · Filter · Sort · Board|List · New ticket on the right.
+ * Nothing else lives up here: keys are on `?`, the Insights line is in the Done header's tooltip.
+ */
+export function Toolbar({ prefs, update, categories, agents, summary, quickCount, droppedCount, searchRef, onNew }: {
   prefs: BoardPrefs
-  update: (fn: (p: BoardPrefs) => BoardPrefs) => void
+  update: Update
+  categories: string[]
+  agents: Agent[]
+  summary: Summary
+  quickCount: number
   droppedCount: number
+  searchRef: RefObject<HTMLInputElement | null>
   onNew: () => void
 }) {
+  const f = prefs.filters
+  const setF = (patch: Partial<BoardFilters>) => update((p) => ({ ...p, filters: { ...p.filters, ...patch } }))
   return (
-    <div className="flex h-11 shrink-0 items-center gap-3 px-4">
-      <h1 className="text-sm font-semibold">Board</h1>
-      <span className="text-xs text-zinc-500" data-testid="summary">{summary}</span>
+    <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 px-4 pt-3 pb-3" data-testid="toolbar">
+      <Title summary={summary} prefs={prefs} update={update} />
       <div className="ml-auto flex items-center gap-2">
-        <Segmented
-          label="Density"
-          value={prefs.density}
-          onChange={(density) => update((p) => ({ ...p, density }))}
-          options={[{ id: 'compact', label: 'Compact' }, { id: 'detailed', label: 'Detailed' }]}
-        />
+        <div className="relative">
+          <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-zinc-400" />
+          <input
+            ref={searchRef}
+            value={f.q}
+            onChange={(e) => setF({ q: e.target.value })}
+            onKeyDown={(e) => { if (e.key === 'Escape') { if (f.q) setF({ q: '' }); else e.currentTarget.blur() } }}
+            placeholder="Search"
+            aria-label="Search tickets"
+            data-testid="search"
+            className="h-7 w-44 rounded-lg border border-zinc-200 bg-white pr-8 pl-7 text-xs outline-none placeholder:text-zinc-400 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/40"
+          />
+          {f.q ? (
+            <button type="button" aria-label="Clear search" onClick={() => setF({ q: '' })} className="absolute top-1/2 right-1.5 grid size-4 -translate-y-1/2 place-items-center rounded text-zinc-400 hover:text-zinc-700"><X className="size-3" /></button>
+          ) : (
+            <kbd className="pointer-events-none absolute top-1/2 right-1.5 -translate-y-1/2 rounded border border-zinc-200 bg-zinc-50 px-1 font-mono text-[10px] text-zinc-400">/</kbd>
+          )}
+        </div>
+
+        <FilterPopover prefs={prefs} update={update} categories={categories} agents={agents} quickCount={quickCount} droppedCount={droppedCount} />
+
+        {prefs.view === 'board' && (
+          <Select value={prefs.sort} onValueChange={(v) => update((p) => ({ ...p, sort: v as CardSort }))}>
+            <SelectTrigger size="sm" aria-label="Sort" data-testid="sort" className="h-7 w-auto gap-1.5 bg-white text-xs [&_svg:not([class*='size-'])]:size-3.5">
+              <ArrowUpDown className="text-zinc-400" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent position="popper" align="end">
+              {CARD_SORTS.map((s) => <SelectItem key={s.id} value={s.id} className="text-xs">{s.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        )}
+
         <Segmented
           label="View"
           value={prefs.view}
           onChange={(view) => update((p) => ({ ...p, view }))}
           options={[{ id: 'board', label: 'Board', icon: <Columns3 className="size-3.5" /> }, { id: 'list', label: 'List', icon: <List className="size-3.5" /> }]}
         />
-        <Insights cards={cards} />
-        <Button variant="ghost" size="sm" className="text-zinc-500" data-testid="toggle-dropped" aria-pressed={prefs.showDropped} onClick={() => update((p) => ({ ...p, showDropped: !p.showDropped }))}>
-          {prefs.showDropped ? <ChevronRight /> : <ChevronLeft />}
-          Dropped{droppedCount ? ` (${droppedCount})` : ''}
-        </Button>
         <Button size="sm" data-testid="new-ticket" onClick={onNew}>
           <Plus /> New ticket
-          <kbd className="ml-1 rounded bg-white/20 px-1 font-mono text-[10px]">N</kbd>
         </Button>
       </div>
     </div>

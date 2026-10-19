@@ -1,6 +1,7 @@
 // Pure triage logic: board-order focus walking, keyboard → action mapping, and the per-column planning stats shown in headers.
 // (Unit-tested in web/test/triage.test.ts; the DOM wiring lives in pages/Board.tsx.)
 import type { Card, CardLevel, CardPatchReq, CardState } from '@shared/types'
+import { cardKey } from '@shared/cards'
 import { LATER_STATES, type ColumnView, isLive, isShelved } from './boardFilter'
 
 export const STALE_DAYS = 14
@@ -95,15 +96,47 @@ export function triageAction(e: KeyLike, card: Card | null): TriageAction | null
   return null
 }
 
-/** The keys the toolbar popover lists: [keys, what]. */
-export const TRIAGE_KEYS: [string, string][] = [
-  ['j / k   ↓ / ↑', 'Next / previous card'],
-  ['Enter', 'Open the ticket'],
-  ['a', 'Accept to To do'],
-  ['l', 'Toggle Later'],
-  ['d', 'Drop (Undo in the toast)'],
-  ['u', 'Toggle urgent'],
-  ['1 2 3', 'Return: low / medium / high'],
-  ['⇧1 ⇧2 ⇧3', 'Effort: low / medium / high'],
-  ['Esc', 'Clear the focus'],
+// ---------------------------------------------------------------- undo
+
+/** The toast text and the PATCH body that reverts a key action on `card` (null = the body changes nothing we can undo). */
+export function patchUndo(card: Card, body: CardPatchReq): { label: string; undo: CardPatchReq } | null {
+  const key = cardKey(card)
+  if (body.urgent !== undefined) return { label: `${key} ${body.urgent ? 'marked urgent' : 'no longer urgent'}`, undo: { urgent: card.urgent } }
+  if (body.impact !== undefined) return { label: `${key} return ${body.impact ?? 'cleared'}`, undo: { impact: card.impact } }
+  if (body.effort !== undefined) return { label: `${key} effort ${body.effort ?? 'cleared'}`, undo: { effort: card.effort } }
+  return null
+}
+
+// ---------------------------------------------------------------- shortcut sheet
+
+export interface ShortcutGroup { title: string; keys: [string, string][] }
+
+/** Every key the board and Triage mode answer to, as the `?` sheet lists them. */
+export const SHORTCUT_GROUPS: ShortcutGroup[] = [
+  { title: 'Board', keys: [
+    ['/', 'Search'],
+    ['n', 'New ticket'],
+    ['t', 'Triage the Proposed tickets'],
+    ['?', 'This sheet'],
+  ] },
+  { title: 'Move around', keys: [
+    ['j / ↓', 'Next card'],
+    ['k / ↑', 'Previous card'],
+    ['Enter', 'Open the ticket'],
+    ['Esc', 'Clear the focus'],
+  ] },
+  { title: 'Act on the focused card', keys: [
+    ['a', 'Accept to To do'],
+    ['l', 'Later: shelve or bring back'],
+    ['d', 'Drop'],
+    ['u', 'Toggle urgent'],
+    ['1 2 3', 'Return: low / medium / high'],
+    ['⇧1 ⇧2 ⇧3', 'Effort: low / medium / high'],
+  ] },
+  { title: 'In Triage', keys: [
+    ['j / k', 'Next / previous ticket'],
+    ['a  l  d  u  b', 'Accept, Later, Drop, Urgent, Blocked'],
+    ['1-3  ⇧1-3', 'Return, effort'],
+    ['Esc', 'Back to the board'],
+  ] },
 ]

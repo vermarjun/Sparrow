@@ -11,12 +11,18 @@ export interface BoardFilters {
   categories: string[]
   /** Agent id, 'none' (unassigned) or null (anyone). */
   assignee: string | null
+  /** Only this column's tickets (set by the Done column's "N older" link; never persisted, like `q`). */
+  state: CardState | null
 }
 
-export const NO_FILTERS: BoardFilters = { q: '', urgent: false, blocked: false, quick: false, categories: [], assignee: null }
+export const NO_FILTERS: BoardFilters = { q: '', urgent: false, blocked: false, quick: false, categories: [], assignee: null, state: null }
 
 export const hasFilters = (f: BoardFilters) =>
-  !!f.q.trim() || f.urgent || f.blocked || f.quick || f.categories.length > 0 || f.assignee !== null
+  !!f.q.trim() || f.urgent || f.blocked || f.quick || f.categories.length > 0 || f.assignee !== null || f.state !== null
+
+/** How many of the Filter popover's four settings are on (category, assignee, quick wins, show dropped): the badge on its button. */
+export const popoverFilterCount = (f: BoardFilters, showDropped: boolean) =>
+  (f.categories.length ? 1 : 0) + (f.assignee ? 1 : 0) + (f.quick ? 1 : 0) + (showDropped ? 1 : 0)
 
 /** The text a search runs over: key, title, every section, checks, tags, category. */
 export function searchText(c: Card): string {
@@ -46,7 +52,8 @@ export function matchesQuery(c: Card, q: string): boolean {
 export function cardMatches(c: Card, f: BoardFilters): boolean {
   if (f.urgent && !(c.urgent && isLive(c))) return false
   if (f.blocked && !(c.blocked_on && isLive(c))) return false
-  if (f.quick && !isQuickWin(c)) return false
+  if (f.quick && !(isQuickWin(c) && isLive(c))) return false
+  if (f.state && c.state !== f.state) return false
   if (f.categories.length && !(c.category && f.categories.includes(c.category.toLowerCase()))) return false
   if (f.assignee === 'none' && c.assignee_id) return false
   if (f.assignee && f.assignee !== 'none' && c.assignee_id !== f.assignee) return false
@@ -114,4 +121,13 @@ export function summarize(visible: Card[], all: Card[]): Summary {
 export function summaryText(s: Summary): string {
   const head = s.shown === s.total ? `${s.total} ticket${s.total === 1 ? '' : 's'}` : `${s.shown} of ${s.total} tickets`
   return [head, s.urgent && `${s.urgent} urgent`, s.blocked && `${s.blocked} blocked`, s.later && `${s.later} later`].filter(Boolean).join(' · ')
+}
+
+/**
+ * The numbers behind the title line. The urgent / blocked / later counts ignore the urgent and blocked toggles themselves
+ * (so switching one on does not zero the others); they still follow search, category, assignee, quick wins and state.
+ */
+export function summaryCounts(scope: Card[], f: BoardFilters): Summary {
+  const base = filterCards(scope, { ...f, urgent: false, blocked: false })
+  return { ...summarize(base, base), total: scope.length, shown: filterCards(base, { ...NO_FILTERS, urgent: f.urgent, blocked: f.blocked }).length }
 }

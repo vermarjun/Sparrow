@@ -57,3 +57,25 @@ export const listSortLabel = (key: ListKey) => ({
 }[key])
 
 export const listKeyFor = (card: Pick<Card, 'id' | 'project_id'>) => cardKey(card)
+
+// ---------------------------------------------------------------- the list's columns and sort cycle
+
+export type ListCol = 'key' | 'title' | 'category' | 'payoff' | 'estimate' | 'age' | 'assignee' | 'updated'
+const firstDir = (k: ListKey): ListDirection => (k === 'payoff' ? 'desc' : 'asc')
+
+/** The list groups rows by state, so there is no State column; optional columns that are empty for every ticket are hidden. */
+export function visibleColumns(cards: Card[]): ListCol[] {
+  const has = {
+    category: cards.some((c) => c.category),
+    payoff: cards.some((c) => c.impact || c.effort),
+    estimate: cards.some((c) => c.estimate_min),
+    assignee: cards.some((c) => c.assignee_id),
+  }
+  const all: ListCol[] = ['key', 'title', 'category', 'payoff', 'estimate', 'age', 'assignee', 'updated']
+  return all.filter((c) => !(c in has) || has[c as keyof typeof has])
+}
+
+/** Header click cycle: first direction, then the other, then back to the default (state order). Returns the key to hand to `onSort`. */
+export function nextSort(active: ListKey, dir: ListDirection, clicked: ListKey): ListKey {
+  return active === clicked && dir !== firstDir(clicked) ? 'state' : clicked
+}

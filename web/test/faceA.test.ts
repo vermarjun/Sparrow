@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { CardLevel } from '@shared/types'
 import { CATEGORY_PALETTE } from '../src/lib/boardStyle'
-import { AVATAR_TONES, CATEGORY_DOTS, assigneeTip, avatarTone, categoryDot, initials, partialOf, payoffOf, payoffTip, railOf, railTip } from '../src/lib/faceA'
+import { AVATAR_TONE, CATEGORY_DOTS, assigneeTip, categoryDot, initials, partialOf, payoffOf, payoffSentence, payoffTip, railOf, railTip } from '../src/lib/faceA'
 
 const L: CardLevel[] = ['high', 'medium', 'low']
 const E: CardLevel[] = ['low', 'medium', 'high']
@@ -33,6 +33,20 @@ describe('payoff matrix', () => {
   })
 })
 
+describe('face vocabulary', () => {
+  test('only the words that change a decision show on the face', () => {
+    const faceWords = (['high', 'medium', 'low'] as const).flatMap((i) => (['low', 'medium', 'high'] as const).map((e) => payoffOf({ impact: i, effort: e }))).filter((p) => p?.face).map((p) => p!.label)
+    expect([...new Set(faceWords)].sort()).toEqual(['Big bet', 'Heavy lift', 'Money pit', 'Quick win', 'Worth it'])
+    expect(payoffOf({ impact: 'medium', effort: 'medium' })?.face).toBe(false)
+    expect(payoffOf({ impact: 'low', effort: 'low' })?.face).toBe(false)
+  })
+  test('peek sentence', () => {
+    expect(payoffSentence({ impact: 'high', effort: 'low' })).toBe('Return high · Effort low → Quick win')
+    expect(payoffSentence({ impact: 'high', effort: null })).toBe('Return high')
+    expect(payoffSentence({ impact: null, effort: null })).toBe('')
+  })
+})
+
 describe('rail', () => {
   const now = 10 * 86400000
   const base = { urgent: false, blocked_on: null, blocked_at: null, state: 'todo' as const }
@@ -60,9 +74,8 @@ describe('people and categories', () => {
     expect(initials('a')).toBe('A')
     expect(initials('--')).toBe('?')
   })
-  test('avatar colour is stable and in the palette', () => {
-    expect(avatarTone('james')).toBe(avatarTone('James'))
-    for (const h of ['a', 'maya', 'captain', 'x'.repeat(24)]) expect(AVATAR_TONES).toContain(avatarTone(h) as (typeof AVATAR_TONES)[number])
+  test('avatars are one neutral tone', () => {
+    expect(AVATAR_TONE).toMatch(/zinc/)
   })
   test('category dots line up with the chip palette', () => {
     expect(CATEGORY_DOTS.length).toBe(CATEGORY_PALETTE.length)

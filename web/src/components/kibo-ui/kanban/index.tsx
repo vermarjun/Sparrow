@@ -93,6 +93,8 @@ export type KanbanCardProps<T extends KanbanItemProps = KanbanItemProps> = T & {
   className?: string;
   // Sparrow edit: Enter on the focused card opens it (Space is what picks it up for a keyboard drag).
   onActivate?: () => void;
+  // Sparrow edit: extra classes for the card that follows the pointer while dragging (the "lift").
+  overlayClassName?: string;
 };
 
 export const KanbanCard = <T extends KanbanItemProps = KanbanItemProps>({
@@ -101,6 +103,7 @@ export const KanbanCard = <T extends KanbanItemProps = KanbanItemProps>({
   children,
   className,
   onActivate,
+  overlayClassName,
 }: KanbanCardProps<T>) => {
   const {
     attributes,
@@ -149,7 +152,8 @@ export const KanbanCard = <T extends KanbanItemProps = KanbanItemProps>({
             className={cn(
               "cursor-grab gap-4 rounded-md p-3 shadow-sm ring-2 ring-primary",
               isDragging && "cursor-grabbing",
-              className
+              className,
+              overlayClassName
             )}
           >
             {children ?? <p className="m-0 font-medium text-sm">{name}</p>}

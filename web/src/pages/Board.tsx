@@ -1,16 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { isQuickWin } from '@shared/cards'
-import { Toolbar, BoardHeader } from '@/components/board/Toolbar'
+import { Toolbar } from '@/components/board/Toolbar'
 import { BoardColumns } from '@/components/board/BoardColumns'
 import { ListView } from '@/components/board/ListView'
 import { NewTicketDialog } from '@/components/board/NewTicketDialog'
+import { ShortcutSheet } from '@/components/board/ShortcutSheet'
 import { TicketSheet } from '@/components/board/TicketSheet'
+import { TriageView } from '@/components/board/TriageView'
 import { useBoardPrefs } from '@/components/board/usePrefs'
 import type { FaceActions } from '@/components/board/CardFace'
 import { useNow } from '@/components/sparrow/bits'
-import { categoriesOf, filterCards, groupColumns, hasFilters, isLive, isShelved, summarize, summaryText } from '@/lib/boardFilter'
+import { categoriesOf, filterCards, groupColumns, hasFilters, isLive, isShelved, summaryCounts } from '@/lib/boardFilter'
+import { capDone } from '@/lib/boardView'
 import { COLUMNS } from '@/lib/boardStyle'
-import { patchCard, quickMove, setLater } from '@/lib/cardActions'
+import { quickMove, setLater } from '@/lib/cardActions'
+import { patchWithUndo } from '@/lib/keyActions'
 import { boardOrder, focusAfterRemoval, stepFocus, triageAction } from '@/lib/triage'
 import { useStore } from '@/lib/store'
 
@@ -27,6 +31,8 @@ export function BoardPage() {
   const [prefs, update] = useBoardPrefs(project)
   const [open, setOpen] = useState<number | null>(null)
   const [creating, setCreating] = useState(false)
+  const [help, setHelp] = useState(false)
+  const [triage, setTriage] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
   const [focusId, setFocusId] = useState<number | null>(null)
 
@@ -34,26 +40,27 @@ export function BoardPage() {
   const scope = useMemo(() => (prefs.showDropped ? all : all.filter((c) => c.state !== 'dropped')), [all, prefs.showDropped])
   const filtered = useMemo(() => filterCards(scope, prefs.filters), [scope, prefs.filters])
   const groups = useMemo(() => groupColumns(filtered, prefs.sort), [filtered, prefs.sort])
-  const counts = useMemo(() => {
-    const s = summarize(scope, scope)
-    return { urgent: s.urgent, blocked: s.blocked, quick: scope.filter((c) => isLive(c) && isQuickWin(c)).length, later: s.later }
-  }, [scope])
-  const summary = summaryText(summarize(filtered, scope))
+  const summary = useMemo(() => summaryCounts(scope, prefs.filters), [scope, prefs.filters])
+  const quickCount = useMemo(() => scope.filter((c) => isLive(c) && isQuickWin(c)).length, [scope])
   const categories = useMemo(() => categoriesOf(all), [all])
   const agentList = useMemo(() => Object.values(agents).filter((a) => a.state !== 'retired'), [agents])
   const droppedCount = useMemo(() => all.filter((c) => c.state === 'dropped').length, [all])
   const columns = prefs.showDropped ? COLUMNS : COLUMNS.filter((c) => c.id !== 'dropped')
 
-  // `/` focuses search, `n` opens the new-ticket dialog (not while typing or while a sheet / dialog is open).
+  // `/` focuses search, `n` opens the new-ticket dialog, `t` Triage mode, `?` the shortcut sheet (not while typing or while a sheet / dialog
+  // is open). Triage mode owns its keys: only `?` stays on there.
   useEffect(() => {
     const on = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey || typing(e.target) || document.querySelector('[role=dialog]')) return
+      if (e.key === '?') { e.preventDefault(); setHelp(true); return }
+      if (triage) return
       if (e.key === '/') { e.preventDefault(); searchRef.current?.focus() }
       else if (e.key === 'n') { e.preventDefault(); setCreating(true) }
+      else if (e.key === 't') { e.preventDefault(); setTriage(true) }
     }
     window.addEventListener('keydown', on)
     return () => window.removeEventListener('keydown', on)
-  }, [])
+  }, [triage])
 
   const act: FaceActions = {
     accept: (c) => void quickMove(c, 'todo', 'accepted to To do'),
@@ -64,9 +71,10 @@ export function BoardPage() {
 
   // Keyboard triage (board view): j/k move a focus ring through the cards in board order, a/l/d/u/1-3 act on the focused card.
   // The listener is registered once and reads the latest state through a ref.
-  const order = useMemo(() => boardOrder(groups, columns, prefs.laterOpen), [groups, columns, prefs.laterOpen])
-  const live = useRef({ order, board: prefs.view === 'board', focusId, act, open })
-  useEffect(() => { live.current = { order, board: prefs.view === 'board', focusId, act, open } })
+  // j/k skip the Done cards the column folds behind "N older".
+  const order = useMemo(() => boardOrder(capDone(groups, now).groups, columns, prefs.laterOpen), [groups, columns, prefs.laterOpen, now])
+  const live = useRef({ order, board: prefs.view === 'board' && !triage, focusId, act, open })
+  useEffect(() => { live.current = { order, board: prefs.view === 'board' && !triage, focusId, act, open } })
   useEffect(() => {
     const on = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null
@@ -86,17 +94,37 @@ export function BoardPage() {
         case 'accept': if (card) { act.accept(card); advance() } break
         case 'later': if (card) { if (isShelved(card)) act.bringBack(card); else act.later(card); advance() } break
         case 'drop': if (card) { act.drop(card); advance() } break
-        case 'patch': if (card) void patchCard(card.id, a.body); break
+        case 'patch': if (card) void patchWithUndo(card, a.body); break
       }
     }
     window.addEventListener('keydown', on)
     return () => window.removeEventListener('keydown', on)
   }, [])
 
+  const showOlderDone = () => update((p) => ({ ...p, view: 'list', filters: { ...p.filters, state: 'done' } }))
+
+  if (triage) {
+    return (
+      <div className="flex h-full flex-col">
+        <TriageView cards={all} agents={agents} onExit={() => setTriage(false)} />
+        <ShortcutSheet open={help} onOpenChange={setHelp} />
+      </div>
+    )
+  }
+
   return (
     <div className="flex h-full flex-col">
-      <BoardHeader summary={summary} prefs={prefs} update={update} droppedCount={droppedCount} onNew={() => setCreating(true)} cards={all} />
-      <Toolbar prefs={prefs} update={update} categories={categories} agents={agentList} counts={counts} searchRef={searchRef} />
+      <Toolbar
+        prefs={prefs}
+        update={update}
+        categories={categories}
+        agents={agentList}
+        summary={summary}
+        quickCount={quickCount}
+        droppedCount={droppedCount}
+        searchRef={searchRef}
+        onNew={() => setCreating(true)}
+      />
 
       {all.length === 0 && (
         <div className="mx-4 mb-3 rounded-lg border border-dashed bg-background px-4 py-3 text-xs leading-relaxed text-muted-foreground">
@@ -118,6 +146,8 @@ export function BoardPage() {
             act={act}
             onOpen={(id) => { setOpen(id); setFocusId(id) }}
             focusId={focusId}
+            onTriage={() => setTriage(true)}
+            onShowOlderDone={showOlderDone}
             onLaterToggle={(s) => update((p) => ({ ...p, laterOpen: { ...p.laterOpen, [s]: !p.laterOpen[s] } }))}
             emptyText={hasFilters(prefs.filters) ? 'No tickets match the filters.' : null}
           />
@@ -134,6 +164,7 @@ export function BoardPage() {
 
       <TicketSheet cardId={open} onClose={() => setOpen(null)} categories={categories} />
       <NewTicketDialog open={creating} onOpenChange={setCreating} />
+      <ShortcutSheet open={help} onOpenChange={setHelp} />
     </div>
   )
 }

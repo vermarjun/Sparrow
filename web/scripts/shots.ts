@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // Screenshots + drag proof against a running server that serves web/dist (the mock by default).
-//   bun scripts/shots.ts [--url http://127.0.0.1:4140] [--out ../.orchestra/shots/T4] [--project plutus] [--u1 | --u1-only]
-// --v2 runs only the Board v2 pass (compact/detailed board, Later, list, filters, sheets, new-ticket dialog + interaction checks);
+//   bun scripts/shots.ts [--url http://127.0.0.1:4140] [--log <mock url, when --url is vite>] [--out ../.orchestra/shots/T4] [--project plutus] [--u1 | --u1-only]
+// --v2 runs only the Board v2 pass (board, Later, list, Filter popover, title-line toggles, ? sheet, Triage, sheets, new-ticket dialog + interaction checks);
 //   shots land in --out (use ../.orchestra/shots/board-v2 with --size 1440x900 / 1280x800 and --prefix).
 // --u1 adds the U1 pages (Doctor empty → running → results, Resumes, editor, test, Start captain); the mock must
 // start with no doctor run (no --doctor-done). --u1-only skips the board/chat/agents shots.
@@ -15,10 +15,11 @@ const { values } = parseArgs({
   args: Bun.argv.slice(2),
   options: {
     url: { type: 'string' }, out: { type: 'string' }, project: { type: 'string' }, 'no-drag': { type: 'boolean' }, prefix: { type: 'string' },
-    card: { type: 'string' }, v2: { type: 'boolean' }, u1: { type: 'boolean' }, 'u1-only': { type: 'boolean' }, dm: { type: 'string' }, dm2: { type: 'string' }, agent: { type: 'string' }, agent2: { type: 'string' }, dm3: { type: 'string' }, size: { type: 'string' },
+    card: { type: 'string' }, log: { type: 'string' }, v2: { type: 'boolean' }, u1: { type: 'boolean' }, 'u1-only': { type: 'boolean' }, dm: { type: 'string' }, dm2: { type: 'string' }, agent: { type: 'string' }, agent2: { type: 'string' }, dm3: { type: 'string' }, size: { type: 'string' },
   },
 })
 const URL_ = values.url ?? 'http://127.0.0.1:4140'
+const LOG = values.log ?? URL_ // where the mock's /__log lives (--log when --url is a vite dev server)
 const OUT = resolve(values.out ?? join(import.meta.dir, '../../.orchestra/shots/T4'))
 const PROJECT = values.project ?? 'plutus'
 const PREFIX = values.prefix ?? ''
@@ -76,8 +77,8 @@ await shot('board')
 
 if (!values['no-drag']) {
   // Drag the first To-do card into Review, then read the server's request log.
-  const isMock = await fetch(`${URL_}/__log`).then((r) => r.ok && (r.headers.get('content-type') ?? '').includes('json')).catch(() => false)
-  if (isMock) await fetch(`${URL_}/__log/reset`, { method: 'POST' })
+  const isMock = await fetch(`${LOG}/__log`).then((r) => r.ok && (r.headers.get('content-type') ?? '').includes('json')).catch(() => false)
+  if (isMock) await fetch(`${LOG}/__log/reset`, { method: 'POST' })
   const colBox = (id: string) => page.$eval(`[data-column="${id}"]`, (e) => { const r = e.getBoundingClientRect(); return { x: r.x, w: r.width, y: r.y, h: r.height } })
   const todo = await colBox('todo')
   const review = await colBox('review')
@@ -95,7 +96,7 @@ if (!values['no-drag']) {
   await page.mouse.up()
   await sleep(1200)
   await shot('board-after-drag')
-  const log = isMock ? ((await fetch(`${URL_}/__log`).then((r) => r.json())) as { method: string; path: string; body?: unknown }[]) : []
+  const log = isMock ? ((await fetch(`${LOG}/__log`).then((r) => r.json())) as { method: string; path: string; body?: unknown }[]) : []
   const writes = log.filter((l) => l.method !== 'GET')
   drag = { card: todoCard, writes, gets: log.filter((l) => l.method === 'GET').map((l) => l.path) }
 }
@@ -153,9 +154,9 @@ await shot('agents-peek-crashed')
 
 const v2: Record<string, unknown> = {}
 if (values.v2) {
-  const isMock = await fetch(`${URL_}/__log`).then((r) => r.ok).catch(() => false)
-  const writes = async () => (isMock ? ((await fetch(`${URL_}/__log`).then((r) => r.json())) as { method: string; path: string; body?: unknown }[]).filter((l) => l.method !== 'GET') : [])
-  const reset = () => (isMock ? fetch(`${URL_}/__log/reset`, { method: 'POST' }) : Promise.resolve())
+  const isMock = await fetch(`${LOG}/__log`).then((r) => r.ok && (r.headers.get('content-type') ?? '').includes('json')).catch(() => false)
+  const writes = async () => (isMock ? ((await fetch(`${LOG}/__log`).then((r) => r.json())) as { method: string; path: string; body?: unknown }[]).filter((l) => l.method !== 'GET') : [])
+  const reset = () => (isMock ? fetch(`${LOG}/__log/reset`, { method: 'POST' }) : Promise.resolve())
   const click = (sel: string) => page.evaluate((x) => { const e = document.querySelector(x) as HTMLElement | null; e?.click(); return !!e }, sel)
   const closeOverlays = async () => { await page.keyboard.press('Escape'); await sleep(250); await page.keyboard.press('Escape'); await sleep(350) }
   const openCard = async (id: number | string) => { await page.click(`[data-card-id="${id}"]`); await sleep(800) }
@@ -164,11 +165,7 @@ if (values.v2) {
   await go('board')
   await page.waitForSelector('[data-card-id]', { timeout: 8000 })
   await sleep(300)
-  await shot('board-compact')
-  await click('[data-seg=detailed]')
-  await sleep(400)
-  await shot('board-detailed')
-  await click('[data-seg=compact]')
+  await shot('board')
   // Later expanded (To do and Proposed)
   await click('[data-testid=later-todo]')
   await click('[data-testid=later-proposed]')
@@ -185,33 +182,40 @@ if (values.v2) {
   await shot('list-view')
   await click('[data-seg=board]')
   await sleep(300)
-  // Insights popover and the Dropped column
-  await click('[data-testid=insights]')
-  await sleep(500)
-  await shot('insights')
-  await page.keyboard.press('Escape')
+  // Filter popover and the Dropped column (Show dropped lives in the popover)
+  await click('[data-testid=filter]')
+  await sleep(400)
+  await shot('filter-popover')
+  await click('[data-testid=filter-dropped]')
   await sleep(300)
-  await click('[data-testid=toggle-dropped]')
+  await page.keyboard.press('Escape')
   await sleep(400)
   await shot('board-dropped')
   v2.droppedCards = await page.$$eval('[data-column="dropped"]', (e) => e.length)
-  await click('[data-testid=toggle-dropped]')
+  await click('[data-testid=filter]')
   await sleep(300)
-  // Filters: urgent + category, with a search term
+  await click('[data-testid=filter-dropped]')
+  await page.keyboard.press('Escape')
+  await sleep(300)
+  // Title-line toggles: urgent, then category (Filter popover), with a search term
   await click('[data-filter=urgent]')
   await sleep(300)
   await shot('filters-urgent')
   v2.urgentCards = await count('[data-card-id]')
+  v2.urgentOnlyUrgent = (await count('[data-card-id]:not([data-urgent])')) === 0
   await click('[data-filter=urgent]')
   await page.focus('[data-testid=search]').catch(() => {})
   await page.keyboard.press('Escape')
   await page.keyboard.press('/')
   await page.keyboard.type('export')
   await sleep(300)
-  await click('[data-filter=category]')
+  v2.searchExport = await count('[data-card-id]')
+  await click('[data-testid=filter]')
+  await sleep(300)
+  await click('[data-testid=filter-popover] [role=group][aria-label=Category] button')
   await sleep(300)
   await shot('filters-active')
-  v2.searchExport = await count('[data-card-id]')
+  v2.searchExportCategory = await count('[data-card-id]')
   await page.keyboard.press('Escape')
   await sleep(200)
   await click('[data-testid=clear-filters]')
@@ -232,6 +236,20 @@ if (values.v2) {
   await sleep(300)
   await shot('sheet-done-bottom')
   await closeOverlays()
+  // Shortcut sheet (?) and Triage mode (t)
+  await page.keyboard.press('?')
+  await sleep(500)
+  await shot('shortcut-sheet')
+  v2.shortcutSheet = await count('[data-testid=shortcut-sheet]')
+  await closeOverlays()
+  await reset()
+  await page.keyboard.press('t')
+  await sleep(700)
+  await shot('triage')
+  v2.triageOpen = (await count('[data-testid=toolbar]')) === 0
+  v2.triageWrites = (await writes()).length
+  await page.keyboard.press('Escape')
+  await sleep(500)
   // New ticket dialog (shortcut n)
   await page.keyboard.press('n')
   await sleep(700)
@@ -310,18 +328,16 @@ if (values.v2) {
   await sleep(700)
   checks.enterOpensSheet = !!(await page.$('[data-ticket-sheet]'))
   await closeOverlays()
-  // 5. view / density / sort persisted across a reload
-  await click('[data-seg=detailed]')
+  // 5. view persisted across a reload
   await click('[data-seg=list]')
   await sleep(300)
   await page.reload({ waitUntil: 'networkidle2' })
   await sleep(700)
   checks.persisted = await page.evaluate(() => ({
     list: !!document.querySelector('[data-testid=board-list], [data-testid=list]'),
-    detailed: document.querySelector('[data-seg=detailed]')?.getAttribute('aria-pressed'),
+    listPressed: document.querySelector('[data-seg=list]')?.getAttribute('aria-pressed'),
   }))
   await click('[data-seg=board]')
-  await click('[data-seg=compact]')
   v2.checks = checks
 }
 

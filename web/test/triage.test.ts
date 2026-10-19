@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { groupColumns } from '../src/lib/boardFilter'
-import { boardOrder, columnStats, focusAfterRemoval, stepFocus, triageAction } from '../src/lib/triage'
+import { boardOrder, columnStats, focusAfterRemoval, patchUndo, SHORTCUT_GROUPS, stepFocus, triageAction } from '../src/lib/triage'
 import { DAY, mkCard } from './cardFixtures'
 
 const NOW = 100 * DAY
@@ -88,5 +88,30 @@ describe('triageAction', () => {
   })
   test('unknown keys are ignored', () => {
     expect(triageAction({ key: 'x' }, proposed)).toBeNull()
+  })
+})
+
+describe('patchUndo (the Undo of u / 1-3 / ⇧1-3)', () => {
+  const c = mkCard(7, { urgent: false, impact: 'low', effort: null })
+  test('urgent toggles back', () => {
+    expect(patchUndo(c, { urgent: true })).toEqual({ label: 'PLU-7 marked urgent', undo: { urgent: false } })
+    expect(patchUndo({ ...c, urgent: true }, { urgent: false })).toEqual({ label: 'PLU-7 no longer urgent', undo: { urgent: true } })
+  })
+  test('return and effort restore the previous value, including "unset"', () => {
+    expect(patchUndo(c, { impact: 'high' })).toEqual({ label: 'PLU-7 return high', undo: { impact: 'low' } })
+    expect(patchUndo(c, { effort: 'medium' })).toEqual({ label: 'PLU-7 effort medium', undo: { effort: null } })
+  })
+  test('anything else has no undo', () => {
+    expect(patchUndo(c, { title: 'x' })).toBeNull()
+  })
+})
+
+describe('shortcut sheet', () => {
+  const all = SHORTCUT_GROUPS.flatMap((g) => g.keys.map(([k]) => k)).join(' ')
+  test('lists every key the board answers to', () => {
+    for (const k of ['/', 'n', 't', '?', 'j', 'k', 'Enter', 'Esc', 'a', 'l', 'd', 'u', '1 2 3', '⇧1 ⇧2 ⇧3']) expect(all).toContain(k)
+  })
+  test('no group is empty', () => {
+    for (const g of SHORTCUT_GROUPS) expect(g.keys.length).toBeGreaterThan(0)
   })
 })

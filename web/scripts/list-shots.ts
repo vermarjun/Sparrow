@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// List and new-ticket dialog screenshot + request-body proof against the v2 mock.
+// List and quick-create dialog (title + chips, Add details) screenshot + request-body proof against the v2 mock.
 // Usage: bun scripts/list-shots.ts [--url http://localhost:5173] [--mock http://localhost:4140] [--project plutus]
 import { mkdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
@@ -43,16 +43,6 @@ const openList = async (width: number, height: number) => {
   const secondDirection = await titleSort.evaluate((el) => el.getAttribute('aria-sort'))
   if (firstDirection === secondDirection || !firstDirection || !secondDirection) throw new Error('List title sort did not toggle')
   sortProof.push(`${width}: ${firstDirection} → ${secondDirection}`)
-  const insights = await page.$('[data-testid="insights"]')
-  if (insights) {
-    await insights.click()
-    await page.waitForSelector('[data-testid="insights-popover"], [data-testid="insights-panel"]', { timeout: 5000 })
-    await sleep(300)
-    await page.screenshot({ path: join(OUT, `insights-${width}.png`) })
-    console.log(`shot insights-${width}.png`)
-    await page.keyboard.press('Escape')
-    await sleep(150)
-  }
 }
 
 for (const [width, height] of [[1440, 900], [1280, 800]] as const) {
@@ -60,33 +50,34 @@ for (const [width, height] of [[1440, 900], [1280, 800]] as const) {
   await page.click('[data-testid="new-ticket"]')
   await page.waitForSelector('[data-testid="new-ticket-dialog"]', { timeout: 5000 })
   await sleep(250)
-  const headerBounds = await page.$eval('[data-slot="dialog-header"]', (el) => {
-    const rect = el.getBoundingClientRect()
-    return { top: rect.top, bottom: rect.bottom, height: rect.height }
-  })
-  const footerBounds = await page.$eval('[data-slot="dialog-footer"]', (el) => {
-    const rect = el.getBoundingClientRect()
-    return { top: rect.top, bottom: rect.bottom, height: rect.height }
-  })
-  const submitBounds = await page.$eval('[data-testid="new-ticket-submit"]', (el) => {
-    const rect = el.getBoundingClientRect()
-    return { top: rect.top, bottom: rect.bottom, height: rect.height }
-  })
+  const boundsOf = (sel: string) => page.$eval(sel, (el) => { const r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, height: r.height } })
+  const dialogBounds = await boundsOf('[data-testid="new-ticket-dialog"]')
+  const footerBounds = await boundsOf('[data-testid="new-ticket-dialog"] footer')
+  const submitBounds = await boundsOf('[data-testid="new-ticket-submit"]')
   const bodyMetrics = await page.$eval('[data-testid="new-ticket-body"]', (el) => ({ scrollHeight: el.scrollHeight, clientHeight: el.clientHeight, scrollTop: el.scrollTop }))
-  if (headerBounds.top < 0 || footerBounds.height < 40 || submitBounds.height < 30 || submitBounds.bottom > height - 1 || footerBounds.bottom > height - 1) {
-    throw new Error(`Dialog header or footer is clipped at ${width}×${height}: ${JSON.stringify({ headerBounds, footerBounds, submitBounds })}`)
+  if (dialogBounds.top < 0 || footerBounds.height < 40 || submitBounds.height < 30 || submitBounds.bottom > height - 1 || footerBounds.bottom > height - 1) {
+    throw new Error(`Dialog or its footer is clipped at ${width}×${height}: ${JSON.stringify({ dialogBounds, footerBounds, submitBounds })}`)
   }
-  if (bodyMetrics.scrollHeight > bodyMetrics.clientHeight) {
+  const headerBounds = dialogBounds
+  void headerBounds
+  // Quick create: the dialog starts small (title + chips); "Add details" expands the four sections and the footer stays put.
+  const compact = bodyMetrics.scrollHeight <= bodyMetrics.clientHeight
+  await page.click('[data-add-details]')
+  await sleep(250)
+  const footerOpen = await boundsOf('[data-testid="new-ticket-dialog"] footer')
+  if (footerOpen.bottom > height - 1) throw new Error(`Dialog footer clipped after Add details at ${width}×${height}`)
+  const bodyOpen = await page.$eval('[data-testid="new-ticket-body"]', (el) => ({ scrollHeight: el.scrollHeight, clientHeight: el.clientHeight }))
+  if (bodyOpen.scrollHeight > bodyOpen.clientHeight) {
     await page.$eval('[data-testid="new-ticket-body"]', (el) => { el.scrollTop = el.scrollHeight })
-    await page.waitForFunction(() => {
-      const body = document.querySelector('[data-testid="new-ticket-body"]') as HTMLElement | null
-      return !!body && body.scrollTop > 0
-    })
-    const footerAfterScroll = await page.$eval('[data-slot="dialog-footer"]', (el) => el.getBoundingClientRect().bottom)
-    if (Math.abs(footerAfterScroll - footerBounds.bottom) > 1) throw new Error(`Dialog footer moved while scrolling body at ${width}×${height}`)
+    await sleep(150)
+    const footerAfterScroll = await boundsOf('[data-testid="new-ticket-dialog"] footer')
+    if (Math.abs(footerAfterScroll.bottom - footerOpen.bottom) > 1) throw new Error(`Dialog footer moved while scrolling body at ${width}×${height}`)
     await page.$eval('[data-testid="new-ticket-body"]', (el) => { el.scrollTop = 0 })
   }
-  dialogProof.push(`${width}×${height}: header/footer in view; body ${bodyMetrics.clientHeight}px / ${bodyMetrics.scrollHeight}px`)
+  await page.screenshot({ path: join(OUT, `dialog-${width}-details.png`) })
+  await page.click('[data-add-details]')
+  await sleep(200)
+  dialogProof.push(`${width}×${height}: footer in view; collapsed body ${bodyMetrics.clientHeight}px / ${bodyMetrics.scrollHeight}px (fits: ${compact}); expanded ${bodyOpen.clientHeight}px / ${bodyOpen.scrollHeight}px`)
   await page.screenshot({ path: join(OUT, `dialog-${width}.png`) })
   await page.screenshot({ path: join(OUT, `${width}x${height}-new-ticket-dialog.png`) })
   console.log(`shot dialog-${width}.png`)
@@ -99,18 +90,16 @@ await page.setViewport({ width: 1440, height: 900, deviceScaleFactor: 1 })
 await page.click('[data-testid="new-ticket"]')
 await page.waitForSelector('[data-testid="new-ticket-dialog"]')
 await fetch(`${MOCK}/__log/reset`, { method: 'POST' })
+const chipPopover = async (chip: string) => { await page.click(`[data-chip="${chip}"]`); await page.waitForSelector(`[data-popover="${chip}"]`); await sleep(200) }
 await page.type('#new-ticket-title', 'Add a quarterly export preset')
-await page.type('#new-ticket-category', 'finance')
-await page.type('#new-ticket-estimate', '90m')
-await page.click('[role="switch"]')
-await page.click('#new-ticket-impact')
-await page.waitForSelector('[role="option"]')
-await page.evaluate(() => [...document.querySelectorAll('[role="option"]')].find((el) => el.textContent?.trim() === 'High')?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-await page.click('#new-ticket-effort')
-await page.waitForSelector('[role="option"]')
-await page.evaluate(() => [...document.querySelectorAll('[role="option"]')].find((el) => el.textContent?.trim() === 'Low')?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-await page.type('#new-ticket-tags', 'finance')
-await page.keyboard.press('Enter')
+await chipPopover('category')
+await page.type('input[aria-label="Search or create a category"]', 'finance'); await sleep(200); await page.keyboard.press('Enter'); await sleep(200)
+await page.click('[data-chip="urgent"]')
+await chipPopover('return'); await page.click('[data-popover="return"] [data-level="high"]'); await sleep(200)
+await chipPopover('effort'); await page.click('[data-popover="effort"] [data-level="low"]'); await sleep(200)
+await chipPopover('estimate'); await page.keyboard.type('90m'); await page.keyboard.press('Enter'); await sleep(200)
+await page.click('[data-add-details]')
+await page.waitForSelector('[data-brief="context"]')
 await page.type('[data-brief="context"]', 'Asked by finance during the quarterly planning review.')
 await page.type('[data-brief="problem"]', 'Observed: the export range is re-entered each quarter. Expected: reuse a saved preset.')
 await page.type('[data-brief="approach"]', 'Add one named preset and let users select it before export.')

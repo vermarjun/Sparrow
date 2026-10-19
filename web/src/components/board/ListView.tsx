@@ -4,17 +4,18 @@ import type { Agent, Card } from '@shared/types'
 import { formatEstimate } from '@shared/cards'
 import { ago, fullDate } from '@/lib/format'
 import { isShelved } from '@/lib/boardFilter'
-import { sortListCards, listKeyFor, listSortLabel } from '@/lib/listSort'
+import { sortListCards, listKeyFor, listSortLabel, nextSort, visibleColumns, type ListCol as Col } from '@/lib/listSort'
 import type { ListKey } from '@/lib/boardPrefs'
 import { useNow } from '@/components/sparrow/bits'
 import { COLUMNS, COLUMN_BY_STATE } from '@/lib/boardStyle'
+import { railOf, railTip, type Rail } from '@/lib/faceA'
+import { railStyle } from '@/lib/swatchStyle'
 import { useStore } from '@/lib/store'
 import { cn } from '@/lib/utils'
-import { railOf } from '@/lib/faceA'
-import { Avatar, CategoryLabel, PayoffLabel, StatePill, Tip } from './markers'
-import { Swatch } from './swatch'
+import { Avatar, CategoryLabel, PayoffLabel, Tip } from './markers'
 
-const SORT_KEYS: ListKey[] = ['key', 'title', 'state', 'category', 'payoff', 'estimate', 'age', 'assignee', 'updated']
+// Rows are grouped by state, so there is no State column. Columns that are empty for every visible ticket are hidden.
+const WIDTH: Record<Col, string> = { key: 'w-24', title: 'min-w-64', category: 'w-32', payoff: 'w-28', estimate: 'w-20', age: 'w-16', assignee: 'w-32', updated: 'w-20' }
 
 export function ListView({ cards, onOpen, sortKey, sortDir, onSort }: {
   cards: Card[]
@@ -30,31 +31,30 @@ export function ListView({ cards, onOpen, sortKey, sortDir, onSort }: {
     const states = sortKey === 'state' && sortDir === 'desc' ? [...COLUMNS].reverse() : COLUMNS
     return states.map((column) => ({ ...column, cards: ordered.filter((card) => card.state === column.id) })).filter((group) => group.cards.length)
   }, [ordered, sortKey, sortDir])
+  const cols = useMemo(() => visibleColumns(cards), [cards])
 
   return (
     <div className="flex min-h-0 flex-1 flex-col px-4 pb-4">
-      <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-zinc-200/80 bg-white shadow-sm" data-testid="board-list">
-        <table className="w-full min-w-[1000px] border-separate border-spacing-0 text-left text-xs">
-          <thead className="sticky top-0 z-10 bg-zinc-50/95 text-[10px] font-semibold tracking-[0.08em] text-zinc-500 uppercase backdrop-blur">
+      <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-zinc-200/80 bg-white" data-testid="board-list">
+        <table className="w-full min-w-[820px] border-separate border-spacing-0 text-left text-xs">
+          <thead className="sticky top-0 z-10 bg-white/95 backdrop-blur">
             <tr>
-              {SORT_KEYS.slice(0, 4).map((key) => <SortHeader key={key} sortKey={sortKey} sortDir={sortDir} onSort={onSort} listKey={key} />)}
-              <th scope="col" className="w-20 border-b border-zinc-200 px-3 py-2">Flags</th>
-              {SORT_KEYS.slice(4).map((key) => <SortHeader key={key} sortKey={sortKey} sortDir={sortDir} onSort={onSort} listKey={key} />)}
+              {cols.map((key) => <SortHeader key={key} sortKey={sortKey} sortDir={sortDir} onSort={onSort} listKey={key} width={WIDTH[key]} />)}
             </tr>
           </thead>
           {byState.length ? byState.map((group) => (
             <tbody key={group.id}>
-              <tr className={cn('sticky top-9 z-[5] border-b', COLUMN_BY_STATE[group.id].head, COLUMN_BY_STATE[group.id].edge)}>
-                <th colSpan={10} scope="rowgroup" className={cn('h-7 px-3 text-left text-[11px] font-semibold', COLUMN_BY_STATE[group.id].title)}>
-                  <span className="inline-flex items-center gap-2"><span className={cn('size-1.5 rounded-full', COLUMN_BY_STATE[group.id].dot)} />{group.name}<span className="font-normal opacity-70 tabular-nums">{group.cards.length}</span></span>
+              <tr className="sticky top-9 z-[5] bg-zinc-50">
+                <th colSpan={cols.length} scope="rowgroup" className="h-8 border-y border-zinc-200/70 bg-zinc-50 px-3 text-left text-[12px] font-semibold text-zinc-700">
+                  <span className="inline-flex items-center gap-2"><span className={cn('size-2 rounded-full', COLUMN_BY_STATE[group.id].dot)} />{group.name}<span className="font-medium text-zinc-400 tabular-nums">{group.cards.length}</span></span>
                 </th>
               </tr>
               {group.cards.map((card) => (
-                <TicketRow key={card.id} card={card} agents={agents} now={now} onOpen={onOpen} />
+                <TicketRow key={card.id} card={card} cols={cols} agents={agents} now={now} onOpen={onOpen} />
               ))}
             </tbody>
           )) : (
-            <tbody><tr><td colSpan={10} className="px-4 py-14 text-center">
+            <tbody><tr><td colSpan={cols.length} className="px-4 py-14 text-center">
               <div className="mx-auto flex max-w-xs flex-col items-center gap-2 text-zinc-400">
                 <div className="flex size-8 items-center justify-center rounded-full bg-zinc-100"><Check className="size-4 text-zinc-500" /></div>
                 <p className="text-xs font-medium text-zinc-600">No tickets match this view</p>
@@ -63,7 +63,7 @@ export function ListView({ cards, onOpen, sortKey, sortDir, onSort }: {
             </td></tr></tbody>
           )}
         </table>
-        <div className="sticky bottom-0 flex h-8 items-center border-t border-zinc-100 bg-zinc-50/95 px-3 text-[10px] text-zinc-400 backdrop-blur">
+        <div className="sticky bottom-0 flex h-8 items-center border-t border-zinc-100 bg-white/95 px-3 text-[11px] text-zinc-400 backdrop-blur">
           <span>{cards.length} {cards.length === 1 ? 'ticket' : 'tickets'}</span>
           <span className="ml-auto">Select a row to open the ticket</span>
         </div>
@@ -72,73 +72,89 @@ export function ListView({ cards, onOpen, sortKey, sortDir, onSort }: {
   )
 }
 
-function SortHeader({ listKey, sortKey, sortDir, onSort }: { listKey: ListKey; sortKey: ListKey; sortDir: 'asc' | 'desc'; onSort: (key: ListKey) => void }) {
+function SortHeader({ listKey, sortKey, sortDir, onSort, width }: { listKey: ListKey; sortKey: ListKey; sortDir: 'asc' | 'desc'; onSort: (key: ListKey) => void; width: string }) {
   const active = sortKey === listKey
-  const widths: Partial<Record<ListKey, string>> = { key: 'w-24', title: 'w-[30%] min-w-64', state: 'w-28', category: 'w-28', payoff: 'w-28', estimate: 'w-24', age: 'w-16', assignee: 'w-32', updated: 'w-20' }
   return (
-    <th scope="col" className={cn('h-9 border-b border-zinc-200 px-3', widths[listKey])}>
+    <th scope="col" className={cn('h-9 border-b border-zinc-200 px-3', width)}>
       <button
         type="button"
-        onClick={() => onSort(listKey)}
+        onClick={() => onSort(nextSort(sortKey, sortDir, listKey))}
         aria-label={`Sort by ${listSortLabel(listKey)}`}
         aria-sort={active ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
-        className={cn('group inline-flex items-center gap-1.5 whitespace-nowrap outline-none transition-colors hover:text-zinc-900 focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring', active && 'text-zinc-900')}
+        className={cn('group inline-flex items-center gap-1.5 text-[11.5px] font-medium whitespace-nowrap text-zinc-500 outline-none transition-colors hover:text-zinc-900 focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring', active && 'text-zinc-900')}
         data-sort-key={listKey}
       >
         {listSortLabel(listKey)}
-        {active ? sortDir === 'asc' ? <ArrowUp className="size-3 text-violet-600" /> : <ArrowDown className="size-3 text-violet-600" /> : <ArrowUpDown className="size-3 opacity-0 transition-opacity group-hover:opacity-60" />}
+        {active ? sortDir === 'asc' ? <ArrowUp className="size-3 text-zinc-500" /> : <ArrowDown className="size-3 text-zinc-500" /> : <ArrowUpDown className="size-3 opacity-0 transition-opacity group-hover:opacity-60" />}
       </button>
     </th>
   )
 }
 
-function TicketRow({ card, agents, now, onOpen }: { card: Card; agents: Record<string, Agent>; now: number; onOpen: (id: number) => void }) {
+/** The row's left edge carries the same rail as the card; its tooltip says why. */
+function RowRail({ rail, lines }: { rail: Exclude<Rail, null>; lines: string[] }) {
+  return (
+    <Tip side="right" label={<span className="flex flex-col">{lines.map((l) => <span key={l}>{l}</span>)}</span>}>
+      <span className="absolute inset-y-0 left-0 flex w-2.5 cursor-help" data-rail={rail}>
+        <span className="flex h-full w-1 flex-col" aria-hidden>
+          {rail !== 'blocked' && <span className="min-h-0 flex-1" style={railStyle('urgent')} />}
+          {rail !== 'urgent' && <span className="min-h-0 flex-1" style={railStyle('blocked')} />}
+        </span>
+      </span>
+    </Tip>
+  )
+}
+
+const CELL = 'border-b border-zinc-100 px-3 py-2.5'
+
+function TicketRow({ card, cols, agents, now, onOpen }: { card: Card; cols: Col[]; agents: Record<string, Agent>; now: number; onOpen: (id: number) => void }) {
   const later = isShelved(card)
   const done = card.state === 'done'
   const rail = railOf(card)
   const assignee = card.assignee_id ? agents[card.assignee_id] : null
   const createdBy = card.created_by === 'user' ? 'you' : agents[card.created_by] ? `@${agents[card.created_by].handle}` : card.created_by
+  const cell: Record<Col, React.ReactNode> = {
+    key: (
+      <td key="key" className={cn('relative whitespace-nowrap border-b border-zinc-100 py-2.5 pr-3 pl-4 font-mono text-[11px] tabular-nums', done ? 'text-emerald-700' : 'text-zinc-400')}>
+        {rail && <RowRail rail={rail} lines={railTip(card, now)} />}
+        {listKeyFor(card)}
+      </td>
+    ),
+    title: (
+      <td key="title" className="max-w-0 border-b border-zinc-100 px-3 py-2.5">
+        <div className="flex min-w-0 items-center gap-1.5">
+          {done && <Check className="size-3.5 shrink-0 text-emerald-600" strokeWidth={3} aria-label="Done" />}
+          <span className={cn('truncate text-[13px] font-medium', done ? 'text-zinc-500' : later ? 'text-slate-500' : 'text-zinc-900')}>{card.title}</span>
+          {later && <Tip label="Later: parked"><Moon className="size-3 shrink-0 text-slate-400" data-flag="later" aria-label="Later" /></Tip>}
+        </div>
+      </td>
+    ),
+    category: <td key="category" className={CELL}>{card.category && <CategoryLabel name={card.category} />}</td>,
+    payoff: <td key="payoff" className={CELL}>{card.impact || card.effort ? <PayoffLabel card={card} /> : null}</td>,
+    estimate: <td key="estimate" className={cn(CELL, 'whitespace-nowrap font-mono text-[11px] tabular-nums text-zinc-500')}>{card.estimate_min ? `~${formatEstimate(card.estimate_min)}` : ''}</td>,
+    age: (
+      <td key="age" className={cn(CELL, 'font-mono text-[11px] tabular-nums text-zinc-500')}>
+        <Tip label={`Created ${fullDate(card.created_at)} by ${createdBy}`}><span>{ago(card.created_at, now)}</span></Tip>
+      </td>
+    ),
+    assignee: <td key="assignee" className={CELL}>{assignee && <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-zinc-700"><Avatar agent={assignee} />@{assignee.handle}</span>}</td>,
+    updated: <td key="updated" className={cn(CELL, 'font-mono text-[11px] tabular-nums text-zinc-400')}>{ago(card.updated_at, now)}</td>,
+  }
   return (
     <tr
       tabIndex={0}
       aria-label={`Open ${listKeyFor(card)} ${card.title}`}
       data-card-id={card.id}
+      data-key={listKeyFor(card)}
+      data-urgent={card.urgent || undefined}
+      data-blocked={card.blocked_on ? '' : undefined}
       data-list-row
+      data-later={later || undefined}
       onClick={() => onOpen(card.id)}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(card.id) } }}
-      className={cn('group cursor-pointer outline-none focus-visible:relative focus-visible:z-[1] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-500', later ? 'bg-slate-50/90 text-slate-500 hover:bg-slate-100/80' : 'bg-white text-zinc-700 hover:bg-violet-50/40')}
+      className={cn('group cursor-pointer outline-none focus-visible:relative focus-visible:z-[1] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500', later ? 'bg-zinc-50/80 text-slate-500 hover:bg-zinc-100/70' : 'bg-white text-zinc-700 hover:bg-zinc-50')}
     >
-      <td className={cn('whitespace-nowrap border-b border-zinc-100 px-3 py-2.5 font-mono text-[11px] tabular-nums text-zinc-400')}>
-        {listKeyFor(card)}
-      </td>
-      <td className="max-w-0 border-b border-zinc-100 px-3 py-2.5">
-        <div className="flex min-w-0 items-center gap-1.5">
-          {done && <Check className="size-3.5 shrink-0 text-emerald-600" strokeWidth={3} aria-label="Done" />}
-          <span className={cn('truncate text-[12px] font-medium', later ? 'text-slate-500' : 'text-zinc-800 group-hover:text-zinc-950')}>{card.title}</span>
-        </div>
-      </td>
-      <td className="border-b border-zinc-100 px-3 py-2.5"><StatePill state={card.state} /></td>
-      <td className="border-b border-zinc-100 px-3 py-2.5">{card.category ? <CategoryLabel name={card.category} /> : <span className="text-zinc-300">—</span>}</td>
-      <td className="border-b border-zinc-100 px-3 py-2.5">
-        <div className="flex items-center gap-1.5" data-flags>
-          {(rail === 'urgent' || rail === 'both') && <FlagSwatch kind="urgent" tip="Urgent" />}
-          {(rail === 'blocked' || rail === 'both') && <FlagSwatch kind="blocked" tip={`Blocked on ${card.blocked_on}${card.blocked_at ? ` · ${ago(card.blocked_at, now)}` : ''}`} />}
-          {later && <Tip label="Later: parked"><Moon className="size-3 text-slate-400" data-flag="later" aria-label="Later" /></Tip>}
-          {!rail && !later && <span className="text-zinc-300">—</span>}
-        </div>
-      </td>
-      <td className="border-b border-zinc-100 px-3 py-2.5">{card.impact || card.effort ? <PayoffLabel card={card} /> : <span className="text-zinc-300">—</span>}</td>
-      <td className="whitespace-nowrap border-b border-zinc-100 px-3 py-2.5 font-mono text-[11px] tabular-nums text-zinc-500">{card.estimate_min ? `~${formatEstimate(card.estimate_min)}` : <span className="text-zinc-300">—</span>}</td>
-      <td className="border-b border-zinc-100 px-3 py-2.5 font-mono text-[11px] tabular-nums text-zinc-500">
-        <Tip label={`Created ${fullDate(card.created_at)} by ${createdBy}`}><span>{ago(card.created_at, now)}</span></Tip>
-      </td>
-      <td className="border-b border-zinc-100 px-3 py-2.5">{assignee ? <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-zinc-700"><Avatar agent={assignee} />@{assignee.handle}</span> : <span className="text-zinc-300">—</span>}</td>
-      <td className="border-b border-zinc-100 px-3 py-2.5 font-mono text-[11px] tabular-nums text-zinc-400">{ago(card.updated_at, now)}</td>
+      {cols.map((c) => cell[c])}
     </tr>
   )
-}
-
-/** A legend swatch (same as the toolbar and the card rail) with a tooltip; the padding makes the thin stripe easy to hover. */
-function FlagSwatch({ kind, tip }: { kind: 'urgent' | 'blocked'; tip: string }) {
-  return <Tip label={tip}><span className="inline-flex cursor-help p-1" data-flag={kind}><Swatch kind={kind} /></span></Tip>
 }

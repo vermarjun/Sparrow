@@ -59,6 +59,17 @@ try {
   check('search narrows the board to the two probes', found === 2, found)
   await page.screenshot({ path: join(OUT, `${PREFIX}search-${W}x${H}.png`) })
 
+  // the title line counts the filtered tickets; the Filter popover and the ? sheet open
+  const title = await page.$eval('[data-testid=summary]', (e) => e.textContent ?? '')
+  check('title line says "2 of N tickets" while searching', /^2 of \d+ tickets/.test(title), title)
+  await click('[data-testid=filter]'); await sleep(300)
+  check('Filter popover opens', !!(await page.$('[data-testid=filter-popover]')))
+  await page.keyboard.press('Escape'); await sleep(250)
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+  await page.keyboard.press('?'); await sleep(400)
+  check('? opens the shortcut sheet', !!(await page.$('[data-testid=shortcut-sheet]')))
+  await page.keyboard.press('Escape'); await sleep(300)
+
   // 1. drag A (todo) -> Review: exactly one PATCH, server agrees
   writes.length = 0
   const review = await page.$eval('[data-column="review"]', (e) => { const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + 120 } })
@@ -74,6 +85,13 @@ try {
   await click(`[data-card-id="${b.id}"] [data-action="Accept to To do"]`); await settle()
   const gb = await get(b.id)
   check('Accept: one PATCH, server state todo', writes.length === 1 && gb.state === 'todo', { writes, state: gb.state })
+  // 2b. the toast's Undo puts it back (PATCH to the previous state), then accept again so the rest of the run is unchanged
+  writes.length = 0
+  const undone = await page.evaluate(() => { const u = [...document.querySelectorAll<HTMLElement>('[data-sonner-toast] button')].find((x) => x.textContent?.trim() === 'Undo'); u?.click(); return !!u })
+  await settle()
+  check('Accept Undo: toast button reverts the server state', undone && writes.length === 1 && (await get(b.id)).state === 'proposed', { undone, writes })
+  await page.hover(`[data-card-id="${b.id}"]`); await sleep(250)
+  await click(`[data-card-id="${b.id}"] [data-action="Accept to To do"]`); await settle()
 
   // 3. hover Later, then Bring back
   writes.length = 0
@@ -95,11 +113,11 @@ try {
   const events = gb2.notes.filter((n) => n.kind === 'event').map((n) => n.text)
   check('server logged events for the moves', events.some((t) => /later/i.test(t)), events)
 
-  // 5. reload keeps density/view
-  await click('[data-seg=detailed]'); await click('[data-seg=list]'); await sleep(300)
+  // 5. reload keeps the view
+  await click('[data-seg=list]'); await sleep(300)
   await page.reload({ waitUntil: 'networkidle2' }); await sleep(700)
-  check('density + view persisted across reload', await page.evaluate(() => !!document.querySelector('[data-testid=board-list], [data-testid=list]') && document.querySelector('[data-seg=detailed]')?.getAttribute('aria-pressed') === 'true'))
-  await click('[data-seg=board]'); await click('[data-seg=compact]')
+  check('view persisted across reload', await page.evaluate(() => !!document.querySelector('[data-testid=board-list], [data-testid=list]')))
+  await click('[data-seg=board]')
 } finally {
   for (const c of [a, b]) await api('PATCH', `/api/cards/${c.id}`, { state: 'dropped' }).catch(() => {})
   await browser.close()

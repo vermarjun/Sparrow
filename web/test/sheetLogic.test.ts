@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   addTags, appendCheck, categoryOptions, checkProgress, editCheck, hasText, moveCheck, newCategory, nextActions, parseEstimateInput,
-  foldEvents, prettyEvent, removeCheck, removeTag,
+  footerActions, foldMoves, movesLabel, parseMove, prettyEvent, removeCheck, removeTag,
 } from '../src/lib/sheetLogic'
 import { mkCard } from './cardFixtures'
 
@@ -104,23 +104,60 @@ describe('footer actions', () => {
   })
 })
 
-describe('foldEvents', () => {
-  const ev = (n: number) => ({ at: n, by: 'user', text: `edited f${n}`, kind: 'event' as const })
-  const cm = (n: number) => ({ at: n, by: 'user', text: `hi ${n}`, kind: 'comment' as const })
-  test('short runs and notes without a kind stay as they are', () => {
-    const legacy = { at: 1, by: 'ag_x', text: 'old note' }
-    const items = foldEvents([legacy, ev(2), ev(3), cm(4), ev(5)])
-    expect(items.every((i) => i.kind === 'note')).toBe(true)
-    expect(items).toHaveLength(5)
+describe('foldMoves', () => {
+  const MIN = 60_000, DAY = 24 * 60 * MIN
+  const mv = (at: number, from: string, to: string) => ({ at, by: 'user', text: `moved ${from} → ${to}`, kind: 'event' as const })
+  const ev = (at: number, text = 'edited title') => ({ at, by: 'user', text, kind: 'event' as const })
+  const cm = (at: number) => ({ at, by: 'user', text: `hi ${at}`, kind: 'comment' as const })
+  test('parseMove reads moved a → b and nothing else', () => {
+    expect(parseMove(mv(1, 'todo', 'in_progress'))).toEqual({ from: 'todo', to: 'in_progress' })
+    expect(parseMove(ev(1))).toBeNull()
+    expect(parseMove(ev(1, 'moved the goalposts'))).toBeNull()
+    expect(parseMove(ev(1, 'moved nowhere → done'))).toBeNull()
+    expect(parseMove({ at: 1, by: 'user', text: 'moved todo → done', kind: 'comment' })).toBeNull()
   })
-  test('a long run folds all but its last two lines', () => {
-    const items = foldEvents([cm(0), ...[1, 2, 3, 4, 5, 6, 7].map(ev), cm(8)])
-    expect(items.map((i) => i.kind)).toEqual(['note', 'folded', 'note', 'note', 'note'])
-    const folded = items[1]
-    expect(folded.kind === 'folded' && folded.notes.map((n) => n.at)).toEqual([1, 2, 3, 4, 5])
-    expect(folded.kind === 'folded' && folded.id).toBe(1)
+  test('two or more consecutive moves fold into one line with the path and span', () => {
+    const items = foldMoves([mv(0, 'proposed', 'todo'), mv(DAY, 'todo', 'in_progress'), mv(5 * DAY, 'in_progress', 'review'), mv(5 * DAY + MIN, 'review', 'done')])
+    expect(items).toHaveLength(1)
+    const it = items[0]
+    expect(it.kind).toBe('moves')
+    if (it.kind === 'moves') {
+      expect(it.path).toEqual(['proposed', 'todo', 'in_progress', 'review', 'done'])
+      expect(it.notes).toHaveLength(4)
+      expect(movesLabel(it.path, it.spanMs)).toBe('Moved Proposed → To do → In progress → Review → Done · over 5d')
+    }
   })
-  test('empty', () => expect(foldEvents([])).toEqual([]))
+  test('a lone move, comments and other events stay; a comment splits two runs', () => {
+    const items = foldMoves([mv(1, 'todo', 'in_progress'), ev(2), mv(3, 'in_progress', 'review'), mv(4, 'review', 'done'), cm(5), mv(6, 'done', 'todo'), mv(7, 'todo', 'in_progress')])
+    expect(items.map((i) => i.kind)).toEqual(['note', 'note', 'moves', 'note', 'moves'])
+    const ids = items.map((i) => (i.kind === 'moves' ? i.id : -1))
+    expect(ids).toEqual([-1, -1, 2, -1, 5])
+  })
+  test('a back-and-forth keeps every state it visited', () => {
+    const [it] = foldMoves([mv(1, 'in_progress', 'review'), mv(2, 'review', 'in_progress'), mv(3, 'in_progress', 'review')])
+    expect(it.kind === 'moves' && it.path).toEqual(['in_progress', 'review', 'in_progress', 'review'])
+  })
+  test('movesLabel leaves the span out under a minute', () => expect(movesLabel(['todo', 'done'], 30_000)).toBe('Moved To do → Done'))
+  test('legacy notes without a kind are comments and never fold; empty is empty', () => {
+    const legacy = { at: 1, by: 'ag_x', text: 'moved todo → done' }
+    expect(foldMoves([legacy, legacy]).every((i) => i.kind === 'note')).toBe(true)
+    expect(foldMoves([])).toEqual([])
+  })
+})
+
+describe('footerActions', () => {
+  test('unblocked cards get the plain next actions', () => {
+    expect(footerActions({ state: 'todo', later_at: null, blocked_on: null })).toEqual(nextActions({ state: 'todo', later_at: null }))
+  })
+  test('blocked: Unblock is primary and the state moves go quiet', () => {
+    const a = footerActions({ state: 'todo', later_at: null, blocked_on: 'IT' })
+    expect(a[0]).toMatchObject({ id: 'unblock', tone: 'primary', patch: { blocked_on: null } })
+    expect(a.filter((x) => x.tone === 'primary')).toHaveLength(1)
+    expect(a.find((x) => x.id === 'start')?.tone).toBe('quiet')
+  })
+  test('done and dropped ignore a stale block', () => {
+    expect(footerActions({ state: 'done', later_at: null, blocked_on: 'IT' }).map((x) => x.id)).toEqual(['reopen'])
+  })
 })
 
 describe('small helpers', () => {

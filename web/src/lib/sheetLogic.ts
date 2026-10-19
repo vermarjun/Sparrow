@@ -1,6 +1,6 @@
 // Pure rules behind the ticket sheet's inline editors and footer (unit-tested in web/test/sheetLogic.test.ts).
 import type { Card, CardCheck, CardNote, CardPatchReq, CardState } from '@shared/types'
-import { parseEstimate, STATE_LABEL } from '@shared/cards'
+import { formatSpan, parseEstimate, STATE_LABEL } from '@shared/cards'
 import { noteKind } from '@/lib/activity'
 
 // ---------------------------------------------------------------- estimate field
@@ -86,7 +86,7 @@ export function checkProgress(checks: CardCheck[] | undefined): { done: number; 
 // ---------------------------------------------------------------- footer: the next move per state
 
 export type ActionTone = 'primary' | 'approve' | 'quiet' | 'danger'
-export interface SheetAction { id: string; label: string; tone: ActionTone; patch: CardPatchReq; icon: 'accept' | 'later' | 'drop' | 'start' | 'review' | 'approve' | 'back' | 'reopen' | 'restore' }
+export interface SheetAction { id: string; label: string; tone: ActionTone; patch: CardPatchReq; icon: 'accept' | 'later' | 'drop' | 'start' | 'review' | 'approve' | 'back' | 'reopen' | 'restore' | 'unblock' }
 
 /** Contextual next actions, primary first. Proposed: Accept / Later / Drop; Review: Approve and Send back; ... */
 export function nextActions(card: Pick<Card, 'state' | 'later_at'>): SheetAction[] {
@@ -118,32 +118,67 @@ export function nextActions(card: Pick<Card, 'state' | 'later_at'>): SheetAction
   }
 }
 
+/**
+ * The footer's actions: while a ticket is blocked, Unblock is the primary move and the state moves step back to quiet
+ * (the banner already says why; the footer only offers the way out).
+ */
+export function footerActions(card: Pick<Card, 'state' | 'later_at' | 'blocked_on'>): SheetAction[] {
+  const actions = nextActions(card)
+  if (!card.blocked_on || card.state === 'done' || card.state === 'dropped') return actions
+  const calm = actions.map((a): SheetAction => (a.tone === 'primary' || a.tone === 'approve' ? { ...a, tone: 'quiet' } : a))
+  return [{ id: 'unblock', label: 'Unblock', tone: 'primary', patch: { blocked_on: null }, icon: 'unblock' }, ...calm]
+}
+
 /** Where an action leads, for the button's small suffix ("→ To do"). */
 export const actionTarget = (a: SheetAction): CardState | null => a.patch.state ?? null
 
-// ---------------------------------------------------------------- activity: fold long runs of events
+// ---------------------------------------------------------------- activity: fold runs of moves
 
-export type TimelineItem = { kind: 'note'; note: CardNote } | { kind: 'folded'; id: number; notes: CardNote[] }
+/** `moves`: two or more consecutive "moved a → b" events as one line: `path` is every state visited, in order. */
+export type TimelineItem =
+  | { kind: 'note'; note: CardNote }
+  | { kind: 'moves'; id: number; notes: CardNote[]; path: CardState[]; spanMs: number }
+
+const MOVE_RE = /^moved\s+([a-z_]+)\s*(?:→|->)\s*([a-z_]+)\s*$/i
+const isState = (s: string): s is CardState => s in STATE_LABEL
+
+/** `moved todo → in_progress` → { from, to }; anything else (comments, other events, unknown states) → null. */
+export function parseMove(note: CardNote): { from: CardState; to: CardState } | null {
+  if (noteKind(note) !== 'event') return null
+  const m = MOVE_RE.exec(note.text.trim())
+  if (!m) return null
+  const from = m[1].toLowerCase(), to = m[2].toLowerCase()
+  return isState(from) && isState(to) ? { from, to } : null
+}
 
 /**
- * A run of more than `threshold` consecutive events keeps its last `keep` lines and folds the rest into one
- * "N earlier events" item (`id` = index of the first folded note, stable while the run grows at its end).
+ * Fold every run of two or more consecutive move events into one item (`To do → In progress → Review → Done · over 5d`).
+ * A lone move, comments and every other event stay as they are; `id` = index of the run's first note (stable while the run grows).
  */
-export function foldEvents(notes: CardNote[], threshold = 5, keep = 2): TimelineItem[] {
+export function foldMoves(notes: CardNote[]): TimelineItem[] {
   const out: TimelineItem[] = []
   let i = 0
   while (i < notes.length) {
-    if (noteKind(notes[i]) === 'comment') { out.push({ kind: 'note', note: notes[i++] }); continue }
-    let j = i
-    while (j < notes.length && noteKind(notes[j]) === 'event') j++
-    const run = notes.slice(i, j)
-    if (run.length > threshold) {
-      out.push({ kind: 'folded', id: i, notes: run.slice(0, run.length - keep) })
-      for (const n of run.slice(run.length - keep)) out.push({ kind: 'note', note: n })
-    } else for (const n of run) out.push({ kind: 'note', note: n })
+    const first = parseMove(notes[i])
+    let j = i + 1
+    while (first && j < notes.length && parseMove(notes[j])) j++
+    if (first && j - i >= 2) {
+      const run = notes.slice(i, j)
+      out.push({
+        kind: 'moves', id: i, notes: run,
+        path: [first.from, ...run.map((n) => parseMove(n)!.to)],
+        spanMs: Math.max(0, run[run.length - 1].at - run[0].at),
+      })
+    } else for (let k = i; k < j; k++) out.push({ kind: 'note', note: notes[k] })
     i = j
   }
   return out
+}
+
+/** `Moved To do → In progress → Review · over 5d`; the span is left out when the run took under a minute. */
+export function movesLabel(path: CardState[], spanMs: number): string {
+  const span = spanMs >= 60_000 ? ` · over ${formatSpan(spanMs).replace(/^(\d+d) .*/, '$1')}` : ''
+  return `Moved ${path.map((s) => STATE_LABEL[s]).join(' → ')}${span}`
 }
 
 // ---------------------------------------------------------------- small text helpers

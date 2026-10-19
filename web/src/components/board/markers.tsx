@@ -5,7 +5,7 @@ import { Anchor, ArrowDown, Ban, Equal, Flame, Gem, Minus, Moon, Mountain, Rocke
 import type { Agent, Card, CardState } from '@shared/types'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { COLUMN_BY_STATE, categoryClass } from '@/lib/boardStyle'
-import { assigneeTip, avatarTone, categoryDot, initials, partialOf, payoffOf, payoffTip, type PayoffId, type PayoffTone } from '@/lib/faceA'
+import { AVATAR_TONE, assigneeTip, categoryDot, initials, partialOf, payoffOf, payoffTip, type PayoffId, type PayoffTone } from '@/lib/faceA'
 import { cn } from '@/lib/utils'
 import { QUICK_COLOR } from '@/lib/swatchStyle'
 
@@ -41,11 +41,11 @@ const PAYOFF_TEXT: Record<PayoffTone, string> = {
   dim: 'text-zinc-400',
 }
 
-/** Return x effort as one plain word with a small icon ("Quick win", "Big bet"). Only one of the two set: a quiet grey half-answer. Nothing set: nothing. */
-export function PayoffLabel({ card, className }: { card: Pick<Card, 'impact' | 'effort' | 'estimate_min'>; className?: string }) {
+/** Return x effort as one plain word with a small icon ("Quick win", "Big bet"). `face`: only the words that change a decision (the board card); otherwise every word, and a quiet grey half-answer when only one of the two is set. */
+export function PayoffLabel({ card, face, className }: { card: Pick<Card, 'impact' | 'effort' | 'estimate_min'>; face?: boolean; className?: string }) {
   const payoff = payoffOf(card)
   const partial = payoff ? null : partialOf(card)
-  if (!payoff && !partial) return null
+  if (face ? !payoff?.face : !payoff && !partial) return null
   if (!payoff) {
     return <Tip label={payoffTip(card)}><span className={cn('shrink-0 text-[11px] text-zinc-400', className)} data-payoff="partial">{partial}</span></Tip>
   }
@@ -70,19 +70,17 @@ export function CategoryLabel({ name, className }: { name: string; className?: s
   )
 }
 
-/** Initials avatar (colour hashed from the handle) with a corner dot while the agent works or has crashed. */
+/** Neutral initials avatar with a green corner dot while the agent works. */
 export function Avatar({ agent, className }: { agent: Agent; className?: string }) {
   return (
     <Tip label={assigneeTip(agent)}>
       <span
-        className={cn('relative inline-flex size-[18px] shrink-0 items-center justify-center rounded-full text-[8.5px] leading-none font-semibold tracking-tight', avatarTone(agent.handle), agent.kind === 'human' && 'ring-1 ring-violet-400', className)}
+        className={cn('relative inline-flex size-[18px] shrink-0 items-center justify-center rounded-full text-[8.5px] leading-none font-semibold tracking-tight', AVATAR_TONE, agent.kind === 'human' && 'ring-1 ring-zinc-400', className)}
         data-avatar={agent.handle}
         aria-label={`@${agent.handle}`}
       >
         {initials(agent.handle)}
-        {(agent.state === 'working' || agent.state === 'crashed') && (
-          <span className={cn('absolute -right-px -bottom-px size-[7px] rounded-full ring-[1.5px] ring-white', agent.state === 'working' ? 'bg-emerald-500' : 'bg-red-500')} aria-hidden />
-        )}
+        {agent.state === 'working' && <span className="absolute -right-px -bottom-px size-[7px] rounded-full bg-emerald-500 ring-[1.5px] ring-white" aria-hidden />}
       </span>
     </Tip>
   )
