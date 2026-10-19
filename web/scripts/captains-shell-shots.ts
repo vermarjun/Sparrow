@@ -28,19 +28,44 @@ const want = (name: string) => !ONLY || ONLY.has(name)
 const captains: { agent: { id: string; handle: string }; status: string }[] = await fetch(`${API}/api/captains?project=${PROJECT}&archived=1`).then((r) => r.json())
 const idOf = (handle: string) => captains.find((c) => c.agent.handle === handle)?.agent.id ?? ''
 
+
+// The mock has no /api/skills: serve a small fixture so the Skills page can be shot (library + one conflict + a code-risk warning).
+const link = (harness: string, state: string) => ({ harness, wanted: true, state, path: `~/.${harness}/skills/x`, alsoReadBy: [], viaRoot: null })
+const skill = (name: string, description: string, extra: Record<string, unknown> = {}) => ({
+  name, description, path: `~/.sparrow/skills/${name}`, locked: false, source: 'local', sourceUrl: null, inManifest: true, harnesses: ['claude', 'codex'],
+  links: [link('claude', 'linked'), link('codex', 'linked'), link('opencode', 'off')], problems: [], ...extra,
+})
+const SKILLS = {
+  library_missing: false, library_problem: null,
+  library: [
+    skill('sparrow-captain', 'Run a team of AI agents with Sparrow from your own session.', { source: 'sparrow', locked: true }),
+    skill('dataviz', 'Charts that read as one system in light and dark.', { source: 'github', sourceUrl: 'https://github.com/acme/dataviz.git' }),
+    skill('release-notes', 'Draft release notes from merged PRs.', { links: [link('claude', 'linked'), link('codex', 'conflict'), link('opencode', 'missing')], problems: [{ code: 'frontmatter', message: 'description is longer than 200 characters' }] }),
+  ],
+  unmanaged: [], external: [], conflicts: [], broken: [],
+  git: { available: true, branch: 'main', dirty: ['release-notes/SKILL.md'], ahead: 1, behind: 0, remote: 'git@github.com:acme/skills.git' },
+  paths: { library: '~/.sparrow/skills', home: '/Users/me', backup: '~/.sparrow/backups', roots: { library: '~/.sparrow/skills', claude: '~/.claude/skills', codex: '~/.codex/skills', opencode: '~/.config/opencode/skills', agents: '~/.agents/skills', 'claude-synced': '~/.claude/skills', sparrow: '~/.sparrow/skills' }, sandbox: false },
+  warnings: [],
+}
+
 const browser = await puppeteer.launch({ executablePath: CHROME, args: ['--no-sandbox'], headless: true })
 
 async function session(theme: 'light' | 'dark', size: { width: number; height: number }, body: (page: Page, shot: (name: string) => Promise<void>) => Promise<void>) {
   const page = await browser.newPage()
   await page.setViewport({ ...size, deviceScaleFactor: 1, hasTouch: size.width < 600 })
   await page.evaluateOnNewDocument((t) => { try { localStorage.setItem('sparrow.theme', t); localStorage.removeItem('sparrow.sidebar') } catch { /* */ } }, theme)
+  await page.setRequestInterception(true)
+  page.on('request', (r) => {
+    if (new URL(r.url()).pathname === '/api/skills' && r.method() === 'GET') void r.respond({ status: 200, contentType: 'application/json', body: JSON.stringify(SKILLS) })
+    else if (new URL(r.url()).pathname === '/api/skills/updates') void r.respond({ status: 200, contentType: 'application/json', body: '[]' })
+    else void r.continue()
+  })
   page.on('console', (m) => {
     if (m.type() !== 'error') return
     if (expected400 > 0 && m.text().includes('400')) { expected400--; return }
-    if (page.url().includes('#/skills') && m.text().includes('404')) return // the mock has no /api/skills (real server does)
     consoleErrors.push(`[${theme} ${size.width}] ${m.text()}`)
   })
-  page.on('response', (r) => { if (r.status() >= 400 && !(expected400 > 0) && !r.url().endsWith('/api/skills')) consoleErrors.push(`[${theme} ${size.width}] ${r.status()} ${r.url()}`) })
+  page.on('response', (r) => { if (r.status() >= 400 && !(expected400 > 0)) consoleErrors.push(`[${theme} ${size.width}] ${r.status()} ${r.url()}`) })
   page.on('pageerror', (e) => pageErrors.push(`[${theme} ${size.width}] ${String(e)}`))
   const shot = async (name: string) => { await page.screenshot({ path: join(OUT, `${name}-${theme}.png`) }); console.error(`shot ${name}-${theme}.png`) }
   try { await body(page, shot) } finally { await page.close() }

@@ -23,13 +23,13 @@ export function slugError(slug: string): string | null {
 // ---------------------------------------------------------------- resume status
 
 export const STATUS_CHIP: Record<ResumeStatus, { label: string; cls: string }> = {
-  ok: { label: 'ok', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  harness_missing: { label: 'harness missing', cls: 'bg-red-50 text-red-700 border-red-200' },
-  harness_logged_out: { label: 'logged out', cls: 'bg-red-50 text-red-700 border-red-200' },
-  harness_broken: { label: 'harness broken', cls: 'bg-red-50 text-red-700 border-red-200' },
-  model_gone: { label: 'model gone', cls: 'bg-amber-50 text-amber-800 border-amber-200' },
-  effort_invalid: { label: 'effort invalid', cls: 'bg-amber-50 text-amber-800 border-amber-200' },
-  unchecked: { label: 'unchecked', cls: 'bg-zinc-50 text-zinc-600 border-zinc-200' },
+  ok: { label: 'ok', cls: 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-500/30' },
+  harness_missing: { label: 'harness missing', cls: 'bg-red-50 dark:bg-red-500/15 text-red-700 dark:text-red-300 border-red-200 dark:border-red-500/30' },
+  harness_logged_out: { label: 'logged out', cls: 'bg-red-50 dark:bg-red-500/15 text-red-700 dark:text-red-300 border-red-200 dark:border-red-500/30' },
+  harness_broken: { label: 'harness broken', cls: 'bg-red-50 dark:bg-red-500/15 text-red-700 dark:text-red-300 border-red-200 dark:border-red-500/30' },
+  model_gone: { label: 'model gone', cls: 'bg-amber-50 dark:bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-500/30' },
+  effort_invalid: { label: 'effort invalid', cls: 'bg-amber-50 dark:bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-500/30' },
+  unchecked: { label: 'unchecked', cls: 'bg-muted/50 text-muted-foreground border-border' },
 }
 
 /** One-line description of a provider's state, for chips and the Doctor panel. */
@@ -149,12 +149,12 @@ export function effortAfterModelChange(catalog: HarnessCatalog | undefined, mode
 // ---------------------------------------------------------------- doctor
 
 export const CHECK_DOT: Record<CheckStatus, string> = {
-  pending: 'bg-zinc-300',
+  pending: 'bg-muted-foreground/30',
   running: 'bg-sky-500 animate-pulse',
   pass: 'bg-emerald-500',
   warn: 'bg-amber-400',
   fail: 'bg-red-500',
-  skipped: 'bg-zinc-200 ring-1 ring-zinc-300',
+  skipped: 'bg-muted-foreground/20 ring-1 ring-border',
 }
 
 export interface CheckGroups { shared: DoctorCheck[]; byHarness: Record<RealHarness, DoctorCheck[]> }

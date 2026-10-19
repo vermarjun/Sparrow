@@ -47,7 +47,7 @@ export function DegradedChip({ resume }: { resume: Pick<ResumeView, 'provider_he
   const ph = resume.provider_health
   if (!ph?.degraded) return null
   return (
-    <span className="inline-flex h-5 items-center rounded-full border border-amber-300 bg-amber-50 px-2 text-[11px] font-medium whitespace-nowrap text-amber-800" title={providerSummary(ph)} data-testid="degraded-chip">
+    <span className="inline-flex h-5 items-center rounded-full border border-amber-300 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/15 px-2 text-[11px] font-medium whitespace-nowrap text-amber-800 dark:text-amber-300" title={providerSummary(ph)} data-testid="degraded-chip">
       degraded · {ph.provider}
     </span>
   )
@@ -92,17 +92,17 @@ function ResumeList() {
                   </TableCell>
                   <TableCell className="py-2"><HarnessLabel harness={r.harness} /></TableCell>
                   <TableCell className="py-2">
-                    <div className={cn('font-mono text-xs', r.status === 'model_gone' && 'text-amber-800 line-through decoration-amber-400')}>{r.model ?? <span className="font-sans text-muted-foreground">harness default</span>}</div>
+                    <div className={cn('font-mono text-xs', r.status === 'model_gone' && 'text-amber-800 dark:text-amber-300 line-through decoration-amber-400')}>{r.model ?? <span className="font-sans text-muted-foreground">harness default</span>}</div>
                     {r.resolved_model && r.resolved_model !== r.model && <div className="font-mono text-[11px] text-muted-foreground">→ {r.resolved_model}</div>}
                   </TableCell>
                   <TableCell className="py-2 text-xs">{r.effort ?? <span className="text-muted-foreground">default</span>}</TableCell>
                   <TableCell className="max-w-72 py-2">
                     <div className="flex flex-wrap items-center gap-1"><StatusChip resume={r} /><DegradedChip resume={r} /></div>
-                    {r.provider_health?.degraded && <div className="mt-0.5 line-clamp-2 text-[11px] text-amber-800">{providerSummary(r.provider_health)}</div>}
+                    {r.provider_health?.degraded && <div className="mt-0.5 line-clamp-2 text-[11px] text-amber-800 dark:text-amber-300">{providerSummary(r.provider_health)}</div>}
                     {r.status_detail && r.status !== 'ok' && <div className="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground">{r.status_detail}</div>}
                   </TableCell>
                   <TableCell className="py-2 pr-4 text-right tabular-nums">
-                    {r.stale_agents.length ? <span className="inline-flex h-5 items-center rounded-full border border-amber-200 bg-amber-50 px-2 text-[11px] font-medium text-amber-800">{plural(r.stale_agents.length, 'agent')}</span> : <span className="text-xs text-muted-foreground">—</span>}
+                    {r.stale_agents.length ? <span className="inline-flex h-5 items-center rounded-full border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/15 px-2 text-[11px] font-medium text-amber-800 dark:text-amber-300">{plural(r.stale_agents.length, 'agent')}</span> : <span className="text-xs text-muted-foreground">—</span>}
                   </TableCell>
                 </TableRow>
               ))}
@@ -217,7 +217,7 @@ function ResumeEditor({ slug }: { slug: string | null }) {
           {!creating && <span className="font-mono text-xs text-muted-foreground">{slug}</span>}
           {resume && <StatusChip resume={resume} />}
           {resume && <DegradedChip resume={resume} />}
-          {dirty && <span className="text-xs text-amber-700">unsaved changes</span>}
+          {dirty && <span className="text-xs text-amber-700 dark:text-amber-300">unsaved changes</span>}
           <div className="ml-auto flex flex-wrap items-center gap-1.5">
             {!creating && (
               <>
@@ -265,7 +265,7 @@ function ResumeEditor({ slug }: { slug: string | null }) {
                       key={h} type="button" role="radio" aria-checked={selected} disabled={av.disabled && !selected} title={av.reason ?? undefined} data-harness={h} data-disabled={av.disabled || undefined}
                       onClick={() => { if (!selected) { setForm((f) => ({ ...f, harness: h as HarnessName, model: null, effort: null })); setErr(null) } }}
                       className={cn('flex h-9 items-center justify-center rounded-lg border text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50',
-                        selected ? 'border-zinc-900 bg-zinc-900/[0.03] ring-1 ring-zinc-900' : 'hover:bg-muted', av.disabled && selected && 'border-red-300 ring-red-300')}
+                        selected ? 'border-foreground bg-foreground/[0.03] ring-1 ring-foreground' : 'hover:bg-muted', av.disabled && selected && 'border-red-300 dark:border-red-500/30 ring-red-300 dark:ring-red-500/30')}
                     >
                       <HarnessLabel harness={h} />
                     </button>
@@ -275,7 +275,7 @@ function ResumeEditor({ slug }: { slug: string | null }) {
               {HARNESSES.map((h) => {
                 const av = harnessAvailability(h, catalogs, health)
                 if (!av.disabled && form.harness === h && modelsLoading(h, catalogs)) return <p key={h} className="text-[11px] text-muted-foreground" data-harness-loading={h}><b>{HARNESS_NAME[h]}</b>: loading models…</p>
-                return av.disabled ? <p key={h} className={cn('text-[11px]', form.harness === h ? 'text-red-700' : 'text-muted-foreground')} data-harness-reason={h}><b>{HARNESS_NAME[h]}</b>: {av.reason}</p> : null
+                return av.disabled ? <p key={h} className={cn('text-[11px]', form.harness === h ? 'text-red-700 dark:text-red-300' : 'text-muted-foreground')} data-harness-reason={h}><b>{HARNESS_NAME[h]}</b>: {av.reason}</p> : null
               })}
             </Field>
 
@@ -295,7 +295,7 @@ function ResumeEditor({ slug }: { slug: string | null }) {
                 </SelectContent>
               </Select>
               {gone && (
-                <p className="text-[11px] text-amber-800" data-testid="model-gone">
+                <p className="text-[11px] text-amber-800 dark:text-amber-300" data-testid="model-gone">
                   <b>model gone</b>: {form.model} is no longer offered by {form.harness}. Hires with it are refused; pick another model.
                 </p>
               )}
@@ -314,7 +314,7 @@ function ResumeEditor({ slug }: { slug: string | null }) {
                   </SelectContent>
                 </Select>
                 {effort.note && <p className="text-[11px] text-muted-foreground" data-testid="effort-note">{effort.note}</p>}
-                {effort.invalid && err?.field !== 'effort' && <p className="text-[11px] text-amber-800">{form.effort} is not accepted by this model</p>}
+                {effort.invalid && err?.field !== 'effort' && <p className="text-[11px] text-amber-800 dark:text-amber-300">{form.effort} is not accepted by this model</p>}
               </Field>
               <Field id="limits" label="Limits (minutes)" err={err}>
                 <div className="grid grid-cols-2 gap-1.5">
@@ -355,7 +355,7 @@ function ResumeEditor({ slug }: { slug: string | null }) {
                           return (
                             <button key={s} type="button" aria-pressed={on} title={resumes[s] ? renderResumeText(resumes[s].description, resumes[s]) : 'no such resume'} data-hire={s}
                               onClick={() => set('can_hire', on ? form.can_hire.filter((x) => x !== s) : [...form.can_hire, s])}
-                              className={cn('h-6 rounded-full border px-2 font-mono text-[11px] transition-colors', on ? 'border-zinc-800 bg-zinc-800 text-white' : 'text-muted-foreground hover:bg-muted')}>
+                              className={cn('h-6 rounded-full border px-2 font-mono text-[11px] transition-colors', on ? 'border-foreground bg-foreground text-background' : 'text-muted-foreground hover:bg-muted')}>
                               {s}
                             </button>
                           )
@@ -385,7 +385,7 @@ function ResumeEditor({ slug }: { slug: string | null }) {
                   const on = (form.skills ?? []).includes(n)
                   return (
                     <button key={n} type="button" aria-pressed={on} onClick={() => set('skills', toggleSkill(form.skills ?? [], n))}
-                      className={cn('h-6 rounded-full border px-2 font-mono text-[11px] transition-colors', on ? 'border-zinc-800 bg-zinc-800 text-white' : 'text-muted-foreground hover:bg-muted')}>
+                      className={cn('h-6 rounded-full border px-2 font-mono text-[11px] transition-colors', on ? 'border-foreground bg-foreground text-background' : 'text-muted-foreground hover:bg-muted')}>
                       {n}
                     </button>
                   )
@@ -393,7 +393,7 @@ function ResumeEditor({ slug }: { slug: string | null }) {
                 {choices.missing.map((n) => (
                   <button key={n} type="button" aria-pressed onClick={() => set('skills', toggleSkill(form.skills ?? [], n))}
                     title="Not in the library: agents hired with it start without it. Click to remove."
-                    className="inline-flex h-6 items-center gap-1 rounded-full border border-amber-500/60 bg-amber-500/15 px-2 font-mono text-[11px] text-amber-900 dark:text-amber-200">
+                    className="inline-flex h-6 items-center gap-1 rounded-full border border-amber-500/60 bg-amber-500/15 px-2 font-mono text-[11px] text-amber-900 dark:text-amber-300 dark:text-amber-200">
                     <TriangleAlert className="size-2.5" />{n}
                   </button>
                 ))}
@@ -406,7 +406,7 @@ function ResumeEditor({ slug }: { slug: string | null }) {
             {resume && (
               <div className="border-t pt-2 text-[11px] text-muted-foreground">
                 <PathText path={resume.path} max={56} /> · hash <span className="font-mono">{resume.hash}</span>
-                {staleNames.length > 0 && <div className="mt-0.5 text-amber-800">On an older copy: {staleNames.join(', ')}</div>}
+                {staleNames.length > 0 && <div className="mt-0.5 text-amber-800 dark:text-amber-300">On an older copy: {staleNames.join(', ')}</div>}
               </div>
             )}
           </div>
@@ -440,8 +440,8 @@ function ResumeEditor({ slug }: { slug: string | null }) {
 function ModelItem({ m }: { m: ReturnType<typeof modelOptions>[number] }) {
   return (
     <SelectItem value={m.value} data-model={m.value}>
-      <span className={cn(m.gone && 'text-amber-800')}>{m.label}</span>
-      {m.hint && <span className={cn('font-sans text-[11px]', m.gone ? 'text-amber-700' : 'text-muted-foreground')}>{m.gone ? 'model gone' : m.hint}</span>}
+      <span className={cn(m.gone && 'text-amber-800 dark:text-amber-300')}>{m.label}</span>
+      {m.hint && <span className={cn('font-sans text-[11px]', m.gone ? 'text-amber-700 dark:text-amber-300' : 'text-muted-foreground')}>{m.gone ? 'model gone' : m.hint}</span>}
     </SelectItem>
   )
 }
@@ -454,13 +454,13 @@ function Field({ id, label, hint, err, children, className }: { id: ResumeField;
         {label} {hint && <span className="font-normal text-muted-foreground">· {hint}</span>}
       </Label>
       {children}
-      {mine && <p className="text-xs text-red-700" data-field-error={id}>{mine}</p>}
+      {mine && <p className="text-xs text-red-700 dark:text-red-300" data-field-error={id}>{mine}</p>}
     </div>
   )
 }
 
 function Banner({ tone, children, testid }: { tone: 'warn' | 'bad'; children: React.ReactNode; testid?: string }) {
-  return <div className={cn('rounded-lg px-3 py-2 text-xs ring-1', tone === 'bad' ? 'bg-red-50 text-red-800 ring-red-200' : 'bg-amber-50 text-amber-900 ring-amber-200')} data-testid={testid}>{children}</div>
+  return <div className={cn('rounded-lg px-3 py-2 text-xs ring-1', tone === 'bad' ? 'bg-red-50 dark:bg-red-500/15 text-red-800 dark:text-red-300 ring-red-200 dark:ring-red-500/30' : 'bg-amber-50 dark:bg-amber-500/15 text-amber-900 dark:text-amber-300 ring-amber-200 dark:ring-amber-500/30')} data-testid={testid}>{children}</div>
 }
 
 function TestPanel({ slug, dirty }: { slug: string; dirty: boolean }) {
@@ -490,7 +490,7 @@ function TestPanel({ slug, dirty }: { slug: string; dirty: boolean }) {
   }
 
   return (
-    <div className="grid gap-1.5 rounded-lg bg-zinc-50 p-2.5 ring-1 ring-zinc-200" data-testid="test-panel" data-status={check?.status ?? 'none'}>
+    <div className="grid gap-1.5 rounded-lg bg-muted/50 p-2.5 ring-1 ring-border" data-testid="test-panel" data-status={check?.status ?? 'none'}>
       <div className="flex items-center gap-2">
         <Button size="sm" variant="outline" onClick={start} disabled={running || starting || dirty} title={dirty ? 'Save first: the test runs the saved resume' : undefined} data-testid="test-resume">
           <FlaskConical /> {running ? 'Testing…' : 'Test this resume'}
@@ -498,7 +498,7 @@ function TestPanel({ slug, dirty }: { slug: string; dirty: boolean }) {
         {check && (
           <span className="flex items-center gap-1.5 text-xs">
             <span className={cn('inline-block size-2 rounded-full', CHECK_DOT[check.status])} />
-            <b className={cn(check.status === 'pass' && 'text-emerald-700', check.status === 'fail' && 'text-red-700')}>{check.status}</b>
+            <b className={cn(check.status === 'pass' && 'text-emerald-700 dark:text-emerald-300', check.status === 'fail' && 'text-red-700 dark:text-red-300')}>{check.status}</b>
             <span className="text-muted-foreground tabular-nums">
               {running ? duration(now - check.updated_at) : `${check.duration_ms != null ? duration(check.duration_ms) + ' · ' : ''}${agoLabel(check.updated_at, now)}`}
             </span>
@@ -506,8 +506,8 @@ function TestPanel({ slug, dirty }: { slug: string; dirty: boolean }) {
         )}
       </div>
       {!check && <p className="text-[11px] text-muted-foreground">Hires a throwaway agent with exactly this harness, model and effort, waits for it to report, and closes it.</p>}
-      {check?.detail && <p className="text-[11px] break-words text-zinc-700">{check.detail}</p>}
-      {check?.fix && check.status === 'fail' && <code className="rounded bg-background px-1.5 py-1 font-mono text-[11px] text-zinc-800 ring-1 ring-red-200">{check.fix}</code>}
+      {check?.detail && <p className="text-[11px] break-words text-foreground/80">{check.detail}</p>}
+      {check?.fix && check.status === 'fail' && <code className="rounded bg-background px-1.5 py-1 font-mono text-[11px] text-foreground ring-1 ring-red-200 dark:ring-red-500/30">{check.fix}</code>}
     </div>
   )
 }
@@ -541,7 +541,7 @@ function DuplicateDialog({ open, onOpenChange, from }: { open: boolean; onOpenCh
           <div className="grid gap-1.5">
             <Label htmlFor="dup-slug">New slug</Label>
             <Input id="dup-slug" autoFocus value={to} onChange={(e) => { setTo(e.target.value.toLowerCase()); setErr(null) }} className="font-mono" aria-invalid={!!err} />
-            {err && <p className="text-xs text-red-700">{err}</p>}
+            {err && <p className="text-xs text-red-700 dark:text-red-300">{err}</p>}
           </div>
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
@@ -557,12 +557,12 @@ function DuplicateDialog({ open, onOpenChange, from }: { open: boolean; onOpenCh
 export function RoleBadges({ resume }: { resume: Pick<ResumeView, 'helper' | 'one_shot'> }) {
   return (
     <>
-      {resume.helper && <span className="rounded-full border border-teal-200 bg-teal-50 px-1.5 text-[10px] font-medium text-teal-800" title="Leaf assistant: never hires; hiring only helpers doesn't make an agent a captain" data-badge="helper">helper</span>}
-      {resume.one_shot && <span className="rounded-full border border-violet-200 bg-violet-50 px-1.5 text-[10px] font-medium text-violet-800" title="Released for good as soon as it reports" data-badge="one-shot">one-shot</span>}
+      {resume.helper && <span className="rounded-full border border-teal-200 dark:border-teal-500/30 bg-teal-50 dark:bg-teal-500/15 px-1.5 text-[10px] font-medium text-teal-800 dark:text-teal-300" title="Leaf assistant: never hires; hiring only helpers doesn't make an agent a captain" data-badge="helper">helper</span>}
+      {resume.one_shot && <span className="rounded-full border border-violet-200 dark:border-violet-500/30 bg-violet-50 dark:bg-violet-500/15 px-1.5 text-[10px] font-medium text-violet-800 dark:text-violet-300" title="Released for good as soon as it reports" data-badge="one-shot">one-shot</span>}
     </>
   )
 }
 
 export function OlderResumeBadge() {
-  return <span className="inline-flex h-5 items-center rounded-full border border-amber-200 bg-amber-50 px-2 text-[11px] font-medium text-amber-800" title="Hired from an older copy of its resume. Open the resume and use Apply to update it.">older resume</span>
+  return <span className="inline-flex h-5 items-center rounded-full border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/15 px-2 text-[11px] font-medium text-amber-800 dark:text-amber-300" title="Hired from an older copy of its resume. Open the resume and use Apply to update it.">older resume</span>
 }

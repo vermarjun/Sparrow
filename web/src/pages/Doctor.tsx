@@ -11,10 +11,10 @@ import { cn } from '@/lib/utils'
 import { CopyButton, Empty, HarnessLabel, PathText, useNow } from '@/components/sparrow/bits'
 
 const TONE = {
-  ok: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  bad: 'bg-red-50 text-red-700 border-red-200',
-  warn: 'bg-amber-50 text-amber-800 border-amber-200',
-  none: 'bg-zinc-50 text-zinc-500 border-zinc-200',
+  ok: 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-500/30',
+  bad: 'bg-red-50 dark:bg-red-500/15 text-red-700 dark:text-red-300 border-red-200 dark:border-red-500/30',
+  warn: 'bg-amber-50 dark:bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-500/30',
+  none: 'bg-muted/50 text-muted-foreground border-border',
 }
 
 export function DoctorPage() {
@@ -88,7 +88,7 @@ export function DoctorPage() {
                       <HarnessLabel harness={h} className="text-sm font-medium text-foreground" />
                       {run.versions[h] && <span className="font-mono text-[11px] text-muted-foreground">v{run.versions[h]}</span>}
                       {changed && (
-                        <span className="inline-flex h-5 items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-2 text-[11px] font-medium text-violet-700" title="The harness version changed since the previous run; every check ran again on the new version.">
+                        <span className="inline-flex h-5 items-center gap-1 rounded-full border border-violet-200 dark:border-violet-500/30 bg-violet-50 dark:bg-violet-500/15 px-2 text-[11px] font-medium text-violet-700 dark:text-violet-300" title="The harness version changed since the previous run; every check ran again on the new version.">
                           <Sparkles className="size-3" /> re-verified on new version
                         </span>
                       )}
@@ -140,7 +140,7 @@ function ProviderPanel() {
               </span>
               {p.last_error_at && <span className="ml-auto text-[11px] text-muted-foreground">last error {agoLabel(p.last_error_at, now)}</span>}
             </div>
-            <p className="mt-0.5 pl-4 text-xs break-words text-zinc-600">{providerSummary(p)}</p>
+            <p className="mt-0.5 pl-4 text-xs break-words text-muted-foreground">{providerSummary(p)}</p>
           </li>
         ))}
       </ul>
@@ -154,13 +154,13 @@ function CheckRow({ check: c }: { check: DoctorCheck }) {
       <div className="flex items-center gap-2">
         <span className={cn('inline-block size-2 shrink-0 rounded-full', CHECK_DOT[c.status])} title={c.status} />
         <span className="text-[13px] font-medium">{c.label}</span>
-        <span className={cn('text-[11px]', c.status === 'fail' ? 'text-red-700' : c.status === 'warn' ? 'text-amber-700' : 'text-muted-foreground')}>{c.status}</span>
+        <span className={cn('text-[11px]', c.status === 'fail' ? 'text-red-700 dark:text-red-300' : c.status === 'warn' ? 'text-amber-700 dark:text-amber-300' : 'text-muted-foreground')}>{c.status}</span>
         {c.duration_ms != null && <span className="ml-auto text-[11px] text-muted-foreground tabular-nums">{c.duration_ms < 1000 ? `${c.duration_ms} ms` : duration(c.duration_ms)}</span>}
       </div>
-      {c.detail && <p className="mt-0.5 pl-4 text-xs break-words text-zinc-600">{c.detail}</p>}
+      {c.detail && <p className="mt-0.5 pl-4 text-xs break-words text-muted-foreground">{c.detail}</p>}
       {c.fix && (c.status === 'warn' || c.status === 'fail') && (
-        <div className={cn('mt-1.5 ml-4 flex items-start gap-1 rounded-md px-2 py-1.5 ring-1', c.status === 'fail' ? 'bg-red-50/60 ring-red-200' : 'bg-amber-50/60 ring-amber-200')} data-testid="fix">
-          <code className="min-w-0 flex-1 font-mono text-[11.5px] break-all whitespace-pre-wrap text-zinc-800">{c.fix}</code>
+        <div className={cn('mt-1.5 ml-4 flex items-start gap-1 rounded-md px-2 py-1.5 ring-1', c.status === 'fail' ? 'bg-red-50/60 dark:bg-red-500/10 ring-red-200 dark:ring-red-500/30' : 'bg-amber-50/60 dark:bg-amber-500/10 ring-amber-200 dark:ring-amber-500/30')} data-testid="fix">
+          <code className="min-w-0 flex-1 font-mono text-[11.5px] break-all whitespace-pre-wrap text-foreground">{c.fix}</code>
           <CopyButton text={c.fix} label="Copy fix" className="-my-0.5" />
         </div>
       )}
@@ -214,11 +214,11 @@ function CatalogPanel() {
                 <p className="mt-1 text-xs text-muted-foreground" data-testid={`catalog-loading-${h}`}>{loaded ? 'loading models…' : 'Loading…'}</p>
               ) : (
                 <>
-                  <p className="mt-1 text-xs text-zinc-700">
+                  <p className="mt-1 text-xs text-foreground/80">
                     <b className="tabular-nums">{c.models.length}</b> models{hidden ? ` (${hidden} hidden)` : ''} · fetched {agoLabel(c.fetched_at, now)}
                   </p>
                   {c.binary && <p className="text-[11px] text-muted-foreground"><PathText path={c.binary} max={44} /></p>}
-                  {c.error && <p className="mt-1 rounded-md bg-red-50/60 px-2 py-1 text-xs text-red-800 ring-1 ring-red-200">{c.error}</p>}
+                  {c.error && <p className="mt-1 rounded-md bg-red-50/60 dark:bg-red-500/10 px-2 py-1 text-xs text-red-800 dark:text-red-300 ring-1 ring-red-200 dark:ring-red-500/30">{c.error}</p>}
                 </>
               )}
             </div>

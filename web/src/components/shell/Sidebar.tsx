@@ -51,13 +51,12 @@ function ConnDot({ withLabel }: { withLabel?: boolean }) {
 
 // ---------------------------------------------------------------- rows
 
-/** Fixed-width right side: nothing shifts when a status changes. */
+/** Fixed-width right slot (glyph or unread pill): nothing shifts when a status changes. The time lives in the tooltip. */
 function RowStatus({ s }: { s: CaptainSummary }) {
   const n = s.questions > 0 ? s.questions : s.unread
   return (
-    <span className="flex w-[52px] shrink-0 items-center justify-end gap-1.5">
+    <span className="flex h-4 w-6 shrink-0 items-center justify-end">
       {s.status === 'attention' && n > 0 ? <CountPill n={n} /> : <StatusGlyph status={s.status} />}
-      <span className="w-6 text-right text-xs text-muted-foreground tabular">{ago(s.last_activity_at)}</span>
     </span>
   )
 }
@@ -92,7 +91,7 @@ function CaptainNavRow({ s, selected, tabbable, onNavigate }: { s: CaptainSummar
         <span className="font-medium">{captainName(a)}</span>
         <span className="opacity-70">{captainSubline(a)}{!untitled ? '' : a.captain?.branch ? ` · ${a.captain.branch}` : ''}</span>
         <span className="font-mono text-[11px] opacity-70">{tildePath(a.cwd)}</span>
-        <span className="opacity-70">{statusLabel(s)}{reason && s.status !== 'attention' ? ` · ${reason}` : ''}</span>
+        <span className="opacity-70">{statusLabel(s)}{reason && s.status !== 'attention' ? ` · ${reason}` : ''} · {ago(s.last_activity_at)}</span>
       </TooltipContent>
     </Tooltip>
   )

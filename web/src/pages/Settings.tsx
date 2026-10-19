@@ -79,7 +79,7 @@ export function SettingsPage() {
           <span className="text-xs text-muted-foreground">Changes apply at once, no restart. Saved to <PathText path={view.file} max={48} /></span>
         </div>
 
-        {serverErr && !serverErr.key && <div className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-800 ring-1 ring-red-200" data-testid="settings-error">{serverErr.msg}</div>}
+        {serverErr && !serverErr.key && <div className="rounded-lg bg-red-50 dark:bg-red-500/15 px-3 py-2 text-xs text-red-800 dark:text-red-300 ring-1 ring-red-200 dark:ring-red-500/30" data-testid="settings-error">{serverErr.msg}</div>}
 
         {groups.map((g) => (
           <section key={g.name} className="rounded-xl border bg-background" data-group={g.name}>
@@ -96,8 +96,8 @@ export function SettingsPage() {
                       <label htmlFor={`s-${f.key}`} className="flex flex-wrap items-center gap-2 text-sm font-medium">
                         {f.label}
                         <code className="rounded bg-muted px-1 font-mono text-[11px] font-normal text-muted-foreground">{f.key}</code>
-                        {f.saved && <span className="rounded-full border border-sky-200 bg-sky-50 px-1.5 text-[10px] font-medium text-sky-800">custom</span>}
-                        {f.env_override && <span className="rounded-full border border-amber-200 bg-amber-50 px-1.5 text-[10px] font-medium text-amber-800" title="Set by this server's SPARROW_SETTINGS environment variable">env</span>}
+                        {f.saved && <span className="rounded-full border border-sky-200 dark:border-sky-500/30 bg-sky-50 dark:bg-sky-500/15 px-1.5 text-[10px] font-medium text-sky-800 dark:text-sky-300">custom</span>}
+                        {f.env_override && <span className="rounded-full border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/15 px-1.5 text-[10px] font-medium text-amber-800 dark:text-amber-300" title="Set by this server's SPARROW_SETTINGS environment variable">env</span>}
                       </label>
                       <p className="mt-0.5 text-xs text-muted-foreground">{f.help}</p>
                       {f.key === 'max_depth' && <DepthHint depth={Number(text) || f.value} />}
@@ -107,7 +107,7 @@ export function SettingsPage() {
                         <Input
                           id={`s-${f.key}`} inputMode="numeric" value={text} disabled={f.env_override || busy}
                           onChange={(e) => { setDraft({ ...draft, [f.key]: e.target.value }); if (serverErr?.key === f.key) setServerErr(null) }}
-                          className={cn('h-8 w-28 text-right tabular-nums', isChanged && 'border-amber-400 ring-1 ring-amber-300', (bad || srv) && 'border-red-400 ring-red-300')}
+                          className={cn('h-8 w-28 text-right tabular-nums', isChanged && 'border-amber-400 ring-1 ring-amber-300 dark:ring-amber-500/30', (bad || srv) && 'border-red-400 ring-red-300 dark:ring-red-500/30')}
                           aria-invalid={!!(bad || srv)} data-testid={`setting-${f.key}`}
                         />
                         <span className="w-14 text-xs text-muted-foreground">{f.unit}</span>
@@ -120,7 +120,7 @@ export function SettingsPage() {
                           </button>
                         )}
                       </div>
-                      {(bad || srv) && <p className="text-[11px] text-red-700" data-field-error={f.key}>{bad ? `must be ${bad}` : srv}</p>}
+                      {(bad || srv) && <p className="text-[11px] text-red-700 dark:text-red-300" data-field-error={f.key}>{bad ? `must be ${bad}` : srv}</p>}
                     </div>
                   </div>
                 )
@@ -137,18 +137,18 @@ export function SettingsPage() {
               <label key={h} className="grid gap-1 text-xs font-medium">
                 {HARNESS_NAME[h]}
                 <Input value={models[h] ?? ''} placeholder="auto (cheapest)" disabled={busy} onChange={(e) => setModels({ ...models, [h]: e.target.value })}
-                  className={cn('h-8 font-mono text-[12px]', (models[h] ?? '').trim() !== (view.doctor_models[h] ?? '') && 'border-amber-400 ring-1 ring-amber-300')} data-testid={`doctor-model-${h}`} />
+                  className={cn('h-8 font-mono text-[12px]', (models[h] ?? '').trim() !== (view.doctor_models[h] ?? '') && 'border-amber-400 ring-1 ring-amber-300 dark:ring-amber-500/30')} data-testid={`doctor-model-${h}`} />
               </label>
             ))}
           </div>
-          {serverErr?.key === 'doctor_models' && <p className="px-4 pb-3 text-[11px] text-red-700">{serverErr.msg}</p>}
+          {serverErr?.key === 'doctor_models' && <p className="px-4 pb-3 text-[11px] text-red-700 dark:text-red-300">{serverErr.msg}</p>}
         </section>
       </div>
 
       <div className={cn('fixed inset-x-0 bottom-0 border-t bg-background/95 backdrop-blur transition-transform', dirty ? 'translate-y-0' : 'translate-y-full')} aria-hidden={!dirty}>
         <div className="mx-auto flex max-w-4xl items-center gap-3 px-4 py-2.5">
-          <span className="text-xs text-amber-800" data-testid="settings-dirty">{plural(dirty, 'unsaved change')}</span>
-          {invalid.length > 0 && <span className="text-xs text-red-700">fix {plural(invalid.length, 'field')} first</span>}
+          <span className="text-xs text-amber-800 dark:text-amber-300" data-testid="settings-dirty">{plural(dirty, 'unsaved change')}</span>
+          {invalid.length > 0 && <span className="text-xs text-red-700 dark:text-red-300">fix {plural(invalid.length, 'field')} first</span>}
           <div className="ml-auto flex gap-1.5">
             <Button variant="ghost" size="sm" onClick={() => take(view)} disabled={busy}><Undo2 /> Discard</Button>
             <Button size="sm" onClick={save} disabled={busy || invalid.length > 0} data-testid="settings-save"><Save /> {busy ? 'Saving…' : 'Save'}</Button>
@@ -170,7 +170,7 @@ function DepthHint({ depth }: { depth: number }) {
       {names.map((n, i) => (
         <span key={i} className="flex items-center gap-1">
           {i > 0 && <span className="text-muted-foreground">→</span>}
-          <span className={cn('rounded-full border px-1.5', i === 0 ? 'border-zinc-800 bg-zinc-800 text-white' : 'bg-muted/60')}>{i} · {n}</span>
+          <span className={cn('rounded-full border px-1.5', i === 0 ? 'border-foreground bg-foreground text-background' : 'bg-muted/60')}>{i} · {n}</span>
         </span>
       ))}
     </div>
