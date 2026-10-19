@@ -384,7 +384,15 @@ const commands: Record<string, Handler> = {
     if (positionals.length) throw new UsageError('captains', 'unexpected positional argument');
     const { project, meId } = await projectScope(ctx, { quietShell: true });
     const list = await call<CaptainSummary[]>(ctx, 'GET', captainsPath(project, !!values.all));
-    return { raw: list, text: captainsTable(list, project.id, meId, !!values.all) };
+    // The API has no hidden count: ask for everything once more to say what the default view left out.
+    let hidden = { archived: 0, empty: 0 };
+    if (!values.all) {
+      const full = await call<CaptainSummary[]>(ctx, 'GET', captainsPath(project, true));
+      const shown = new Set(list.map((s) => s.agent.id));
+      const rest = full.filter((s) => !shown.has(s.agent.id));
+      hidden = { archived: rest.filter((s) => s.status === 'archived').length, empty: rest.filter((s) => s.status !== 'archived').length };
+    }
+    return { raw: list, text: captainsTable(list, project.id, meId, !!values.all, Date.now(), hidden) };
   },
 
   async title(ctx, args) {

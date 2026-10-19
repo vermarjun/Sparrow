@@ -222,8 +222,10 @@ function resumeLines(c: CaptainSummary['resume']): string[] {
  * `sparrow captains`: one row per captain (handle, title, status, team working/total, last activity), the resume line(s)
  * indented under it. `meId` marks the caller "(you)"; null in a bare shell.
  */
-export function captainsTable(list: CaptainSummary[], project: string, meId: string | null, all = false, now = Date.now()): string {
-  const head = `Captains in ${project} — ${list.length}${all ? ' (incl. archived)' : ' (archived hidden; --all)'}`;
+export function captainsTable(list: CaptainSummary[], project: string, meId: string | null, all = false, now = Date.now(), hidden: { archived: number; empty: number } = { archived: 0, empty: 0 }): string {
+  const parts = [hidden.archived ? `${hidden.archived} archived` : '', hidden.empty ? `${hidden.empty} empty` : ''].filter(Boolean);
+  const note = all ? ' (incl. archived and empty)' : parts.length ? ` (${hidden.archived + hidden.empty} hidden: ${parts.join(', ')}; --all)` : '';
+  const head = `Captains in ${project} — ${list.length}${note}`;
   if (!list.length) return `${head}\nNo captains yet. Start one: sparrow captain --title "…"`;
   const rows = list.map((s) => {
     const a = s.agent;

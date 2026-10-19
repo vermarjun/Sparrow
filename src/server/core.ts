@@ -760,16 +760,16 @@ export class Core {
 
   // ======================================================== captains (multi-captain)
 
-  /** A captain by id or handle; `project` scopes handles. 404 when there is none. */
-  captainOr404(ref: string, project: string | null): Agent {
+  /** A captain by id or handle; `project` scopes handles. 404 when there is none, or (identified caller) it leads another fleet. */
+  captainOr404(ref: string, project: string | null, caller: Agent | null = null): Agent {
     const c = this.findCaptain(project, ref);
-    if (!c) throw new HttpError(404, `No captain ${ref}${project ? ` in project ${project}` : ''}. List them with sparrow captains.`);
+    if (!c || (caller && c.fleet_id !== caller.fleet_id)) throw new HttpError(404, `No captain ${ref}${project ? ` in project ${project}` : ''}. List them with sparrow captains.`);
     return c;
   }
 
   /** PATCH /api/captains/:id — the UI (no caller) or the captain itself. */
   patchCaptain(caller: Agent | null, ref: string, project: string | null, req: CaptainPatchReq): Agent {
-    const cap = this.captainOr404(ref, project ?? caller?.project_id ?? null);
+    const cap = this.captainOr404(ref, project ?? caller?.project_id ?? null, caller);
     if (caller && caller.id !== cap.id) throw new HttpError(403, `@${caller.handle} may not change captain @${cap.handle}; only the user (UI) or the captain itself can.`);
     const b = (req ?? {}) as Record<string, unknown>;
     if (!['title', 'name', 'archived'].some((k) => has(b, k))) throw new HttpError(400, 'nothing to change: send {title?, name?, archived?}');
@@ -837,8 +837,8 @@ export class Core {
   }
 
   /** `claude --resume <sid>` in tmux for a captain whose window is not open. Claude only in v1. */
-  async resumeCaptain(ref: string, project: string | null, launch: (r: CaptainLaunchReq) => Promise<CaptainStartRes>): Promise<CaptainStartRes> {
-    const cap = this.captainOr404(ref, project);
+  async resumeCaptain(ref: string, project: string | null, launch: (r: CaptainLaunchReq) => Promise<CaptainStartRes>, caller: Agent | null = null): Promise<CaptainStartRes> {
+    const cap = this.captainOr404(ref, project, caller);
     const resume = captainResume(cap, null);
     const how = resume.command ? ` Resume it yourself with: ${resume.command}` : '';
     if (resume.harness !== 'claude') throw new HttpError(400, `@${cap.handle} runs on ${resume.harness}; Sparrow can only resume Claude Code captains in tmux.${how}`);
@@ -1911,7 +1911,7 @@ export class Core {
     if (thread === 'group') return []; // group chat was removed; its old rows stay in the DB, hidden
     if (thread && !thread.startsWith('dm:')) {
       const t = this.resolveAgent(project, thread);
-      if (!t) throw new HttpError(404, `No agent ${thread}${project ? ` in project ${project}` : ''}.`);
+      if (!t || (q.caller && t.fleet_id !== q.caller.fleet_id)) throw new HttpError(404, `No agent ${thread}${project ? ` in project ${project}` : ''}.`);
       project = t.project_id;
       if (q.caller && q.caller.id !== t.id) thread = this.dmThread(q.caller.id, t.id);
       else { thread = null; fromOrTo = t.id; }

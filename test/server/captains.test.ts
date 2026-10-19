@@ -555,7 +555,7 @@ describe('10 PATCH /api/captains/:id', () => {
     // the captain itself may; another captain may not; an agent may not; hires are not captains
     expect((await ctx.req('PATCH', `/api/captains/${A.id}`, { title: 'mine' }, A.id)).status).toBe(200);
     const denied = await ctx.req('PATCH', `/api/captains/${A.id}`, { title: 'hijack' }, B.id);
-    expect(denied.status).toBe(403);
+    expect(denied.status).toBe(404); // another team's captain reads as unknown
     const w = await hire(ctx, 'fake', 'x', {}, A.id);
     expect((await ctx.req('PATCH', `/api/captains/${A.id}`, { title: 'hijack' }, w.id)).status).toBe(403);
     expect((await ctx.req('PATCH', `/api/captains/${w.id}`, { title: 'x' })).status).toBe(404);
@@ -914,5 +914,85 @@ describe('A-amendments: projects, paging, phantoms, cards, resolve', () => {
     const mine = (await ctx.req('GET', '/api/whoami', undefined, w.id)).body;
     expect(mine.captain.id).toBe(A.id);
     expect(mine.resume).toBeUndefined();
+  });
+});
+
+describe('read-side wall: agent detail, screen and threads', () => {
+  test('an identified caller cannot read another team\'s agent, its screen or its thread; the UI and its own team can', async () => {
+    const ctx = await bare({ max_running: 50 });
+    const A = await captainOf(ctx);
+    const B = await captainOf(ctx);
+    const a1 = await hire(ctx, 'fake', 'secret brief', { name: 'amy' }, A.id);
+    const b1 = await hire(ctx, 'fake', 'b brief', { name: 'bob' }, B.id);
+    await flush();
+    for (const who of [B.id, b1.id]) {
+      for (const ref of [a1.id, 'amy']) {
+        const d = await ctx.req('GET', `/api/agents/${ref}?project=${A.project_id}`, undefined, who);
+        expect(d.status).toBe(404);
+        expect(JSON.stringify(d.body)).not.toContain('secret brief');
+        expect((await ctx.req('GET', `/api/agents/${ref}/screen?project=${A.project_id}`, undefined, who)).status).toBe(404);
+      }
+      expect((await ctx.req('GET', `/api/messages?project=${A.project_id}&thread=@amy`, undefined, who)).status).toBe(404);
+    }
+    // same body as a really unknown agent: fleets are not enumerable
+    const unknown = await ctx.req('GET', `/api/agents/ag_NOPE`, undefined, B.id);
+    const other = await ctx.req('GET', `/api/agents/${a1.id}`, undefined, B.id);
+    expect(other.body.error.replace(a1.id, 'X')).toBe(unknown.body.error.replace('ag_NOPE', 'X'));
+    // raw dm thread of the other team: nothing
+    const raw = await ctx.req('GET', `/api/messages?project=${A.project_id}&thread=${encodeURIComponent(`dm:${[A.id, a1.id].sort().join(':')}`)}`, undefined, B.id);
+    expect(raw.body).toEqual([]);
+    // own team, parent chain, and the UI still read fine
+    expect((await ctx.req('GET', `/api/agents/${a1.id}`, undefined, A.id)).status).toBe(200);
+    expect((await ctx.req('GET', `/api/agents/amy/screen?project=${A.project_id}`, undefined, a1.id)).status).toBe(200);
+    expect((await ctx.req('GET', `/api/agents/${A.id}`, undefined, a1.id)).status).toBe(200);
+    expect((await ctx.req('GET', `/api/agents/${a1.id}`)).status).toBe(200);
+    expect((await ctx.req('GET', `/api/agents/${a1.id}/screen`)).status).toBe(200);
+    expect((await ctx.req('GET', `/api/messages?project=${A.project_id}&thread=@amy`, undefined, A.id)).body.length).toBeGreaterThan(0);
+  });
+});
+
+describe('captain reads are walled too', () => {
+  test('another fleet\'s captain: detail, resume and patch are 404 (same text as unknown); the list hides its messages and results', async () => {
+    const calls: any[] = [];
+    const ctx = await bare({ max_running: 50 }, { launchCaptain: async (r: any) => { calls.push(r); return { session: 's', window: 'w', window_id: '@5', cwd: r.cwd, attach: 'x' }; }, captainWindowOpen: async () => false });
+    const A = await captainOf(ctx);
+    const B = await captainOf(ctx);
+    await ctx.req('PATCH', `/api/captains/${A.id}`, { title: 'A work' });
+    const a1 = await hire(ctx, 'fake', 'secret brief', { name: 'amy' }, A.id);
+    await flush();
+    await doneAs(ctx, a1, 'secret result');
+    const p = A.project_id;
+    // another captain: 404 on id and on handle, identical to a captain that does not exist
+    const missing = await ctx.req('GET', `/api/captains/ag_NOPE`, undefined, B.id);
+    for (const ref of [A.id, A.handle]) {
+      const d = await ctx.req('GET', `/api/captains/${ref}?project=${p}`, undefined, B.id);
+      expect(d.status).toBe(404);
+      expect(JSON.stringify(d.body)).not.toContain('secret');
+      expect(d.body.error).toContain(`No captain ${ref}`);
+      expect((await ctx.req('POST', `/api/captains/${ref}/resume?project=${p}`, undefined, B.id)).status).toBe(404);
+      expect((await ctx.req('PATCH', `/api/captains/${ref}?project=${p}`, { title: 'hijack' }, B.id)).status).toBe(404);
+    }
+    expect(missing.status).toBe(404);
+    expect(calls.length).toBe(0);
+    expect(agentOf(ctx, A.id).captain!.title).toBe('A work');
+    // the list keeps the directory facts, drops messages and results of other teams
+    const list = (await ctx.req('GET', `/api/captains?project=${p}&all=1`, undefined, B.id)).body as CaptainSummary[];
+    const a = list.find((s) => s.agent.id === A.id)!;
+    expect(a.agent.captain!.title).toBe('A work');
+    expect(a).toMatchObject({ status: 'attention', last_message: null, results: { ok: 0, blocked: 0, failed: 0 } });
+    expect(a.fleet.total).toBe(1);
+    expect(a.last_activity_at).toBeGreaterThan(0);
+    expect(a.resume.session_id).toBe(A.session_id);
+    expect(a.resume.command).toContain('claude --resume');
+    // the caller's own row and the UI see everything
+    const mine = (await ctx.req('GET', `/api/captains?project=${p}&all=1`, undefined, A.id)).body as CaptainSummary[];
+    expect(mine.find((s) => s.agent.id === A.id)).toMatchObject({ last_message: { text: 'secret result' }, results: { ok: 1 } });
+    const ui = (await ctx.req('GET', `/api/captains?project=${p}&all=1`)).body as CaptainSummary[];
+    expect(ui.find((s) => s.agent.id === A.id)!.last_message!.text).toBe('secret result');
+    expect((await ctx.req('GET', `/api/captains/${A.id}`)).status).toBe(200);
+    expect((await ctx.req('GET', `/api/captains/${A.id}`, undefined, A.id)).status).toBe(200);
+    expect((await ctx.req('PATCH', `/api/captains/${A.id}`, { title: 'again' })).status).toBe(200);
+    expect((await ctx.req('POST', `/api/captains/${A.id}/resume`, undefined, A.id)).status).toBe(200);
+    expect(calls.length).toBe(1);
   });
 });

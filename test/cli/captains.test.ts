@@ -34,7 +34,7 @@ describe('captainsTable (pure)', () => {
       summary({ status: 'attention', unread: 2, questions: 1, resume: { ...resume, session_id: null, command: null, attach: 'tmux attach -t s' } }),
     ];
     const lines = captainsTable(list, 'plutus', 'ag_ORION', false, now).split('\n');
-    expect(lines[0]).toBe('Captains in plutus — 2 (archived hidden; --all)');
+    expect(lines[0]).toBe('Captains in plutus — 2');
     expect(lines[1]).toMatch(/^@cap-orion \(you\)\s+Rate limiting for login\s+working\s+2\/3 working \+1 queued\s+1m ago$/);
     expect(lines[2]).toBe(`    resume: ${resume.command}`);
     expect(lines[3]).toMatch(/^@captain\s+\(main\)\s+attention/);
@@ -43,8 +43,15 @@ describe('captainsTable (pure)', () => {
     expect(lines[3]).not.toContain('(you)');
     expect(lines.slice(4)).toEqual(['    resume: (no session id yet)', '    attach: tmux attach -t s']);
   });
+  test('header counts what the default view hides', () => {
+    const h = (archived: number, empty: number) => captainsTable([summary()], 'plutus', null, false, now, { archived, empty }).split('\n')[0];
+    expect(h(1, 2)).toBe('Captains in plutus — 1 (3 hidden: 1 archived, 2 empty; --all)');
+    expect(h(0, 1)).toBe('Captains in plutus — 1 (1 hidden: 1 empty; --all)');
+    expect(h(2, 0)).toBe('Captains in plutus — 1 (2 hidden: 2 archived; --all)');
+    expect(h(0, 0)).toBe('Captains in plutus — 1');
+  });
   test('empty list points at `sparrow captain`', () => {
-    expect(captainsTable([], 'plutus', null, true, now)).toBe('Captains in plutus — 0 (incl. archived)\nNo captains yet. Start one: sparrow captain --title "…"');
+    expect(captainsTable([], 'plutus', null, true, now)).toBe('Captains in plutus — 0 (incl. archived and empty)\nNo captains yet. Start one: sparrow captain --title "…"');
   });
 });
 
@@ -83,6 +90,21 @@ describe('commands against a stub server', () => {
     expect(stub.find('GET', '/api/projects/resolve')[0].path).toBe(`/api/projects/resolve?cwd=${encodeURIComponent(wt)}`);
     expect(stub.find('GET', '/api/captains')[0].path).toBe('/api/captains?project=plutus');
     expect(stub.find('POST', '/api/captains/register')).toHaveLength(0);
+  });
+
+  test('captains header says how many were hidden, from a second all=1 query', async () => {
+    const phantom = summary({}, { ...captain, id: 'ag_PH', handle: 'cap-vega' });
+    stub.on('GET', '/api/captains', (req: any) => (req.path.includes('all=1')
+      ? [summary({}, orion), summary({ status: 'archived' }, { ...captain, id: 'ag_AR', handle: 'cap-old' }), phantom]
+      : [summary({}, orion)]));
+    const r = await run(['captains'], { url: url(), cwd: root });
+    expect(r.code).toBe(0);
+    expect(r.stdout.split('\n')[0]).toBe('Captains in plutus — 1 (2 hidden: 1 archived, 1 empty; --all)');
+    expect(stub.find('GET', '/api/captains').map((q) => q.path)).toEqual(['/api/captains?project=plutus', '/api/captains?project=plutus&archived=1&all=1']);
+    stub.requests = [];
+    const all = await run(['captains', '--all'], { url: url(), cwd: root });
+    expect(all.stdout.split('\n')[0]).toBe('Captains in plutus — 3 (incl. archived and empty)');
+    expect(stub.find('GET', '/api/captains')).toHaveLength(1);
   });
 
   test('captains --all asks for archived ones; --json prints the raw list', async () => {

@@ -313,7 +313,7 @@ export function createApi(core: Core, opts: ApiOpts = {}) {
     const ref = decodeURIComponent(c.req.param('id') ?? '');
     const project = projectOf(c);
     if (!ref.startsWith('ag_') && !project) throw new HttpError(400, 'a captain handle needs ?project=<id>; or pass the captain id (ag_…)');
-    return core.captainOr404(ref, project);
+    return core.captainOr404(ref, project, c.get('caller')); // another fleet's captain reads as unknown to an identified caller
   };
 
   app.get('/api/captains', async (c) => {
@@ -327,7 +327,8 @@ export function createApi(core: Core, opts: ApiOpts = {}) {
       const me = core.store.getAgent(caller.id);
       if (me && !me.captain?.archived_at) list.push(await captainSummary(core, me));
     }
-    return c.json(list);
+    // Rows of other teams keep their directory facts (handle, title, status, counts, resume) but not their messages or results.
+    return c.json(caller ? list.map((s) => s.agent.id === caller.id ? s : { ...s, last_message: null, results: { ok: 0, blocked: 0, failed: 0 } }) : list);
   });
   app.get('/api/captains/:id', async (c) => {
     captainReader(c);
@@ -357,7 +358,9 @@ export function createApi(core: Core, opts: ApiOpts = {}) {
     const ref = decodeURIComponent(c.req.param('id') ?? '');
     const project = c.req.query('project') || c.get('caller')?.project_id || null;
     const a = core.resolveAgent(project, ref);
-    if (!a) throw new HttpError(404, `No agent ${ref}.`);
+    // An identified caller reads its own team only; another team's agent looks exactly like an unknown one.
+    const caller = c.get('caller');
+    if (!a || (caller && a.fleet_id !== caller.fleet_id)) throw new HttpError(404, `No agent ${ref}.`);
     return a;
   };
 
