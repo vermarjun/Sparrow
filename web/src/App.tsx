@@ -7,6 +7,10 @@ import { GLOBAL_PAGES, href, navigate, useRoute } from '@/lib/route'
 import { useTheme } from '@/lib/theme'
 import { Empty } from '@/components/sparrow/bits'
 import { Sidebar } from '@/components/shell/Sidebar'
+import { MobileBar } from '@/components/shell/MobileBar'
+import { CommandPalette } from '@/components/shell/CommandPalette'
+import { useShellKeys } from '@/components/shell/useShellKeys'
+import { NewCaptainDialog } from '@/components/captains/NewCaptainDialog'
 import { BoardPage } from '@/pages/Board'
 import { CaptainsPage } from '@/pages/Captains'
 import { CaptainPage } from '@/pages/Captain'
@@ -54,13 +58,15 @@ export default function App() {
   }, [route.project, projects, project])
 
   useEvents(project)
+  useShellKeys(route)
 
   const global = GLOBAL_PAGES.includes(route.page)
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="flex h-dvh overflow-hidden bg-background text-foreground">
+      <div className="flex h-dvh flex-col overflow-hidden bg-background text-foreground md:flex-row">
+        <MobileBar route={route} />
         <Sidebar route={route} boot={boot} />
-        <main className="relative min-w-0 flex-1 overflow-hidden">
+        <main className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
           {route.page === 'doctor' ? (
             <DoctorPage />
           ) : route.page === 'resumes' ? (
@@ -86,6 +92,8 @@ export default function App() {
           )}
         </main>
       </div>
+      <CommandPalette route={route} />
+      <NewCaptainDialog />
       <Toaster position="bottom-right" theme={dark ? 'dark' : 'light'} />
     </TooltipProvider>
   )

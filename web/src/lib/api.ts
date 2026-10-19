@@ -8,7 +8,8 @@ import type {
   HarnessHealth, MessageView, Project, ProviderHealth, ResumeView, ResumeWriteReq, SettingsView, SettingsWriteReq,
 } from '@shared/types'
 
-export type ProjectRow = Project & { agents: number; working: number; cards: number }
+/** captains / captains_working: multi-captain servers (non-archived captains, captains with a working fleet). */
+export type ProjectRow = Project & { agents: number; working: number; cards: number; captains?: number; captains_working?: number }
 export interface ThreadRow { thread: string; label: string; members: string[]; last: MessageView | null; count: number }
 export interface AgentDetail { agent: Agent; calls: Call[]; children: Agent[] }
 export interface Screen { text: string; live: boolean; at: number | null }

@@ -80,6 +80,9 @@ async function handle(req: Request): Promise<Response> {
       agents: db.agents.filter((a) => a.project_id === pr.id && a.kind !== 'human').length,
       working: db.agents.filter((a) => a.project_id === pr.id && a.state === 'working').length,
       cards: db.cards.filter((c) => c.project_id === pr.id).length,
+      captains: db.agents.filter((a) => a.project_id === pr.id && a.kind === 'human' && !a.captain?.archived_at).length,
+      captains_working: db.agents.filter((a) => a.project_id === pr.id && a.kind === 'human' && !a.captain?.archived_at
+        && db.agents.some((h) => h.fleet_id === a.id && h.id !== a.id && (h.state === 'working' || h.state === 'queued'))).length,
     })))
   }
   const capRes = await captains.handle(req, url, body)
