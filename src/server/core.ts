@@ -225,7 +225,17 @@ export class Core {
     };
   }
 
-  isCaptain(a: Agent) { return a.kind === 'human' || a.can_hire.length > 0; }
+  /**
+   * A captain hires and coordinates. Being allowed to hire only helpers (deckhand, advisor: resumes with `helper: true`)
+   * does not make an agent a captain: a builder that may call a deckhand keeps worker card rights. (Its envelope footer
+   * still mentions `sparrow wait`, since it can hire.) A slug with no resume grants nothing: it cannot be hired.
+   */
+  isCaptain(a: Agent) {
+    return a.kind === 'human' || a.can_hire.some((s) => { if (s === '*') return true; const r = this.resumes.get(s); return !!r && !r.helper; });
+  }
+
+  /** Helpers are leaves whatever their file says (their can_hire is ignored). */
+  private canHireOf(r: Resume): string[] { return r.helper ? [] : r.can_hire; }
 
   // ======================================================== identity
 
@@ -356,7 +366,7 @@ export class Core {
     const now = this.now();
     const agent: Agent = {
       id: newId('ag'), project_id: project, handle, kind: 'agent', resume: resume.slug, title: resume.title,
-      harness: resume.harness, model, effort, can_hire: resume.can_hire,
+      harness: resume.harness, model, effort, can_hire: this.canHireOf(resume),
       parent_id: caller.id, depth, cwd, tmux_session: req.tmux_session || this.tmuxPrefix + project,
       tmux_window: req.tmux_window || handle, tmux_window_id: null, session_id: null, state: 'idle', call_id: null,
       last_end_reason: null, last_update: null, last_update_at: null, last_seen_at: null, resume_hash: this.resumes.hash(resume.slug),
@@ -513,7 +523,7 @@ export class Core {
         renderResumeText(r.body, r).trim(),
       ].join('\n');
       this.saveAgent(id, {
-        harness: r.harness, model: r.model, effort: r.effort, can_hire: r.can_hire, title: r.title, resume_hash: view.hash,
+        harness: r.harness, model: r.model, effort: r.effort, can_hire: this.canHireOf(r), title: r.title, resume_hash: view.hash,
         resume_note: note, ...(harnessChanged ? { session_id: null } : {}),
       });
       this.snapshotSkills(id, r);
@@ -589,8 +599,9 @@ export class Core {
     caller: Agent, callHeader: string | null, reason: 'done' | 'ask' | 'wait',
     record: () => Message | null, newState: AgentState,
   ): Promise<{ ended: boolean; message: MessageView | null }> {
-    // A report from a call that is already over (e.g. `done` twice): accept silently, record nothing.
-    if (caller.kind !== 'human' && callHeader && callHeader !== caller.call_id) return { ended: true, message: null };
+    // A report from a call that is already over (e.g. `done` twice), or from a released agent (release is permanent,
+    // e.g. a one-shot helper reporting again from a shell without its call header): accept silently, record nothing.
+    if (caller.kind !== 'human' && ((callHeader && callHeader !== caller.call_id) || caller.state === 'retired')) return { ended: true, message: null };
     const onCall = caller.kind !== 'human' && caller.state === 'working' && !!caller.call_id;
     // Amendment A1: with WAKING pending deliveries record NOTHING; the piggyback hands them over and the agent
     // reports again. Quiet ones (A5: children's updates, FYI notices) never block; they wait for the next call.
@@ -619,16 +630,35 @@ export class Core {
     const status = req.status ?? 'ok';
     if (!['ok', 'blocked', 'failed'].includes(status)) throw new HttpError(400, 'status must be ok | blocked | failed');
     const parent = this.parentOf(caller);
-    return this.finish(caller, callHeader, 'done', () => {
+    // One-shot resumes (deckhand): the report is the end of the agent. Retire it with the call, so its context never
+    // grows across tasks; follow-up work goes to a fresh hire.
+    const oneShot = caller.kind === 'agent' && !!this.resumes.get(caller.resume)?.one_shot;
+    const res = await this.finish(caller, callHeader, 'done', () => {
       const call = caller.call_id ? this.store.getCall(caller.call_id) : null;
       const m = this.post({
         project_id: caller.project_id, thread: this.dmThread(caller.id, parent.id), from_id: caller.id, kind: 'result',
-        text: req.summary, to: [parent.id], meta: { status, ...(call ? { call_ms: this.now() - call.started_at } : {}) },
+        text: req.summary, to: [parent.id],
+        meta: { status, ...(call ? { call_ms: this.now() - call.started_at } : {}), ...(oneShot ? { released: true } : {}) },
       });
       this.say(`done @${caller.handle} (${status}) → @${parent.handle}`);
       return m;
-    }, 'idle');
+    }, oneShot ? 'retired' : 'idle');
+    if (oneShot && res.message) this.retireOneShot(caller.id);
+    return res;
   }
+
+  /** After a one-shot agent's report: retired, nothing pending; its window closes after the usual grace. */
+  private retireOneShot(id: string) {
+    const a = this.store.getAgent(id);
+    if (!a) return;
+    this.store.dropPending(id);
+    if (a.state !== 'retired') this.saveAgent(id, { state: 'retired', queued_at: null });
+    if (a.tmux_window_id && !this.closeTimers.has(id)) this.scheduleClose(id);
+    this.say(`one-shot @${a.handle} released after its report`);
+  }
+
+  /** Settings changed live (web Settings page): a higher max_running may start queued agents now. */
+  settingsChanged() { this.bg(this.dequeue()); }
 
   async ask(caller: Agent, req: { question: string }, callHeader: string | null = null) {
     if (!isText(req?.question)) throw new HttpError(400, 'ask needs {question} as a non-empty string');

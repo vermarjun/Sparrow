@@ -147,6 +147,8 @@ export interface Resume {
   body: string;                  // role prompt (markdown after the frontmatter)
   path: string;
   skills?: string[];             // library skill names granted to agents hired from this resume (Sparrow's own are always on)
+  helper?: boolean;              // a leaf assistant (deckhand, advisor): never hires; hiring only helpers does not make an agent a captain
+  one_shot?: boolean;            // released (retired) by the server as soon as it reports with `sparrow done`
 }
 
 // ---------- U1: model catalog, doctor, editable resumes, captain launcher
@@ -240,6 +242,41 @@ export interface ResumeWriteReq {
   limits: { quiet_minutes: number; max_call_minutes: number };
   body: string;
   skills?: string[];
+  helper?: boolean;              // absent on PUT = unchanged
+  one_shot?: boolean;            // absent on PUT = unchanged
+}
+
+// ---------- Settings (GET/PUT /api/settings; the web Settings page)
+
+export type SettingKey =
+  | 'max_running' | 'max_depth' | 'max_nudges' | 'max_restarts' | 'close_grace_ms' | 'watchdog_ms' | 'snapshot_ms'
+  | 'fresh_fallback_ms' | 'quiet_minutes' | 'max_call_minutes' | 'doctor_timeout_ms' | 'provider_error_threshold'
+  | 'provider_error_window_minutes';
+
+export interface SettingField {
+  key: SettingKey;
+  group: string;                 // section on the Settings page
+  label: string;
+  help: string;
+  unit: string;                  // 'agents', 'levels', 'minutes', 'ms', ...
+  min: number;
+  max: number;
+  default: number;
+  value: number;                 // effective value right now
+  saved: boolean;                // set in config.json (else the default applies)
+  env_override: boolean;         // SPARROW_SETTINGS sets it: read-only here
+}
+
+export interface SettingsView {
+  fields: SettingField[];
+  doctor_models: Partial<Record<'claude' | 'codex' | 'opencode', string>>;
+  file: string;                  // the config.json the page writes
+}
+
+/** A number sets the value; null resets it to the default (removes it from config.json). */
+export interface SettingsWriteReq {
+  values?: Partial<Record<SettingKey, number | null>>;
+  doctor_models?: Partial<Record<'claude' | 'codex' | 'opencode', string | null>>;
 }
 
 export interface CaptainStartReq { cwd: string; model?: string | null; effort?: string | null }

@@ -5,7 +5,7 @@ import type { MigApplyResult, MigBackupInfo, MigPlan, MigRollbackResult } from '
 import type { GitState, Harness, LibrarySkill, LinkAction, SkillDetail, SkillUpdate, SkillsState, StagedImport } from './skills'
 import type {
   Agent, CaptainStartReq, CaptainStartRes, Call, Card, CardCreateReq, CardPatchReq, DoctorCheck, DoctorRun, HarnessCatalog,
-  HarnessHealth, MessageView, Project, ProviderHealth, ResumeView, ResumeWriteReq,
+  HarnessHealth, MessageView, Project, ProviderHealth, ResumeView, ResumeWriteReq, SettingsView, SettingsWriteReq,
 } from '@shared/types'
 
 export type ProjectRow = Project & { agents: number; working: number; cards: number }
@@ -56,6 +56,8 @@ export const api = {
   catalog: () => req<HarnessCatalog[]>('GET', '/api/catalog'),
   refreshCatalog: () => req<HarnessCatalog[]>('POST', '/api/catalog/refresh'),
   doctor: () => req<DoctorState>('GET', '/api/doctor'),
+  settings: () => req<SettingsView>('GET', '/api/settings'),
+  updateSettings: (body: SettingsWriteReq) => req<SettingsView>('PUT', '/api/settings', body),
   runDoctor: () => req<{ run: DoctorRun }>('POST', '/api/doctor/run'),
   skills: () => req<SkillsState>('GET', '/api/skills'),
   skillsMatrix: () => req<SkillMatrix>('GET', '/api/skills/matrix'),

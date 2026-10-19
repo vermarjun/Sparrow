@@ -36,9 +36,9 @@ describe('sparrow install', () => {
 
     // 1. resumes
     const resumes = readdirSync(join(home, '.sparrow', 'resumes')).sort();
-    expect(resumes).toEqual(['builder-codex.md', 'builder.md', 'presenter.md', 'researcher.md', 'sub-captain.md', 'verifier.md']);
+    expect(resumes).toEqual(['advisor.md', 'builder-codex.md', 'builder.md', 'deckhand.md', 'presenter.md', 'researcher.md', 'sub-captain.md', 'verifier.md']);
     expect(existsSync(join(home, '.sparrow', 'agents'))).toBe(true);
-    expect(r1.stdout).toContain('seeded builder-codex, builder, presenter, researcher, sub-captain, verifier');
+    expect(r1.stdout).toContain('seeded advisor, builder-codex, builder, deckhand, presenter, researcher, sub-captain, verifier');
 
     // 2. link
     const link = join(home, '.local', 'bin', 'sparrow');
@@ -59,7 +59,7 @@ describe('sparrow install', () => {
     // second run: nothing changes
     const r2 = await run(['install'], { env: env(home), cwd: home });
     expect(r2.code).toBe(0);
-    expect(r2.stdout).toContain('6 up to date');
+    expect(r2.stdout).toContain('8 up to date');
     expect(r2.stdout).toContain('link up to date');
     expect(r2.stdout).toMatch(/skills sparrow-captain, sparrow-worker → ~\/\.claude\/skills \(Claude Code \+ OpenCode\) — up to date/);
 

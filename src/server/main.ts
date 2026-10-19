@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import type { RealHarness } from '../harness/catalog';
 import type { Spawner } from '../harness/index';
 import { isSandboxHome } from '../harness/env';
-import { ASSETS, DB_PATH, loadSettings, PID_FILE, PORT, REPO_ROOT, RESUMES_DIR, type Settings, TMUX_PREFIX } from '../shared/config';
+import { ASSETS, CONFIG_FILE, DB_PATH, loadSettings, PID_FILE, PORT, REPO_ROOT, RESUMES_DIR, type Settings, TMUX_PREFIX } from '../shared/config';
 import type { HarnessName } from '../shared/types';
 import { createApi } from './api';
 import { CatalogService, type Fetcher } from './catalog';
@@ -14,6 +14,7 @@ import { Doctor, type HarnessOps, type SharedCheck } from './doctor';
 import { EventBus } from './events';
 import { PROTOCOL_PATH } from './prompts';
 import { Resumes } from './resumes';
+import { SettingsService } from './settings';
 
 export const VERSION: string = (() => {
   try { return JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8')).version ?? '0.0.0'; } catch { return '0.0.0'; }
@@ -28,6 +29,7 @@ export interface AppDeps {
   store?: Store;                 // default: new Store(dbPath ?? ':memory:')
   dbPath?: string;
   settings?: Partial<Settings>;  // merged over loadSettings()
+  configFile?: string;           // where the Settings page writes (default <SPARROW_HOME>/config.json)
   resumeDirs?: string[];         // default [RESUMES_DIR, assets/resumes]
   clock?: Clock;
   log?: (line: string) => void;
@@ -65,11 +67,16 @@ export function createApp(deps: AppDeps) {
     core, catalogs, settings, harnesses: deps.doctorHarnesses, ops: deps.doctorOps, shared: deps.doctorShared, log,
   });
   core.healthOf = (h) => doctor.health(h);
+  const settingsSvc = new SettingsService(settings, deps.configFile ?? CONFIG_FILE);
+  settingsSvc.onChange((changed) => {
+    log(`settings changed: ${changed.map((k) => `${k}=${JSON.stringify(settings[k])}`).join(', ')}`);
+    if (changed.includes('max_running')) core.settingsChanged();
+  });
   const app = createApi(core, {
     version: VERSION, startedAt: Date.now(), webDist: deps.webDist ?? null, pingMs: deps.pingMs, catalogs, doctor,
-    launchCaptain: deps.launchCaptain,
+    launchCaptain: deps.launchCaptain, settings: settingsSvc,
   });
-  return { app, core, store, events, settings, catalogs, doctor };
+  return { app, core, store, events, settings, settingsSvc, catalogs, doctor };
 }
 
 /** {"pid","port","started_at"} — read by `sparrow`/`sparrow status`/`sparrow stop`. */
@@ -101,7 +108,7 @@ export async function startServer(opts: StartOpts = {}): Promise<{ port: number;
     spawner = mod.createSpawner() as Spawner;
   }
   const log = opts.log ?? ((l: string) => console.log(l));
-  const { app, core, store, settings, catalogs } = createApp({
+  const { app, core, store, settings, settingsSvc, catalogs } = createApp({
     spawner, dbPath: DB_PATH, settings: opts.settings, log, webDist: opts.webDist ?? join(REPO_ROOT, 'web', 'dist'),
   });
   const port = opts.port ?? PORT;
@@ -130,9 +137,17 @@ export async function startServer(opts: StartOpts = {}): Promise<{ port: number;
     log('catalog refresh skipped for sandbox home; use POST /api/catalog/refresh to refresh explicitly');
   }
   await core.recover();
-  const wd = setInterval(() => { core.watchdogTick().catch((e) => log(`watchdog error: ${(e as Error).message}`)); }, settings.watchdog_ms);
-  const snap = setInterval(() => { core.snapshotTick().catch(() => {}); }, settings.snapshot_ms);
+  const armWatchdog = () => setInterval(() => { core.watchdogTick().catch((e) => log(`watchdog error: ${(e as Error).message}`)); }, settings.watchdog_ms);
+  const armSnapshots = () => setInterval(() => { core.snapshotTick().catch(() => {}); }, settings.snapshot_ms);
+  let wd = armWatchdog();
+  let snap = armSnapshots();
   let stopped = false;
+  // The Settings page applies interval changes live: re-arm the timer that changed.
+  settingsSvc.onChange((changed) => {
+    if (stopped) return;
+    if (changed.includes('watchdog_ms')) { clearInterval(wd); wd = armWatchdog(); }
+    if (changed.includes('snapshot_ms')) { clearInterval(snap); snap = armSnapshots(); }
+  });
   return {
     port: server.port as number,
     async stop() {

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Bird, FileText, KanbanSquare, Library, MessagesSquare, Network, Stethoscope } from 'lucide-react'
+import { Bird, FileText, KanbanSquare, Library, MessagesSquare, Network, SlidersHorizontal, Stethoscope } from 'lucide-react'
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -14,6 +14,7 @@ import { AgentsPage } from '@/pages/Agents'
 import { DoctorPage } from '@/pages/Doctor'
 import { ResumesPage } from '@/pages/Resumes'
 import { SkillsPage } from '@/pages/Skills'
+import { SettingsPage } from '@/pages/Settings'
 import { StartCaptainButton } from '@/components/sparrow/StartCaptain'
 
 const TABS: { id: Tab; label: string; icon: typeof Bird }[] = [
@@ -26,8 +27,9 @@ const GLOBAL_TABS: { id: Tab; label: string; icon: typeof Bird }[] = [
   { id: 'resumes', label: 'Resumes', icon: FileText },
   { id: 'skills', label: 'Skills', icon: Library },
   { id: 'doctor', label: 'Doctor', icon: Stethoscope },
+  { id: 'settings', label: 'Settings', icon: SlidersHorizontal },
 ]
-const isGlobal = (t: Tab) => t === 'doctor' || t === 'resumes' || t === 'skills'
+const isGlobal = (t: Tab) => t === 'doctor' || t === 'resumes' || t === 'skills' || t === 'settings'
 
 // Hash route: #/<tab>[/<slug>]  (project is remembered in localStorage and in ?p= for sharing)
 function readHash(hash = location.hash): { tab: Tab; project: string | null; slug: string | null } {
@@ -154,6 +156,8 @@ export default function App() {
             <ResumesPage slug={slug} />
           ) : tab === 'skills' ? (
             <SkillsPage name={slug} />
+          ) : tab === 'settings' ? (
+            <SettingsPage />
           ) : boot === 'error' ? (
             <Empty title="Can't reach the Sparrow server" className="h-full">
               Start it with <code className="rounded bg-muted px-1">sparrow up</code>, then reload. This page reads <code className="rounded bg-muted px-1">/api</code> on the same origin.

@@ -24,7 +24,8 @@ Code layout: `src/shared` (types, config), `src/server` (state, API, lifecycle),
 | **CLI** | `sparrow <cmd>` — how every agent (and the captain) talks to the server. Identity from env `SPARROW_AGENT_ID`. |
 | **Resume** | role card `~/.sparrow/resumes/<slug>.md` (seeded from `assets/resumes/`). |
 | **Agent** | one hire of a resume in a project. Has a permanent id (`ag_…`, the "phone number"), a handle (`@james`), a harness session id (the "SIM"). |
-| **Captain** | the user's own session (`kind: human`, depth 0, never spawned) — or an agent whose resume has a non-empty `can_hire` (a sub-captain). |
+| **Captain** | the user's own session (`kind: human`, depth 0, never spawned) — or an agent whose `can_hire` names at least one non-helper resume (a sub-captain). |
+| **Helper** | a leaf resume (`helper: true`: `deckhand`, `advisor`) other agents may be allowed to hire. It never hires (its `can_hire` is ignored), and being able to hire only helpers does not make an agent a captain (no captain card rights). |
 | **Call** | one window lifetime: spawn → `done`/`ask`/`wait`/crash/… The agent is "on a call" only while its window is open. |
 | **Delivery** | a message addressed to an agent that has not reached it yet (`pending`) or has (`delivered`). |
 | **Envelope** | the text the server passes as the first prompt of a call (or types into a TUI): the pending messages, formatted. |
@@ -38,7 +39,7 @@ Code layout: `src/shared` (types, config), `src/server` (state, API, lifecycle),
 
 ### 3.2 Hire (`POST /api/hire`)
 1. Caller must be a captain: human captain may hire any resume; an agent may hire only slugs in its resume `can_hire`. Else 403 `"@<handle> (<resume>) may not hire <slug>: can_hire = [..]"`.
-2. `depth = caller.depth + 1`; refuse when `> max_depth` (403, say why).
+2. `depth = caller.depth + 1`; refuse when `> max_depth` (403, say why). Default `max_depth` 3: you (0) → sub-captain (1) → builder (2) → helper (3).
 3. Resume must exist (404 lists available slugs). Handle: `name` if given (lowercased, validated, must be unused in the project → 409), else the first unused name from a fixed friendly list (`james, maya, leo, iris, omar, nina, theo, zara, ravi, lena, ivan, mira, kai, ada, ben, cleo`) then `<resume>-<n>`.
 4. `cwd` default = caller's cwd (the CLI always sends `--cwd` resolved to an absolute path, else `process.cwd()`). `tmux_session` default `TMUX_PREFIX + project_id`; `tmux_window` default = handle.
 5. Use the resume's configured model and effort by default. The captain can set those choices in the UI; explicit `model` or `effort` request values override them. When an override differs from the resume, include it in the task message's `meta.override` and the server hire log. Insert the agent (state `idle`) and a DM message kind `task` from caller to new agent (text = task) with a pending delivery, assign card if `card_id` (→ `in_progress`, note "assigned to @x"). Then **wake** (3.4). Return immediately (`HireRes`).
@@ -74,6 +75,7 @@ Code layout: `src/shared` (types, config), `src/server` (state, API, lifecycle),
 - Else record the message (result/question/update as above).
 - Else: close the call (`end_reason`), set state, `tmux_window_id` stays until closed, then after `close_grace_ms` call `spawner.stop(agent)` and null `tmux_window_id` — unless a new call started meanwhile. Return `{ended:true}`.
 - Free slot → dequeue the oldest `queued` agent.
+- **One-shot** (resume `one_shot: true`, e.g. `deckhand`): a recorded `done` (any status) ends the call with state `retired` instead of `idle`, drops pending deliveries, and marks the result `meta.released: true` (headers show `released (one-shot)`). The window still closes after `close_grace_ms`. A "Not sent" `done` releases nothing. The flag is read from the live resume when `done` runs. A retired agent's later reports (any `done`/`ask`/`wait`) record nothing.
 
 ### 3.7 Turn ended without reporting (`POST /api/hooks/turn-end`)
 Harness signals: Claude `Stop` hook, Codex `notify` (agent-turn-complete), OpenCode plugin `session.idle`.
@@ -99,7 +101,7 @@ Caller must be the agent's parent or the human captain. Stop the window, end any
 Permanent by design (owner decision, 17 Oct 2026): an agent is hired for one job. Before release it stays callable by its session id indefinitely, with full memory. After its job is verified and integrated, the captain releases it; new work goes to a fresh hire so no agent carries stale context. Do not add un-retire, rehire or number expiry unless the owner asks.
 
 ### 3.11 Limits
-`max_running` counts agents in state `working` across all projects (human captains excluded). `loadSettings()` gives all tunables.
+`max_running` counts agents in state `working` across all projects (human captains excluded). `loadSettings()` gives all tunables: defaults, then `<SPARROW_HOME>/config.json`, then `SPARROW_SETTINGS` (env). The web **Settings** page edits them live (`src/server/settings.ts`): `PUT /api/settings` validates every value (whole numbers within each field's range; all-or-nothing), writes `config.json` atomically keeping other keys (`skills_dir`, unknown ones), and mutates the shared settings object, so every reader sees the new value at once. Raising `max_running` dequeues at once; `watchdog_ms` / `snapshot_ms` re-arm their timers. `null` resets a key (removes it from the file). Keys set by `SPARROW_SETTINGS` are read-only (409). A caller identified as an agent (`x-sparrow-agent`) gets 403; like the rest of the local API this is a guard against mistakes, not authentication.
 
 ## 4. HTTP API (JSON, 127.0.0.1 only, no auth)
 
@@ -110,6 +112,8 @@ Identity header `x-sparrow-agent`; hooks add `x-sparrow-call`. Every response to
 | GET `/api/health` | | `{ok:true, version, pid, started_at}` |
 | POST `/api/captains/register` | `RegisterCaptainReq` | `RegisterCaptainRes` |
 | GET `/api/whoami` | | `{agent, project, parent: Agent\|null}` + inbox |
+| GET `/api/settings` | | `SettingsView` (fields with value, default, range, unit, help, saved, env_override; doctor_models; file) |
+| PUT `/api/settings` | `SettingsWriteReq` `{values?: {key: number\|null}, doctor_models?: {harness: model\|null}}` | `SettingsView`; 400 bad value, 403 agent caller, 409 env-owned key |
 | GET `/api/resumes` | | `Resume[]` (body included) |
 | GET `/api/projects` | | `(Project & {agents:number, working:number, cards:number})[]` |
 | GET `/api/agents` | `?project=` | `Agent[]` (all states, newest first) |
@@ -246,15 +250,17 @@ description: Implements one task end to end in the given folder, runs it, report
 harness: claude          # claude | codex | opencode | fake
 model: opus              # optional (harness default when omitted)
 effort: high             # optional
-can_hire: []             # non-empty ⇒ captain
+can_hire: []             # a non-helper slug in here ⇒ captain
 skills: [write-like-a-human]  # optional; library skills this role gets (§12.5). Sparrow's two are always on
+helper: true             # optional; a leaf assistant (never hires; hiring only helpers keeps you a worker)
+one_shot: true           # optional; retired by the server as soon as it reports (§3.6)
 limits: { quiet_minutes: 15, max_call_minutes: 90 }
 ---
 <role prompt>
 ```
 **Template variables.** `description` and the body may contain `{{harness}}` (claude|codex|opencode|fake, same as `{{harness}}` in the protocol), `{{model}}` (configured model, else `harness default`), `{{effort}}` (configured effort, else `default`) and `{{runtime}}` (`<harness> · <model> · effort <effort>`, the wording of the bracket in `sparrow resumes`). They are filled in whenever a resume is shown or used, never on disk: `renderResumeText` in `src/server/resumes.ts` (mirrored for the web in `web/src/lib/resumeVars.ts`). The agent's system prompt and the apply note render the body with the AGENT's actual harness/model/effort (so a `hire --model` override shows); `sparrow resumes` and the web Resumes list render the description with the resume's current settings; the web editor keeps the raw text. Unknown `{{x}}` is left as is. Seeded resumes use the variables instead of naming a model. The protocol header line also carries `model` and `effort`.
 
-Six resumes: `sub-captain` (claude, can_hire: [builder, builder-codex, verifier, researcher, presenter]), `builder` (claude), `builder-codex` (codex), `verifier` (codex), `researcher` (opencode), `presenter` (opencode). Tests may add a `fake` resume in a temp `SPARROW_HOME`.
+Eight resumes: `sub-captain` (claude, can_hire: [builder, builder-codex, verifier, researcher, presenter, deckhand, advisor]), `builder` (claude), `builder-codex` (codex), `verifier` (codex) — those three may hire [deckhand, advisor] — `researcher` (opencode, may hire [deckhand]), `presenter` (opencode), and two helpers: `deckhand` (claude · haiku · medium, `helper` + `one_shot`: mechanical lookups, test runs, exact-spec edits, conversion; bounces judgment calls as `NEEDS-JUDGMENT`) and `advisor` (claude · opus · medium, `helper`: read-only, answers ONE question with VERDICT GO/ADJUST/STOP + `path:line` evidence; follow-ups via `sparrow send`). Each user picks per resume in the web editor whether it may hire them. The `sparrow-worker` skill's **Helpers** section teaches when to hire which. Tests may add a `fake` resume in a temp `SPARROW_HOME`.
 
 ## 9. Web
 
@@ -262,6 +268,8 @@ React + Vite + TypeScript + Tailwind + shadcn/ui (+ dnd-kit for the board). Ligh
 - **Board**: columns Proposed · To do · In progress · Review · Done (Dropped collapsed). Card: #id, title, category chip, assignee @handle with state dot, notes count. Drag between/within columns → `PATCH /api/cards/:id {state, position}`. Only that. Card click → side sheet with details + notes.
 - **Chat**: WhatsApp-like, with direct message threads only (for example, "@captain ↔ @james"), last message + time. Right: bubbles; kind styling — task (blue tag), update (small, muted, no bubble), question (amber), result (green with status), system (grey centered). @mentions highlighted. Read-only.
 - **Agents**: hierarchy (captain → hires → their hires). Row: @handle, resume title, harness icon/label, model/effort, state badge (working pulses), cwd, tmux target with copy button (`tmux attach -t <session> \; select-window -t <window>`), session id (copy), last update + age, quiet warning. Click → sheet with live screen peek (poll `/screen` every 2 s while working) and recent calls (start, duration, end reason).
+- **Settings** (global page, `#/settings`): every tunable grouped (Capacity, Call limits, Provider health, Timing) plus doctor models; number inputs with unit, default, `custom`/`env` chips, per-field reset, client-side range check, sticky Save/Discard bar. Saves apply live.
+- **Resumes** editor: **Role type** switches (Helper, One-shot) and **Can hire** split into Helpers and Team chips; the list shows `helper` / `one-shot` badges.
 - **Skills** (global page, `#/skills`, `#/skills/<name>`): Library (per-harness toggles, status chips, Sync, update chips), Agent matrix, Unmanaged / External (Adopt), Conflicts (diff, resolve), skill detail (rendered `SKILL.md`, files, git log), git bar (Pull, Commit & push), Add skill (Create / Upload / From link) and Migrate existing skills. See §12.
 Dev: `bun run dev` with proxy `/api` → `http://127.0.0.1:4040`. Build to `web/dist`. The dev proxy rewrites `Origin` to the target so writes pass the same-origin check (D13).
 

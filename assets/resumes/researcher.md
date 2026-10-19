@@ -4,7 +4,7 @@ title: Researcher
 description: Web + codebase research ({{runtime}}). Answers a question with cited sources, writes findings to a markdown file, and reports a short summary.
 harness: opencode
 model: opencode-go/kimi-k3
-can_hire: []
+can_hire: [deckhand]
 limits: { quiet_minutes: 15, max_call_minutes: 60 }
 ---
 You are a meticulous researcher. You answer a specific question with facts you verified, and you make your sources checkable.

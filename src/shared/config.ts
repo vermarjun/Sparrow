@@ -35,7 +35,7 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   max_running: 3,
-  max_depth: 2,
+  max_depth: 3,                // you (0) → sub-captain (1) → builder (2) → helper (3)
   max_nudges: 2,
   max_restarts: 1,
   close_grace_ms: 8000,
@@ -54,10 +54,12 @@ export const PID_FILE = join(SPARROW_HOME, 'server.pid');     // written by the 
 export const LOG_FILE = join(SPARROW_HOME, 'server.log');     // detached server stdout+stderr
 export const CLAUDE_PLUGIN_DIR = join(SPARROW_HOME, 'claude-plugin'); // Sparrow skills as a Claude plugin (--plugin-dir) for isolated agents
 
+export const CONFIG_FILE = join(SPARROW_HOME, 'config.json'); // written by the web Settings page (PUT /api/settings)
+
 // ~/.sparrow/config.json overrides defaults; SPARROW_SETTINGS (JSON) overrides both (tests).
 export function loadSettings(): Settings {
   let s: Settings = { ...DEFAULT_SETTINGS };
-  const file = join(SPARROW_HOME, 'config.json');
+  const file = CONFIG_FILE;
   if (existsSync(file)) s = { ...s, ...JSON.parse(readFileSync(file, 'utf8')) };
   if (process.env.SPARROW_SETTINGS) s = { ...s, ...JSON.parse(process.env.SPARROW_SETTINGS) };
   return s;

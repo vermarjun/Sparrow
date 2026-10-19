@@ -40,6 +40,27 @@ sparrow ask "Which DB should the migration target: staging or prod?"
 ```
 Ask only when you truly cannot proceed with a safe assumption. The answer resumes this session.
 
+## Helpers: deckhand and advisor (only if `sparrow whoami` lists them under "can hire")
+Helpers are cheap leaf agents. Hiring one does not make you a captain; you still own your task and report it yourself.
+- **deckhand** (fast, cheap, **one-shot**: released the moment it reports, so put everything into one brief). Give it
+  mechanical work with an exact done-check: find where X is used (`path:line`), run the tests/build and report the
+  failures verbatim, triage a log, apply one named edit across listed files, convert a file. Never a decision, an
+  unknown bug, or anything you would have to re-check line by line. Under ~3 tool calls? Do it yourself.
+  ```bash
+  sparrow hire deckhand - <<'EOF'
+  List every caller of parseResume() in src/ and test/ as path:line + the line. Done when: the list is complete per `rg -n "parseResume\(" src test`.
+  EOF
+  ```
+- **advisor** (senior, read-only). Consult it after you have read the code and before you commit to an approach on
+  non-trivial work, when the same error survives two fixes, or before `sparrow done` on a risky change. It has not seen
+  your session: ask ONE question with your goal, what you tried (exact errors), the options you weigh, and `path:line`
+  pointers. Follow up on the same advisor with `sparrow send @<handle> "…"`; `sparrow release @<handle>` it when your
+  task is done.
+- After hiring, keep working on what does not depend on the answer (results arrive in your session as `[sparrow]`
+  messages, and every `sparrow` command prints new ones), or run `sparrow wait "<what you wait for>"` and stop.
+- Weigh advice against evidence; if you don't follow it, say why in your result. A deckhand's output is a lead, not
+  proof: if your job is verifying, re-run the check that decides PASS/FAIL yourself.
+
 ## Waiting on your own hires (captains only)
 ```bash
 sparrow wait "builder @maya is implementing the API"

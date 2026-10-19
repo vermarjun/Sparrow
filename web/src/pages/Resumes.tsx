@@ -5,6 +5,7 @@ import type { DoctorCheck, HarnessName, ResumeView } from '@shared/types'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue, SelectGroup } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -85,6 +86,7 @@ function ResumeList() {
                       <span className="font-semibold">{r.title}</span>
                       <span className="font-mono text-xs text-muted-foreground">{r.slug}</span>
                       {r.builtin && <span className="rounded border px-1 text-[10px] text-muted-foreground" title="Served from assets/resumes; saving copies it to ~/.sparrow/resumes">built-in</span>}
+                      <RoleBadges resume={r} />
                     </div>
                     <div className="truncate text-xs text-muted-foreground">{renderResumeText(r.description, r)}</div>
                   </TableCell>
@@ -160,7 +162,9 @@ function ResumeEditor({ slug }: { slug: string | null }) {
     }
     setBusy('save'); setErr(null)
     try {
-      const { slug: s, ...body } = form
+      const { slug: s, ...rest } = form
+      // A helper never hires: send no hires (the chips are hidden but kept in the form, so toggling Helper back restores them).
+      const body = rest.helper ? { ...rest, can_hire: [] } : rest
       const v = creating ? await api.createResume({ ...body, slug: s }) : await api.updateResume(slug!, body)
       useStore.setState((st) => ({ resumes: { ...st.resumes, [v.slug]: v } }))
       const f = fromView(v)
@@ -192,6 +196,9 @@ function ResumeEditor({ slug }: { slug: string | null }) {
   }
 
   const otherSlugs = Object.keys(resumes).filter((s) => s !== slug).sort()
+  const allHireable = otherSlugs.concat(form.can_hire.filter((s) => !otherSlugs.includes(s)))
+  const helperSlugs = allHireable.filter((s) => resumes[s]?.helper)
+  const teamSlugs = allHireable.filter((s) => !resumes[s]?.helper)
   const skillsState = useStore((s) => s.skills)
   useEffect(() => { if (!useStore.getState().skills) void useStore.getState().loadSkills() }, [])
   const libraryNames = (skillsState?.library ?? []).filter((x) => !x.locked).map((x) => x.name)
@@ -321,18 +328,50 @@ function ResumeEditor({ slug }: { slug: string | null }) {
               </Field>
             </div>
 
-            <Field id="can_hire" label="Can hire" hint={form.can_hire.length ? plural(form.can_hire.length, 'resume') : 'nobody: a leaf agent'} err={err}>
-              <div className="flex flex-wrap gap-1" data-testid="can-hire">
-                {otherSlugs.concat(form.can_hire.filter((s) => !otherSlugs.includes(s))).map((s) => {
-                  const on = form.can_hire.includes(s)
-                  return (
-                    <button key={s} type="button" aria-pressed={on} onClick={() => set('can_hire', on ? form.can_hire.filter((x) => x !== s) : [...form.can_hire, s])}
-                      className={cn('h-6 rounded-full border px-2 font-mono text-[11px] transition-colors', on ? 'border-zinc-800 bg-zinc-800 text-white' : 'text-muted-foreground hover:bg-muted')}>
-                      {s}
-                    </button>
-                  )
-                })}
+            <Field id="helper" label="Role type" err={err}>
+              <div className="grid gap-2 rounded-lg border p-2.5" data-testid="role-type">
+                <label className="flex items-start gap-2.5 text-xs">
+                  <Switch checked={!!form.helper} onCheckedChange={(on) => set('helper', on)} className="mt-0.5" data-testid="helper-switch" />
+                  <span><b className="font-medium">Helper</b> <span className="text-muted-foreground">· a leaf assistant (like deckhand, advisor) that other resumes can be allowed to hire. It never hires, and hiring only helpers doesn't make an agent a captain.</span></span>
+                </label>
+                <label className="flex items-start gap-2.5 text-xs">
+                  <Switch checked={!!form.one_shot} onCheckedChange={(on) => set('one_shot', on)} className="mt-0.5" data-testid="one-shot-switch" />
+                  <span><b className="font-medium">One-shot</b> <span className="text-muted-foreground">· released for good as soon as it reports (<code>sparrow done</code>), so its context never grows; follow-ups need a new hire.</span></span>
+                </label>
               </div>
+            </Field>
+
+            <Field id="can_hire" label="Can hire" hint={form.helper ? 'nobody: helpers are leaves' : form.can_hire.length ? plural(form.can_hire.length, 'resume') : 'nobody: a leaf agent'} err={err}>
+              {form.helper ? (
+                <p className="text-[11px] text-muted-foreground" data-testid="can-hire">A helper never hires. Turn off <b>Helper</b> to let it hire.</p>
+              ) : (
+                <div className="grid gap-2" data-testid="can-hire">
+                  {([['Helpers', helperSlugs, 'cheap leaf assistants this role may call on'], ['Team', teamSlugs, 'resumes this role may hire as a captain']] as const).map(([label, slugs, note]) => slugs.length > 0 && (
+                    <div key={label} className="grid gap-1" data-hire-group={label.toLowerCase()}>
+                      <div className="text-[11px] text-muted-foreground"><b className="font-medium text-foreground/80">{label}</b> · {note}</div>
+                      <div className="flex flex-wrap gap-1">
+                        {slugs.map((s) => {
+                          const on = form.can_hire.includes(s)
+                          return (
+                            <button key={s} type="button" aria-pressed={on} title={resumes[s] ? renderResumeText(resumes[s].description, resumes[s]) : 'no such resume'} data-hire={s}
+                              onClick={() => set('can_hire', on ? form.can_hire.filter((x) => x !== s) : [...form.can_hire, s])}
+                              className={cn('h-6 rounded-full border px-2 font-mono text-[11px] transition-colors', on ? 'border-zinc-800 bg-zinc-800 text-white' : 'text-muted-foreground hover:bg-muted')}>
+                              {s}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                  {form.can_hire.length > 0 && (
+                    <p className="text-[11px] text-muted-foreground" data-testid="captain-note">
+                      {form.can_hire.some((s) => resumes[s] && !resumes[s].helper)
+                        ? 'Hires team resumes, so this role is a captain.'
+                        : 'Only helpers, so this role stays a worker: it still owns and reports its own task.'}
+                    </p>
+                  )}
+                </div>
+              )}
             </Field>
 
             <Field id="skills" label="Skills" hint={(form.skills ?? []).length ? plural((form.skills ?? []).length, 'library skill') : 'Sparrow\'s own only'} err={err}>
@@ -511,6 +550,16 @@ function DuplicateDialog({ open, onOpenChange, from }: { open: boolean; onOpenCh
         </form>
       </DialogContent>
     </Dialog>
+  )
+}
+
+/** "helper" / "one-shot" chips for a resume row. */
+export function RoleBadges({ resume }: { resume: Pick<ResumeView, 'helper' | 'one_shot'> }) {
+  return (
+    <>
+      {resume.helper && <span className="rounded-full border border-teal-200 bg-teal-50 px-1.5 text-[10px] font-medium text-teal-800" title="Leaf assistant: never hires; hiring only helpers doesn't make an agent a captain" data-badge="helper">helper</span>}
+      {resume.one_shot && <span className="rounded-full border border-violet-200 bg-violet-50 px-1.5 text-[10px] font-medium text-violet-800" title="Released for good as soon as it reports" data-badge="one-shot">one-shot</span>}
+    </>
   )
 }
 

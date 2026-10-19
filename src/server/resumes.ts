@@ -78,6 +78,8 @@ export function parseResume(text: string, path: string, settings: Pick<S, 'quiet
     body: body.replace(/^\s+/, '').replace(/\s+$/, '') + '\n',
     path,
     skills: skillNames(d.skills),
+    ...(d.helper === true ? { helper: true } : {}),
+    ...(d.one_shot === true ? { one_shot: true } : {}),
   };
 }
 
@@ -129,6 +131,8 @@ export function serializeResume(slug: string, r: Omit<ResumeWriteReq, 'slug'>): 
     `can_hire: [${r.can_hire.map(yamlFlowItem).join(', ')}]`,
     `limits: { quiet_minutes: ${r.limits.quiet_minutes}, max_call_minutes: ${r.limits.max_call_minutes} }`,
     ...(r.skills?.length ? [`skills: [${r.skills.map(yamlSkillItem).join(', ')}]`] : []),
+    ...(r.helper ? ['helper: true'] : []),
+    ...(r.one_shot ? ['one_shot: true'] : []),
     '---',
     r.body.replace(/^\s+/, '').replace(/\s+$/, ''),
     '',
@@ -154,6 +158,12 @@ export function validateResumeReq(b: any, opts: { create: boolean }): { value: R
   if (b.skills !== undefined && (!Array.isArray(b.skills) || !b.skills.every((x: unknown) => typeof x === 'string'))) {
     return { error: 'skills must be an array of skill names (strings)' };
   }
+  for (const f of ['helper', 'one_shot']) {
+    if (b[f] !== undefined && typeof b[f] !== 'boolean') return { error: `${f} must be true or false` };
+  }
+  if (b.helper === true && Array.isArray(b.can_hire) && b.can_hire.length) {
+    return { error: 'can_hire must be empty for a helper: helpers are leaves and never hire' };
+  }
   const lim = b.limits ?? {};
   for (const f of ['quiet_minutes', 'max_call_minutes']) {
     if (lim[f] !== undefined && !(typeof lim[f] === 'number' && Number.isFinite(lim[f]) && lim[f] > 0)) return { error: `limits.${f} must be a positive number` };
@@ -168,6 +178,8 @@ export function validateResumeReq(b: any, opts: { create: boolean }): { value: R
       limits: { quiet_minutes: lim.quiet_minutes ?? 15, max_call_minutes: lim.max_call_minutes ?? 90 },
       body: b.body ?? '',
       ...(b.skills !== undefined ? { skills: skillNames(b.skills) } : {}),
+      ...(b.helper !== undefined ? { helper: b.helper } : {}),
+      ...(b.one_shot !== undefined ? { one_shot: b.one_shot } : {}),
     },
   };
 }

@@ -187,7 +187,7 @@ export function stripField(msg: string, field: string): string {
 }
 
 /** Error text from the server, mapped to the editor field it names (400s name the field), else null. */
-const FIELDS = ['slug', 'title', 'description', 'harness', 'model', 'effort', 'can_hire', 'limits', 'body', 'skills'] as const
+const FIELDS = ['slug', 'title', 'description', 'harness', 'model', 'effort', 'can_hire', 'limits', 'body', 'skills', 'helper', 'one_shot'] as const
 export type ResumeField = (typeof FIELDS)[number]
 export function errorField(msg: string): ResumeField | null {
   const lower = msg.toLowerCase()

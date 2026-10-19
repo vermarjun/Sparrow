@@ -4,12 +4,13 @@ import { Hono, type Context } from 'hono';
 import { existsSync, statSync } from 'node:fs';
 import { join, normalize, resolve as resolvePath } from 'node:path';
 import { launchCaptain as defaultLaunchCaptain } from '../harness/captain';
-import type { Agent, CaptainStartReq, ResumeWriteReq } from '../shared/types';
+import type { Agent, CaptainStartReq, ResumeWriteReq, SettingsWriteReq } from '../shared/types';
 import type { CatalogService } from './catalog';
 import { Core, DOCTOR_PROJECT, HttpError } from './core';
 import type { Doctor } from './doctor';
 import { sseHandler } from './events';
 import { SLUG_RE, validateResumeReq } from './resumes';
+import type { SettingsService } from './settings';
 import { mountSkillsApi } from './skills-api';
 import { mountSkillAddRoutes } from './skills-add-routes';
 
@@ -24,6 +25,7 @@ export interface ApiOpts {
   catalogs?: CatalogService;
   doctor?: Doctor;
   launchCaptain?: typeof defaultLaunchCaptain;
+  settings?: SettingsService;
 }
 
 async function body<T = any>(c: Context): Promise<T> {
@@ -211,6 +213,10 @@ export function createApi(core: Core, opts: ApiOpts = {}) {
     const { slug: _s, ...rest } = checkWrite(await body(c), false);
     // A client that does not know about skills (older UI) must not wipe them: absent = unchanged, [] = clear.
     if (rest.skills === undefined) rest.skills = cur.skills ?? [];
+    // Same for the helper / one-shot flags.
+    if (rest.helper === undefined && cur.helper) rest.helper = true;
+    if (rest.one_shot === undefined && cur.one_shot) rest.one_shot = true;
+    if (rest.helper && rest.can_hire.length) throw new HttpError(400, 'can_hire must be empty for a helper: helpers are leaves and never hire');
     const before = JSON.stringify(cur.skills ?? []);
     core.resumes.write(slug, rest);
     core.emitResume(slug);
@@ -231,7 +237,8 @@ export function createApi(core: Core, opts: ApiOpts = {}) {
     if (core.resumes.get(b.slug)) throw new HttpError(409, `Resume "${b.slug}" already exists; pick another slug.`);
     core.resumes.write(b.slug, {
       title: src.title, description: src.description, harness: src.harness, model: src.model, effort: src.effort,
-      can_hire: src.can_hire, limits: src.limits, body: src.body, skills: src.skills ?? [],
+      can_hire: src.helper ? [] : src.can_hire, limits: src.limits, body: src.body, skills: src.skills ?? [],
+      ...(src.helper ? { helper: true } : {}), ...(src.one_shot ? { one_shot: true } : {}),
     });
     core.emitResume(b.slug);
     return c.json(core.resumeView(core.resumes.get(b.slug)!), 201);
@@ -246,6 +253,16 @@ export function createApi(core: Core, opts: ApiOpts = {}) {
 
   mountSkillAddRoutes(app, { onSkillsChanged: () => core.events.emit({ type: 'skills.updated', project_id: '*' }) });
   mountSkillsApi(app, core);
+
+  // ---------------------------------------------------------------- settings (the web Settings page)
+  app.get('/api/settings', (c) => c.json(needSvc(opts.settings ?? null, 'Settings').view()));
+  app.put('/api/settings', async (c) => {
+    const caller = c.get('caller');
+    if (caller && caller.kind !== 'human') {
+      throw new HttpError(403, `@${caller.handle} may not change Sparrow settings; only the user can, from the Settings page.`);
+    }
+    return c.json(needSvc(opts.settings ?? null, 'Settings').update(await body<SettingsWriteReq>(c)));
+  });
 
   app.get('/api/captain/recent', (c) => c.json(core.recentRoots()));
   app.post('/api/captain/start', async (c) => {

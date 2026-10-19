@@ -5,7 +5,7 @@ import type { SkillsState } from './skills'
 import { emptyData, reduce, reduceGlobal, sortThreads, type Data, type GlobalData } from './reduce'
 
 export type Conn = 'connecting' | 'live' | 'down'
-export type Tab = 'board' | 'chat' | 'agents' | 'doctor' | 'resumes' | 'skills'
+export type Tab = 'board' | 'chat' | 'agents' | 'doctor' | 'resumes' | 'skills' | 'settings'
 
 interface Store extends Data, GlobalData {
   projects: ProjectRow[]

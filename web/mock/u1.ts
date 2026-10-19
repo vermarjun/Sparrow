@@ -4,8 +4,16 @@
 // Claude passes, Codex passes on a new version ("re-verified"), OpenCode is logged out; skills warns.
 import type {
   Agent, CaptainStartReq, CaptainStartRes, CatalogModel, DoctorCheck, DoctorRun, HarnessCatalog, HarnessHealth, HarnessName,
-  ResumeStatus, ResumeView, ResumeWriteReq, ServerEvent,
+  ResumeStatus, ResumeView, ResumeWriteReq, ServerEvent, SettingField, SettingsView,
 } from '../../src/shared/types'
+
+const SETTINGS: Omit<SettingField, 'value' | 'saved' | 'env_override'>[] = [
+  { key: 'max_running', group: 'Capacity', label: 'Running slots', unit: 'agents', min: 1, max: 50, default: 3, help: 'Agents that may work at the same time across all projects.' },
+  { key: 'max_depth', group: 'Capacity', label: 'Depth limit', unit: 'levels', min: 1, max: 10, default: 3, help: 'How deep the hiring tree may grow; you are level 0.' },
+  { key: 'quiet_minutes', group: 'Call limits', label: 'Quiet nudge', unit: 'minutes', min: 1, max: 240, default: 15, help: 'A silent working agent is nudged after this long.' },
+  { key: 'max_call_minutes', group: 'Call limits', label: 'Long call notice', unit: 'minutes', min: 1, max: 1440, default: 90, help: 'The parent is told when one call runs this long.' },
+  { key: 'close_grace_ms', group: 'Timing', label: 'Window close grace', unit: 'ms', min: 0, max: 120000, default: 8000, help: 'Delay between a report and closing the window.' },
+]
 
 const SLUG_RE = /^[a-z][a-z0-9-]{0,31}$/
 const HOME = '/Users/vermarjun'
@@ -90,6 +98,8 @@ export function seedResumes(): Row[] {
     R('researcher', 'Researcher', 'opencode', 'opencode/glm-5.1', null, [], 'Reads widely, cites sources, writes a short digest.'),
     R('scout', 'Scout', 'codex', 'gpt-6-luna', 'xhigh', [], 'Quick triage of an issue or log: what broke, where, and who should fix it.'),
     R('presenter', 'Presenter', 'opencode', 'opencode-go/glm-5.3', null, [], 'Turns findings into a short HTML deck.', true),
+    { ...R('deckhand', 'Deckhand', 'claude', 'haiku', 'medium', [], 'Fast, cheap mechanical work. One-shot.', true), helper: true, one_shot: true },
+    { ...R('advisor', 'Advisor', 'claude', 'opus', 'medium', [], 'Read-only senior advisor: answers one question.', true), helper: true },
   ]
 }
 
@@ -198,7 +208,11 @@ export function createU1(ctx: U1Ctx, opts: { now?: number; doctorMs?: number; do
   }
 
   function pick(b: ResumeWriteReq): Omit<Row, 'slug' | 'path' | 'builtin'> {
-    return { title: b.title.trim(), description: b.description ?? '', harness: b.harness, model: b.model || null, effort: b.effort || null, can_hire: b.can_hire, limits: { quiet_minutes: Math.round(b.limits.quiet_minutes), max_call_minutes: Math.round(b.limits.max_call_minutes) }, body: b.body }
+    return {
+      title: b.title.trim(), description: b.description ?? '', harness: b.harness, model: b.model || null, effort: b.effort || null, can_hire: b.helper ? [] : b.can_hire,
+      limits: { quiet_minutes: Math.round(b.limits.quiet_minutes), max_call_minutes: Math.round(b.limits.max_call_minutes) }, body: b.body,
+      ...(b.helper ? { helper: true } : {}), ...(b.one_shot ? { one_shot: true } : {}),
+    }
   }
 
   function startDoctor(): DoctorRun {
@@ -238,6 +252,12 @@ export function createU1(ctx: U1Ctx, opts: { now?: number; doctorMs?: number; do
     prevVersions = run.versions
   }
 
+  const savedSettings: Record<string, number> = {}
+  const doctorModels: Record<string, string> = {}
+  const settingsView = (): SettingsView => ({
+    fields: SETTINGS.map((f) => ({ ...f, value: savedSettings[f.key] ?? f.default, saved: f.key in savedSettings, env_override: false })),
+    doctor_models: { ...doctorModels }, file: `${HOME}/.sparrow/config.json`,
+  })
   const json = (data: unknown, status = 200) => Response.json(data, { status })
   const err = (status: number, error: string) => json({ error }, status)
 
@@ -255,6 +275,18 @@ export function createU1(ctx: U1Ctx, opts: { now?: number; doctorMs?: number; do
     if (p === '/api/doctor/run' && method === 'POST') {
       if (run && !run.ended_at) return err(409, 'a doctor run is already in progress; watch it on the Doctor page')
       return json({ run: startDoctor() })
+    }
+    if (p === '/api/settings' && method === 'GET') return json(settingsView())
+    if (p === '/api/settings' && method === 'PUT') {
+      const values = (body?.values ?? {}) as Record<string, number | null>
+      for (const [k, v] of Object.entries(values)) {
+        const f = SETTINGS.find((x) => x.key === k)
+        if (!f) return err(400, `${k}: unknown setting`)
+        if (v !== null && (!Number.isInteger(v) || v < f.min || v > f.max)) return err(400, `${k}: must be between ${f.min} and ${f.max} ${f.unit}`)
+      }
+      for (const [k, v] of Object.entries(values)) { if (v === null) delete savedSettings[k]; else savedSettings[k] = v }
+      for (const [h, m] of Object.entries((body?.doctor_models ?? {}) as Record<string, string | null>)) { if (m) doctorModels[h] = m; else delete doctorModels[h] }
+      return json(settingsView())
     }
     if (p === '/api/captain/recent' && method === 'GET') return json(recent)
     if (p === '/api/captain/start' && method === 'POST') {

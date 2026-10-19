@@ -114,7 +114,8 @@ function groupHeader(group: MessageView[], me: string | null, agents: Map<string
   const result = [...group].reverse().find((m) => m.kind === 'result');
   if (result) {
     const ms = (result.meta as any)?.call_ms;
-    const bits = [`@${handle}`, resume, `done ${String((result.meta as any)?.status ?? 'ok')}`, typeof ms === 'number' ? `call ${duration(ms)}` : null];
+    const bits = [`@${handle}`, resume, `done ${String((result.meta as any)?.status ?? 'ok')}`, typeof ms === 'number' ? `call ${duration(ms)}` : null,
+      (result.meta as any)?.released ? 'released (one-shot)' : null];
     return `── ${bits.filter(Boolean).join(' · ')} ──`;
   }
   if (group.every((m) => m.kind === 'chat' || m.kind === 'task' || m.kind === 'question')) return `── @${handle} (DM) ──`;
@@ -215,7 +216,10 @@ export function resumesDirectory(resumes: (Resume | ResumeView)[]): string {
         ? ` · DEGRADED: ${ph.errors} provider errors in a row on ${ph.provider}${ph.last_error ? ` (last: ${oneLine(ph.last_error, 80)}${ph.last_error_at ? `, ${age(ph.last_error_at)}` : ''})` : ''}; prefer another resume until one call succeeds`
         : '';
       lines.push(`  status: ${status}${unusable ? ' — UNUSABLE: do not hire' : ''}${view.status_detail ? ` · ${view.status_detail}` : ''}${degraded}`);
-      lines.push(`  can hire: ${r.can_hire.length ? r.can_hire.join(', ') : 'nobody'}`);
+      lines.push(`  can hire: ${r.can_hire.length && !r.helper ? r.can_hire.join(', ') : 'nobody'}`);
+      if (r.helper || r.one_shot) {
+        lines.push(`  ${[r.helper ? 'helper (a leaf; hiring it does not make you a captain)' : null, r.one_shot ? 'one-shot (released right after its report; follow-ups need a new hire)' : null].filter(Boolean).join(' · ')}`);
+      }
       return lines.join('\n');
     })
     .join('\n');

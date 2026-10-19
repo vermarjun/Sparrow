@@ -95,7 +95,7 @@ export function messageHeader(m: Message, handleOf: HandleOf): string {
   switch (m.kind) {
     case 'task': label = `task from ${from}`; break;
     case 'question': label = `question from ${from}`; break;
-    case 'result': label = `result from ${from}${m.meta?.status ? ` (${m.meta.status})` : ''}`; break;
+    case 'result': label = `result from ${from}${m.meta?.status ? ` (${m.meta.status})` : ''}${m.meta?.released ? ' · released (one-shot)' : ''}`; break;
     case 'system': label = 'system notice'; break;
     case 'update': label = `update from ${from}`; break;
     default: label = `DM from ${from}`;
