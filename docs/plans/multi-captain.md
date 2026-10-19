@@ -222,3 +222,38 @@ Server (`test/server/captains.test.ts`, sandboxed):
 CLI (`test/cli/captains.test.ts`): `captains`, `title`, `captain adopt`, `whoami`, `SPARROW_CAPTAIN_ID` passthrough,
 created hint. Web: pure-logic tests (status/sort/group, fleet tree, activity grouping/filter), `tsc -b`, `vite build`,
 mock-server screenshots light + dark at 1440 and 390 px.
+
+## 9. Amendments after advisor review (@ivan, VERDICT ADJUST) — these override earlier sections
+
+A1. **Contract** (commit f54c38b): `Settings.max_running_per_captain` (default 0) in `src/shared/config.ts`;
+    `RegisterCaptainReq.pid`; `Agent.call_started_at` (read paths: `/api/agents`, `CaptainDetail.agents`).
+    `/api/projects` rows gain `captains` (non-archived, non-phantom count; the web's `ProjectRow` type adds it).
+    `/api/messages` gains `before=<seq>` (newest-first paging for the Activity feed: `before` + `limit` returns the
+    `limit` messages just older than `before`, in seq order).
+A2. **Worktrees belong to their repo's project.** `gitRoot` (core.ts:64) maps a linked worktree to
+    `dirname(git rev-parse --path-format=absolute --git-common-dir)` (the main checkout), so `cd ../plutus-feat1 && claude`
+    is a captain of project `plutus` and shares its board. Registered project roots still win (`projectRootFor`), so the
+    existing `sparrow-board` project does not move. Skill/docs say: run each captain in its own worktree, anywhere.
+A3. **`/clear` changes `CLAUDE_CODE_SESSION_ID`** (verified in claude 2.1.304) but not `CLAUDE_PID`. New column
+    `captain_pid`. Register: session id unknown + `pid` equals a human row's `captain_pid` in this project seen in the
+    last 24 h → re-attach: update that row's `session_id` (auto-adopt). When `captain_id` matches, also refresh the row's
+    `session_id` to the sent one, so Resume reopens the current conversation. CLI sends `pid` from `CLAUDE_PID`.
+A4. **Project-only commands never create or require a captain.** `sparrow captains`, `sparrow captain resume`, and
+    `sparrow card …`, when register answers 409 (ambiguous plain shell), fall back to an unidentified call with the project
+    from `GET /api/projects/resolve?cwd=<dir>` → `Project` (no row created). Other commands keep the 409.
+A5. **Wall gaps closed.** For an identified caller: `hire --card` and card `assignee` must not take a card assigned to
+    another fleet; `PATCH /api/cards/:id` state/assignee changes on a card whose assignee is in another fleet → 403 (notes
+    stay allowed); release per §3.6; `RESERVED` also rejects any hire name starting `cap-`; `wake()` checks the per-fleet
+    cap, not only `dequeue()`.
+A6. **Phantom captains.** Background sessions and nested `claude -p` get their own session id. `GET /api/captains` and
+    `sparrow captains` hide captains with no hires, no title and `origin 'terminal'` unless `?all=1` / `--all`.
+A7. **Concurrency + shared DB.** `registerCaptain` stays fully synchronous (branch via spawnSync); catch the unique-index
+    error and re-read. The fleet backfill is idempotent (`WHERE fleet_id IS NULL`) and runs on every open, because the
+    :4040 server from `main` may insert rows with NULL `fleet_id` into the same DB; read paths treat NULL as "compute
+    from the parent chain". Back up `~/.sparrow` DB before the first v5 open.
+A8. **Ownership additions.** Server builder also owns `src/harness/launch.ts` (add `SPARROW_CAPTAIN_ID` to UNSET_VARS),
+    `test/preload-guard.ts` (IDENTITY_VARS), `test/harness/real*.test.ts`, `test/cli/claude-isolation.real.test.ts`
+    compile fixes. The CLI switches `sparrow captain` to `POST /api/captain/start` (main.ts:288 stops importing
+    `launchCaptain`). OpenCode terminal captains have no session id → §3.5 rules (documented).
+A9. **Cost at 100 captains.** `/api/captains` computes summaries in a few grouped queries (no per-captain N+1); the UI
+    debounces refetches (≥ 400 ms) and patches rows from `agent.updated` between fetches.
