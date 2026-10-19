@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { gitRoot } from '../../src/server/core';
@@ -26,9 +26,21 @@ describe('register captain', () => {
     expect(p1.body.agent.id).not.toBe(p2.body.agent.id);
   });
 
-  test('gitRoot finds the repo toplevel (real git)', () => {
-    const repo = join(import.meta.dir, '..', '..');
-    expect(gitRoot(join(repo, 'src', 'server'))).toBe(resolve(repo));
+  test('gitRoot finds the repo toplevel; a linked worktree belongs to the main checkout (real git)', () => {
+    const git = (cwd: string, ...args: string[]) => {
+      const r = Bun.spawnSync(['git', '-C', cwd, ...args], { stdout: 'pipe', stderr: 'pipe' });
+      if (r.exitCode !== 0) throw new Error(`git ${args.join(' ')}: ${r.stderr.toString()}`);
+    };
+    const main = realpathSync(mkdtempSync(join(tmpdir(), 'sp-git-')));
+    git(main, 'init', '-q');
+    git(main, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'init');
+    mkdirSync(join(main, 'src', 'deep'), { recursive: true });
+    expect(gitRoot(join(main, 'src', 'deep'))).toBe(main);
+    const wt = join(realpathSync(mkdtempSync(join(tmpdir(), 'sp-wt-'))), 'feat1');
+    git(main, 'worktree', 'add', '-q', '-b', 'feat1', wt);
+    mkdirSync(join(wt, 'src'), { recursive: true });
+    expect(gitRoot(wt)).toBe(main);
+    expect(gitRoot(join(wt, 'src'))).toBe(main);
     const plain = mkdtempSync(join(tmpdir(), 'sp-nogit-'));
     expect(gitRoot(plain)).toBe(plain);
   });

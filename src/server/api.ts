@@ -5,8 +5,9 @@ import { existsSync, statSync } from 'node:fs';
 import { join, normalize, resolve as resolvePath } from 'node:path';
 import { parseCardRef } from '../shared/cards';
 import { launchCaptain as defaultLaunchCaptain } from '../harness/captain';
-import type { Agent, CaptainStartReq, ResumeWriteReq, SettingsWriteReq } from '../shared/types';
+import type { Agent, CaptainPatchReq, CaptainStartReq, ResumeWriteReq, SettingsWriteReq } from '../shared/types';
 import type { CatalogService } from './catalog';
+import { captainDetail, captainResume, captainSummaries, captainSummary } from './captains';
 import { Core, DOCTOR_PROJECT, HttpError } from './core';
 import type { Doctor } from './doctor';
 import { sseHandler } from './events';
@@ -151,8 +152,21 @@ export function createApi(core: Core, opts: ApiOpts = {}) {
     return reply(c, res);
   });
 
-  app.get('/api/whoami', (c) => reply(c, core.whoami(need(c))));
+  app.get('/api/whoami', async (c) => {
+    const me = need(c);
+    // A captain also gets how to get back into it (the same lines `sparrow captains` shows).
+    const resume = me.kind === 'human' ? captainResume(me, me.tmux_window_id ? await core.captainWindowOpen(me).catch(() => false) : false) : undefined;
+    return reply(c, { ...core.whoami(me), ...(resume ? { resume } : {}) });
+  });
   app.get('/api/projects', (c) => c.json(core.listProjects()));
+  // The project a folder belongs to, for commands that never need a captain row. 404: nothing registered there yet.
+  app.get('/api/projects/resolve', (c) => {
+    const cwd = c.req.query('cwd');
+    if (!cwd) throw new HttpError(400, 'resolve needs ?cwd=<dir>');
+    const p = core.resolveProject(cwd);
+    if (!p) throw new HttpError(404, `No Sparrow project for ${resolvePath(cwd)} yet (it is created by the first captain that runs a sparrow command there).`);
+    return c.json(p);
+  });
 
   // ---------------------------------------------------------------- U1: catalog, doctor, resumes, captain
   const catalogs = opts.catalogs ?? null;
@@ -266,6 +280,15 @@ export function createApi(core: Core, opts: ApiOpts = {}) {
   });
 
   app.get('/api/captain/recent', (c) => c.json(core.recentRoots()));
+
+  const launcher = () => opts.launchCaptain ?? defaultLaunchCaptain;
+  /** Launch failures that are not already an HttpError become a 500 with the reason. */
+  const launching = async <T>(what: string, run: () => Promise<T>): Promise<T> => {
+    try { return await run(); } catch (e) {
+      if (e instanceof HttpError) throw e;
+      throw new HttpError(500, `Could not ${what}: ${(e as Error).message}`);
+    }
+  };
   app.post('/api/captain/start', async (c) => {
     const b = await body<CaptainStartReq>(c);
     if (typeof b.cwd !== 'string' || !b.cwd.trim()) throw new HttpError(400, 'captain start needs {cwd}');
@@ -275,18 +298,57 @@ export function createApi(core: Core, opts: ApiOpts = {}) {
     if (b.effort != null && typeof b.effort !== 'string') throw new HttpError(400, 'effort must be a string or null');
     const refusal = core.gate('claude', b.model ?? null, b.effort ?? null);
     if (refusal) throw new HttpError(409, refusal);
-    try {
-      return c.json(await (opts.launchCaptain ?? defaultLaunchCaptain)({ cwd, model: b.model ?? null, effort: b.effort ?? null }));
-    } catch (e) {
-      if (e instanceof HttpError) throw e;
-      throw new HttpError(500, `Could not start the captain: ${(e as Error).message}`);
+    return c.json(await launching('start the captain', () => core.startCaptain({ ...b, cwd, model: b.model ?? null, effort: b.effort ?? null }, launcher())));
+  });
+
+  // ---------------------------------------------------------------- captains (multi-captain)
+  // Readable by the UI and by human captains; spawned agents have no business listing other teams' work.
+  const captainReader = (c: Context<{ Variables: Vars }>) => {
+    const caller = c.get('caller');
+    if (caller && caller.kind !== 'human') throw new HttpError(403, `@${caller.handle} is not a captain; captains are listed for the user and for captains only.`);
+    return caller;
+  };
+  const projectOf = (c: Context<{ Variables: Vars }>) => c.req.query('project') || c.get('caller')?.project_id || null;
+  const captainRef = (c: Context<{ Variables: Vars }>) => {
+    const ref = decodeURIComponent(c.req.param('id') ?? '');
+    const project = projectOf(c);
+    if (!ref.startsWith('ag_') && !project) throw new HttpError(400, 'a captain handle needs ?project=<id>; or pass the captain id (ag_…)');
+    return core.captainOr404(ref, project);
+  };
+
+  app.get('/api/captains', async (c) => {
+    const caller = captainReader(c);
+    const project = projectOf(c);
+    if (!project) throw new HttpError(400, 'captains needs ?project=<id>');
+    if (!core.store.getProject(project)) throw new HttpError(404, `No project ${project}.`);
+    const list = await captainSummaries(core, project, { archived: c.req.query('archived') === '1', all: c.req.query('all') === '1' });
+    // A captain always sees itself, even before it has a title or a team.
+    if (caller && caller.project_id === project && !list.some((s) => s.agent.id === caller.id)) {
+      const me = core.store.getAgent(caller.id);
+      if (me && !me.captain?.archived_at) list.push(await captainSummary(core, me));
     }
+    return c.json(list);
+  });
+  app.get('/api/captains/:id', async (c) => {
+    captainReader(c);
+    return c.json(await captainDetail(core, captainRef(c)));
+  });
+  app.patch('/api/captains/:id', async (c) => {
+    const caller = c.get('caller') ? need(c) : null;
+    const cap = captainRef(c);
+    return c.json({ agent: core.patchCaptain(caller, cap.id, null, await body<CaptainPatchReq>(c)) });
+  });
+  app.post('/api/captains/:id/resume', async (c) => {
+    captainReader(c);
+    const cap = captainRef(c);
+    return c.json(await launching('resume the captain', () => core.resumeCaptain(cap.id, null, launcher())));
   });
 
   // ---------------------------------------------------------------- agents
   app.get('/api/agents', (c) => {
     const project = c.req.query('project') || null;
-    const rows = core.store.listAgents(project);
+    // An identified caller sees its own team (the fleet wall); the UI sees everyone.
+    const rows = core.rosterFor(project, c.get('caller'));
     // The _doctor project (probes + its captain) stays hidden unless asked for.
     return c.json(core.withResults(project ? rows : rows.filter((a) => a.project_id !== DOCTOR_PROJECT), project));
   });
@@ -335,16 +397,19 @@ export function createApi(core: Core, opts: ApiOpts = {}) {
 
   app.get('/api/messages', (c) => {
     const after = c.req.query('after');
+    const before = c.req.query('before');
     return c.json(core.messages({
       project: c.req.query('project') || null,
       thread: c.req.query('thread') || null,
+      fleet: c.req.query('fleet') || null,
       after: after != null && after !== '' ? Number(after) : null,
+      before: before != null && before !== '' ? Number(before) : null,
       limit: Number(c.req.query('limit')) || 100,
       caller: c.get('caller'),
     }));
   });
 
-  app.get('/api/threads', (c) => c.json(core.threads(c.req.query('project') || c.get('caller')?.project_id || '')));
+  app.get('/api/threads', (c) => c.json(core.threads(c.req.query('project') || c.get('caller')?.project_id || '', c.get('caller'))));
 
   // ---------------------------------------------------------------- cards
   app.post('/api/propose', async (c) => reply(c, { card: core.propose(need(c), await body(c)) }));

@@ -37,6 +37,8 @@ export interface AppDeps {
   protocolPath?: string;
   deliverDelayMs?: number;
   detectRoot?: (cwd: string) => string;
+  detectBranch?: (cwd: string) => string | null;
+  captainWindowOpen?: (a: import('../shared/types').Agent) => Promise<boolean>;
   webDist?: string | null;
   pingMs?: number;
   doctorRoot?: string;
@@ -59,6 +61,7 @@ export function createApp(deps: AppDeps) {
     store, spawner: deps.spawner, settings, resumes, events, clock: deps.clock ?? realClock, log: deps.log,
     tmuxPrefix: deps.tmuxPrefix ?? TMUX_PREFIX, protocolPath: deps.protocolPath ?? PROTOCOL_PATH,
     deliverDelayMs: deps.deliverDelayMs, detectRoot: deps.detectRoot, doctorRoot: deps.doctorRoot,
+    detectBranch: deps.detectBranch, captainWindowOpen: deps.captainWindowOpen,
   });
   const log = deps.log ?? (() => {});
   const catalogs = new CatalogService(store, events, deps.fetcher, deps.catalogHarnesses, log);
@@ -70,7 +73,7 @@ export function createApp(deps: AppDeps) {
   const settingsSvc = new SettingsService(settings, deps.configFile ?? CONFIG_FILE);
   settingsSvc.onChange((changed) => {
     log(`settings changed: ${changed.map((k) => `${k}=${JSON.stringify(settings[k])}`).join(', ')}`);
-    if (changed.includes('max_running')) core.settingsChanged();
+    if (changed.includes('max_running') || changed.includes('max_running_per_captain')) core.settingsChanged();
   });
   const app = createApi(core, {
     version: VERSION, startedAt: Date.now(), webDist: deps.webDist ?? null, pingMs: deps.pingMs, catalogs, doctor,

@@ -1,6 +1,8 @@
 // Plain-text renderers for the sparrow CLI. Models read this output, so keep it compact and stable.
 import { renderResumeText } from '../server/resumes';
-import type { Agent, Card, CardState, MessageView, Resume, ResumeView, TeamStatus } from '../shared/types';
+import type {
+  Agent, Card, CardState, CaptainDetail, CaptainStartRes, CaptainSummary, MessageView, Project, Resume, ResumeView, TeamStatus,
+} from '../shared/types';
 import { TMUX_SOCKET } from '../shared/config';
 import { cardBrief, cardKey, cardTimings, formatEstimate, formatSpan, isQuickWin } from '../shared/cards';
 
@@ -197,6 +199,69 @@ export function agentSummary(a: Agent): string {
     `  id ${a.id} · depth ${a.depth} · cwd ${a.cwd}`,
     a.kind === 'human' ? null : `  tmux ${a.tmux_session}:${a.tmux_window} · watch: ${tmuxAttach(a)}`,
   ].filter(Boolean).join('\n');
+}
+
+// ---------- captains
+
+/** One-time line when a session becomes a new captain. */
+export function captainHint(a: Agent, project: Pick<Project, 'id'>): string {
+  return `You are @${a.handle}, a new captain in ${project.id}. Name your work: sparrow title "…"`;
+}
+
+/** What a captain row is called when it has no title yet. */
+const captainTitle = (a: Agent) => a.captain?.title ?? (a.captain?.branch ? `(${a.captain.branch})` : '(untitled)');
+
+function resumeLines(c: CaptainSummary['resume']): string[] {
+  return [
+    `resume: ${c.command ?? '(no session id yet)'}`,
+    ...(c.attach ? [`attach: ${c.attach}`] : []),
+  ];
+}
+
+/**
+ * `sparrow captains`: one row per captain (handle, title, status, team working/total, last activity), the resume line(s)
+ * indented under it. `meId` marks the caller "(you)"; null in a bare shell.
+ */
+export function captainsTable(list: CaptainSummary[], project: string, meId: string | null, all = false, now = Date.now()): string {
+  const head = `Captains in ${project} — ${list.length}${all ? ' (incl. archived)' : ' (archived hidden; --all)'}`;
+  if (!list.length) return `${head}\nNo captains yet. Start one: sparrow captain --title "…"`;
+  const rows = list.map((s) => {
+    const a = s.agent;
+    const f = s.fleet;
+    const team = f.total ? `${f.working}/${f.total} working${f.queued ? ` +${f.queued} queued` : ''}` : 'no team';
+    const attn = s.status === 'attention' ? ` (${[s.questions ? `${s.questions} question${s.questions === 1 ? '' : 's'}` : '', s.unread ? `${s.unread} unread` : '', f.crashed ? `${f.crashed} crashed` : ''].filter(Boolean).join(', ') || 'needs you'})` : '';
+    return ['@' + a.handle + (a.id === meId ? ' (you)' : ''), oneLine(captainTitle(a), 50), s.status + attn, team, age(s.last_activity_at, now)];
+  });
+  const lines = table(rows).split('\n');
+  const out = [head];
+  list.forEach((s, i) => out.push(lines[i], ...resumeLines(s.resume).map((l) => '    ' + l)));
+  return out.join('\n');
+}
+
+/** `sparrow captain` / `captain resume`: handle, where it runs, how to watch and how to get back in. */
+export function captainStartText(res: CaptainStartRes, detail: CaptainDetail | null, verb: 'Captain' | 'Resumed'): string {
+  const a = detail?.summary.agent;
+  const who = a ? `@${a.handle}${a.captain?.title ? ` — ${a.captain.title}` : ''} · ` : '';
+  const lines = [`${verb} ${who}${res.cwd} · ${res.session}:${res.window}`, `  attach: ${res.attach}`];
+  const command = detail?.summary.resume.command;
+  if (command) lines.push(`  resume: ${command}`);
+  if (a) lines.push(`  next: ${a.captain?.title ? 'it is already named' : `in its session run sparrow title "…"`}; \`sparrow captains\` lists all captains`);
+  return lines.join('\n');
+}
+
+/** whoami lines for a captain (title, fleet, resume) or an agent (whose team it is on). `detail` is the captain's detail; null when unavailable. */
+export function captainSelf(me: Agent, detail: CaptainDetail | null): string[] {
+  if (!detail) return [];
+  const s = detail.summary;
+  const root = s.agent;
+  if (me.kind !== 'human') return [`  fleet: @${root.handle}'s team${root.captain?.title ? ` — ${root.captain.title}` : ''}`];
+  const c = root.captain;
+  const f = s.fleet;
+  return [
+    `  captain: @${root.handle}${c?.title ? ` — ${c.title}` : ' — no title yet (sparrow title "…")'}${c?.branch ? ` · branch ${c.branch}` : ''}${c ? ` · ${c.origin}` : ''}`,
+    `  fleet: ${root.id} · ${f.total} agent${f.total === 1 ? '' : 's'}${f.total ? ` (${f.working} working)` : ''}`,
+    ...resumeLines(s.resume).map((l) => '  ' + l),
+  ];
 }
 
 // ---------- resumes

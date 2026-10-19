@@ -106,31 +106,7 @@ describe('one command lifecycle', () => {
   }, 15_000);
 });
 
-describe('captain', () => {
-  test('normal Claude argv, folder, trust, no worker identity, exact attach command', async () => {
-    const { home, env } = setup(4152);
-    const fake = join(home, 'bin/claude');
-    writeFileSync(fake, '#!/bin/sh\npwd > "$SPARROW_HOME/cwd"\nprintf "%s\\n" "$@" > "$SPARROW_HOME/argv"\nprintf "%s" "$SPARROW_AGENT_ID" > "$SPARROW_HOME/identity"\nsleep 30\n'); chmodSync(fake, 0o755);
-    const server = Bun.serve({ port: 4152, fetch: () => Response.json({ ok: true }) });
-    try {
-      const r = await run(['captain', '--cwd', home, '--model', 'haiku', '--effort', 'low', '--json'], { env: { ...env, SPARROW_CLAUDE_BIN: fake, SPARROW_CLAUDE_JSON: join(home, 'claude.json'), SPARROW_AGENT_ID: 'must-not-inherit' } });
-      expect(r.code).toBe(0);
-      const result = JSON.parse(r.stdout);
-      expect(result.session).toBe(`${PREFIX}captains`); expect(result.attach).toContain(`select-window -t ${result.window_id}`);
-      for (let i = 0; i < 40 && !existsSync(join(home, 'argv')); i++) await Bun.sleep(50);
-      expect(readFileSync(join(home, 'cwd'), 'utf8').trim()).toBe(home);
-      expect(readFileSync(join(home, 'identity'), 'utf8')).toBe('');
-      expect(readFileSync(join(home, 'argv'), 'utf8').trim().split('\n')).toEqual(['--append-system-prompt-file', join(REPO, 'assets/captain.md'), '--model', 'haiku', '--effort', 'low']);
-      expect(JSON.parse(readFileSync(join(home, 'claude.json'), 'utf8')).projects[home].hasTrustDialogAccepted).toBe(true);
-      expect(Bun.spawnSync(['tmux', '-L', SOCKET, 'display-message', '-p', '-t', result.window_id, '#{pane_current_path}']).stdout.toString().trim()).toBe(home);
-      const bad = await run(['captain', '--cwd', join(home, 'absent')], { env: { ...env, SPARROW_CLAUDE_BIN: fake } });
-      expect(bad.code).toBe(1); expect(bad.stderr).toContain('existing directory');
-    } finally {
-      server.stop(true);
-      Bun.spawnSync(['tmux', '-L', SOCKET, 'kill-session', '-t', `=${PREFIX}captains`], { stderr: 'ignore' });
-    }
-  }, 15_000);
-});
+// `sparrow captain` now goes through POST /api/captain/start (the server launches); see captains.test.ts.
 
 // Attach instructions are shell commands: the semicolon must reach tmux as one argument.
 test('attach command shell escaping preserves the tmux command separator', async () => {

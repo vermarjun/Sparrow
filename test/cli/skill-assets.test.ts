@@ -48,12 +48,17 @@ describe('worker skill + protocol teach server/process safety', () => {
   });
 });
 
-describe('captain skill (D3)', () => {
-  test('says a git worktree is its own Sparrow project (own board, tmux session sparrow-<worktree-dir>), and that --cwd does not change the project', () => {
-    const text = readFileSync(join(dir, 'sparrow-captain', 'SKILL.md'), 'utf8');
-    expect(text).toContain('A git worktree is its own Sparrow project');
-    expect(text).toContain('own board');
-    expect(text).toContain('tmux session `sparrow-<worktree-dir>`');
-    expect(text).toContain('`--cwd` only sets where the hired agent works; it never changes the project');
+describe('captain skill (multi-captain)', () => {
+  const text = readFileSync(join(dir, 'sparrow-captain', 'SKILL.md'), 'utf8');
+  test('worktrees belong to their repo project, one captain per worktree, and --cwd does not change the project', () => {
+    expect(text).toContain('Worktrees belong to their repo\'s project');
+    expect(text).toContain('one captain per worktree');
+    expect(text).toContain('`--cwd` only sets where a hired agent works; it never changes the project');
+  });
+  test('teaches one captain per session, sparrow title, the private team and how to get back in', () => {
+    expect(text).toContain('One captain per session');
+    expect(text).toContain('Start every job with `sparrow title');
+    expect(text).toContain('Your team is private');
+    for (const c of ['sparrow captains', 'sparrow captain resume', 'sparrow captain adopt', 'CLAUDE_PID']) expect(text).toContain(c);
   });
 });

@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path';
 
 type Env = Record<string, string | undefined>;
 
-export const IDENTITY_VARS = ['SPARROW_AGENT_ID', 'SPARROW_CALL_ID', 'SPARROW_URL', 'SPARROW_WINDOW', 'SPARROW_AGENT_URL'];
+export const IDENTITY_VARS = ['SPARROW_AGENT_ID', 'SPARROW_CALL_ID', 'SPARROW_URL', 'SPARROW_WINDOW', 'SPARROW_AGENT_URL', 'SPARROW_CAPTAIN_ID'];
 
 const real = (p: string) => { try { return realpathSync(p); } catch { return resolve(p); } };
 

@@ -15,6 +15,10 @@ export const SETTING_FIELDS: Record<SettingKey, Meta> = {
     group: 'Capacity', label: 'Running slots', unit: 'agents', min: 1, max: 50,
     help: 'Agents that may work at the same time across all projects. More hires wait in the queue. An agent parked on sparrow wait or ask does not hold a slot.',
   },
+  max_running_per_captain: {
+    group: 'Capacity', label: 'Slots per captain', unit: 'agents', min: 0, max: 64,
+    help: 'Most agents one captain\'s team may run at the same time, so one busy captain cannot take every slot. 0 = no limit (only the running slots above apply).',
+  },
   max_depth: {
     group: 'Capacity', label: 'Depth limit', unit: 'levels', min: 1, max: 10,
     help: 'How deep the hiring tree may grow; you are level 0. 3 = you → sub-captain → builder → helper (deckhand / advisor).',

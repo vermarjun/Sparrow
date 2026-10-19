@@ -1,19 +1,22 @@
 // The domain service: identity, hiring, routing + wake rules, the call lifecycle, cards, watchdog.
 // Pure logic over the Store, a Spawner and a Clock — no HTTP here (see api.ts).
 import { existsSync, mkdirSync, statSync } from 'node:fs';
-import { basename, isAbsolute, join, resolve as resolvePath, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve as resolvePath, sep } from 'node:path';
 import type { Spawner } from '../harness/index';
 import { SPARROW_HOME, TMUX_PREFIX, type Settings } from '../shared/config';
 import { cardBrief, formatSpan, parseEstimate, parseLevel } from '../shared/cards';
 import { newId } from '../shared/ids';
 import type {
-  Agent, AgentState, Call, CallEndReason, Card, CardCreateReq, CardPatchReq, CardState, DoneReq, HireReq, ProposeReq,
-  HarnessHealth, HarnessName, Message, MessageKind, MessageView, Project, ProviderErrorReq, RegisterCaptainReq, RegisterCaptainRes,
-  Resume, ResumeView, SendReq, ServerEvent, TeamStatus, TurnEndReq, TurnEndRes, UpdateReq,
+  Agent, AgentState, Call, CallEndReason, CaptainInfo, CaptainPatchReq, CaptainStartReq, CaptainStartRes, Card,
+  CardCreateReq, CardPatchReq, CardState, DoneReq, HireReq, ProposeReq, HarnessHealth, HarnessName, Message, MessageKind,
+  MessageView, Project, ProviderErrorReq, RegisterCaptainReq, RegisterCaptainRes, Resume, ResumeView, SendReq, ServerEvent,
+  TeamStatus, TurnEndReq, TurnEndRes, UpdateReq,
 } from '../shared/types';
 import { CARD_STATES } from '../shared/types';
 import { type CatalogService, gateCheck, resumeStatus } from './catalog';
-import { publicCall, type CallRow, Store } from './db';
+import { captainWindowOpen as tmuxCaptainWindowOpen, type CaptainLaunchReq } from '../harness/captain';
+import { type AgentPatch, publicCall, type CallRow, Store } from './db';
+import { captainResume, isPhantom } from './captains';
 import { EventBus } from './events';
 import { codexExitWasInterrupted } from './exit-classifier';
 import {
@@ -55,15 +58,40 @@ export interface CoreDeps {
   deliverDelayMs?: number;            // delay before typing into a TUI after its turn ended (default 1000)
   detectRoot?: (cwd: string) => string; // git root of cwd (or cwd)
   doctorRoot?: string;                  // root of the hidden _doctor project (default <SPARROW_HOME>/doctor)
+  detectBranch?: (cwd: string) => string | null; // git branch of cwd (null: not a repo / detached)
+  captainWindowOpen?: (a: Agent) => Promise<boolean>; // a Sparrow-launched captain's tmux window is open
 }
 
 const FRIENDLY = ['james', 'maya', 'leo', 'iris', 'omar', 'nina', 'theo', 'zara', 'ravi', 'lena', 'ivan', 'mira', 'kai', 'ada', 'ben', 'cleo'];
 const RESERVED = new Set(['captain', 'group', 'system', 'user', 'all', 'everyone', 'here', 'none']);
 const HANDLE_RE = /^[a-z][a-z0-9-]{0,23}$/;
+// Handles for captains started after the first one: cap-orion, cap-vega, … then cap-<n>.
+const STARS = ['orion', 'vega', 'lyra', 'nova', 'atlas', 'rigel', 'sirius', 'altair', 'deneb', 'castor', 'pollux', 'polaris', 'antares',
+  'capella', 'arcturus', 'spica', 'procyon', 'aldebaran', 'bellatrix', 'regulus', 'mizar', 'algol', 'hadar', 'canopus', 'achernar',
+  'betelgeuse', 'fomalhaut', 'alnair', 'elnath', 'alphard'];
+const isUniqueViolation = (e: unknown) => /UNIQUE constraint failed|SQLITE_CONSTRAINT/i.test((e as Error)?.message ?? '');
 
+/** Current git branch of cwd; null outside a repo or on a detached HEAD. */
+export function gitBranch(cwd: string): string | null {
+  try {
+    const r = Bun.spawnSync(['git', '-C', cwd, 'rev-parse', '--abbrev-ref', 'HEAD'], { stdout: 'pipe', stderr: 'ignore' });
+    const out = r.stdout.toString().trim();
+    return r.exitCode === 0 && out && out !== 'HEAD' ? out : null;
+  } catch { return null; }
+}
+
+/**
+ * The project root of a folder: its git toplevel, except that a LINKED worktree maps to the main checkout (the dirname of
+ * the shared .git), so a captain in `../plutus-feat1` belongs to project `plutus` and shares its board.
+ */
 export function gitRoot(cwd: string): string {
   try {
-    const r = Bun.spawnSync(['git', '-C', cwd, 'rev-parse', '--show-toplevel'], { stdout: 'pipe', stderr: 'ignore' });
+    const r = Bun.spawnSync(['git', '-C', cwd, 'rev-parse', '--show-toplevel', '--path-format=absolute', '--git-common-dir'], { stdout: 'pipe', stderr: 'ignore' });
+    const [top, common] = r.stdout.toString().split('\n').map((l) => l.trim());
+    if (r.exitCode === 0 && top) return common && basename(common) === '.git' && dirname(common) !== top ? dirname(common) : top;
+  } catch { /* not a git repo / git missing */ }
+  try {
+    const r = Bun.spawnSync(['git', '-C', cwd, 'rev-parse', '--show-toplevel'], { stdout: 'pipe', stderr: 'ignore' });  // git without --path-format
     const out = r.stdout.toString().trim();
     if (r.exitCode === 0 && out) return out;
   } catch { /* not a git repo / git missing */ }
@@ -80,6 +108,9 @@ const optStr = (x: unknown, field: string): string | undefined => {
   if (typeof x !== 'string') throw new HttpError(400, `${field} must be a string`);
   return x;
 };
+/** Captain handles follow the hire name rules, except that `captain` itself (reserved for hires) is the first captain's name. */
+const captainNameOk = (h: string) => HANDLE_RE.test(h) && (h === 'captain' || !RESERVED.has(h));
+const captainHarnessOf = (h: unknown): CaptainInfo['harness'] => (h === 'claude' || h === 'codex' || h === 'opencode' ? h : 'unknown');
 const TMUX_NAME_RE = /^[A-Za-z0-9_-]{1,40}$/;
 const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
 
@@ -186,11 +217,15 @@ export class Core {
   private protocolPath: string;
   private deliverDelayMs: number;
   private detectRoot: (cwd: string) => string;
+  private detectBranch: (cwd: string) => string | null;
+  readonly captainWindowOpen: (a: Agent) => Promise<boolean>;
   readonly doctorRoot: string;
   // U1: set by createApp. The hire gate and resume status read the catalog and the latest doctor verdict.
   catalogs: CatalogService | null = null;
   healthOf: (h: HarnessName) => HarnessHealth | null = () => null;
 
+  private served = new Map<string, number>();            // fleetId -> sequence number of the latest call it started (fair dequeue)
+  private serveSeq = 0;
   private closeTimers = new Map<string, unknown>();      // agentId -> grace timer
   private otherTimers = new Set<unknown>();
   private deadCounts = new Map<string, number>();         // callId -> consecutive dead checks
@@ -214,6 +249,8 @@ export class Core {
     this.protocolPath = d.protocolPath ?? PROTOCOL_PATH;
     this.deliverDelayMs = d.deliverDelayMs ?? 1000;
     this.detectRoot = d.detectRoot ?? gitRoot;
+    this.detectBranch = d.detectBranch ?? gitBranch;
+    this.captainWindowOpen = d.captainWindowOpen ?? tmuxCaptainWindowOpen;
     this.doctorRoot = d.doctorRoot ?? join(process.env.SPARROW_HOME ?? SPARROW_HOME, 'doctor');
     this.providers = new ProviderTracker(() => this.settings.provider_error_threshold, () => this.settings.provider_error_window_minutes * 60_000);
   }
@@ -263,7 +300,7 @@ export class Core {
 
   private emit(e: ServerEvent) { this.events.emit(e); }
 
-  private saveAgent(id: string, patch: Partial<Agent> & { queued_at?: number | null; resume_note?: string | null }): Agent {
+  private saveAgent(id: string, patch: AgentPatch): Agent {
     const a = this.store.patchAgent(id, patch, this.now());
     this.emit({ type: 'agent.updated', project_id: a.project_id, agent: a });
     return a;
@@ -292,9 +329,10 @@ export class Core {
     const quiet = [...new Set(p.quiet ?? [])]
       .filter((id) => id !== p.from_id && !to.includes(id) && this.store.getAgent(id)?.state !== 'retired');
     const m = this.store.tx(() => {
+      const fleet = p.thread.split(':').slice(1).map((id) => this.store.getAgent(id)?.fleet_id).find(Boolean) ?? null;
       const msg = this.store.insertMessage({
         id: newId('msg'), project_id: p.project_id, thread: p.thread, from_id: p.from_id, kind: p.kind, text: p.text,
-        mentions: to, card_id: p.card_id ?? null, meta: p.meta ?? {}, created_at: this.now(),
+        mentions: to, card_id: p.card_id ?? null, meta: p.meta ?? {}, created_at: this.now(), fleet_id: fleet,
       });
       for (const id of to) this.store.insertDelivery(msg.id, id);
       for (const id of quiet) this.store.insertDelivery(msg.id, id, false);
@@ -331,37 +369,163 @@ export class Core {
 
   // ======================================================== identity
 
+  /**
+   * Identify the human session behind a `sparrow` command and return its captain row (one row per session).
+   * Order: adopt (explicit) → captain_id (SPARROW_CAPTAIN_ID, an id or a handle) → the session id → no session: 0 captains
+   * creates `@captain`, 1 reuses it, more is a 409 that names them. Everything runs synchronously, so two first commands of
+   * one new session cannot both create a row; the partial unique index backs that up (the loser reads the winner's row).
+   */
   registerCaptain(req: RegisterCaptainReq): RegisterCaptainRes {
     if (!req?.cwd || typeof req.cwd !== 'string') throw new HttpError(400, 'register needs {cwd}');
     const cwd = resolvePath(req.cwd);
+    const sid = isText(req.session_id) ? req.session_id.trim() : null;
+    const pid = Number.isInteger(req.pid) && (req.pid as number) > 1 ? (req.pid as number) : null;
+    const harness = captainHarnessOf(req.harness);
     const root = this.projectRootFor(cwd);
-    let project = this.store.getProjectByRoot(root);
-    if (!project) {
-      const base = slugify(basename(root));
-      let id = base;
-      for (let n = 2; this.store.getProject(id); n++) id = `${base}-${n}`;
-      project = { id, name: basename(root) || id, root, created_at: this.now() };
-      this.store.insertProject(project);
-      this.say(`project ${id} (${root})`);
+    const known = this.store.getProjectByRoot(root);
+
+    if (isText(req.adopt)) {
+      const project = known ?? this.ensureProject(root);
+      return this.adoptCaptain(project, cwd, sid, harness, req.adopt, pid);
     }
-    let cap = this.store.getAgentByHandle(project.id, 'captain');
-    const now = this.now();
-    if (!cap) {
-      const a: Agent = {
-        id: newId('ag'), project_id: project.id, handle: 'captain', kind: 'human', resume: 'captain', title: 'Captain',
-        harness: 'human', model: null, effort: null, can_hire: ['*'], parent_id: null, depth: 0, cwd,
-        tmux_session: this.tmuxPrefix + project.id, tmux_window: '', tmux_window_id: null, session_id: req.session_id ?? null,
+    if (isText(req.captain_id)) {
+      const cap = this.findCaptain(known?.id ?? null, req.captain_id);
+      if (!cap) throw new HttpError(404, `SPARROW_CAPTAIN_ID=${req.captain_id} is not a captain${known ? ` of project ${known.id}` : ''}. List them with sparrow captains, or unset SPARROW_CAPTAIN_ID.`);
+      const project = this.store.getProject(cap.project_id)!;
+      return { agent: this.refreshCaptain(cap, project, cwd, sid, harness, pid), project };
+    }
+    const project = known ?? this.ensureProject(root);
+    if (sid) {
+      const owner = this.store.getCaptainBySession(project.id, sid);
+      if (owner) return { agent: this.refreshCaptain(owner, project, cwd, sid, harness, pid), project };
+      // /clear gives the same Claude process a new session id: a pid we saw recently re-attaches (auto-adopt).
+      const same = pid ? this.store.getCaptainByPid(project.id, pid, this.now() - 24 * 3600_000) : null;
+      if (same) {
+        this.say(`captain @${same.handle}: session ${same.session_id ?? '(none)'} → ${sid} (same process ${pid})`);
+        return { agent: this.refreshCaptain(same, project, cwd, sid, harness, pid), project };
+      }
+      const made = this.createCaptainRow(project, { cwd, sid, harness, name: req.name, origin: 'terminal', pid });
+      return { agent: made.agent, project, ...(made.created ? { created: true } : {}) };
+    }
+    const live = this.store.listCaptains(project.id);
+    if (live.length > 1) {
+      throw new HttpError(409, `${live.length} captains in ${project.id}: ${live.map((c) => `@${c.handle}`).join(', ')}. Run from the captain's own session, or set SPARROW_CAPTAIN_ID=<id|handle>.`);
+    }
+    if (live.length === 1) return { agent: this.refreshCaptain(live[0], project, cwd, null, harness, pid), project };
+    const made = this.createCaptainRow(project, { cwd, sid: null, harness, name: req.name, origin: 'terminal', pid });
+    return { agent: made.agent, project, ...(made.created ? { created: true } : {}) };
+  }
+
+  private ensureProject(root: string): Project {
+    const found = this.store.getProjectByRoot(root);
+    if (found) return found;
+    const base = slugify(basename(root));
+    let id = base;
+    for (let n = 2; this.store.getProject(id); n++) id = `${base}-${n}`;
+    const project: Project = { id, name: basename(root) || id, root, created_at: this.now() };
+    this.store.insertProject(project);
+    this.say(`project ${id} (${root})`);
+    return project;
+  }
+
+  /** A captain by id ('ag_…', any project) or handle (inside `project`). */
+  findCaptain(project: string | null, ref: string): Agent | null {
+    const a = ref.startsWith('ag_') ? this.store.getAgent(ref) : project ? this.store.getAgentByHandle(project, ref.replace(/^@/, '').toLowerCase()) : null;
+    return a && a.kind === 'human' ? a : null;
+  }
+
+  /** Handle for a new captain: the requested name if valid and free, else `captain`, else cap-<star>, else cap-<n>. */
+  private pickCaptainHandle(project: string, want?: string): string {
+    const free = (h: string) => !this.store.getAgentByHandle(project, h);
+    const name = want ? String(want).replace(/^@/, '').toLowerCase() : '';
+    if (name && captainNameOk(name) && free(name)) return name;
+    if (free('captain')) return 'captain';
+    const star = STARS.find((x) => free(`cap-${x}`));
+    if (star) return `cap-${star}`;
+    for (let n = 1; ; n++) if (free(`cap-${n}`)) return `cap-${n}`;
+  }
+
+  /** The default tmux session of a fleet's windows: `<prefix><project>` for `@captain`, else `<prefix><project>-<handle>`. */
+  private fleetTmuxSession(project: string, rootHandle: string): string {
+    return rootHandle === 'captain' ? this.tmuxPrefix + project : `${this.tmuxPrefix}${project}-${rootHandle}`;
+  }
+
+  private createCaptainRow(project: Project, o: {
+    cwd: string; sid: string | null; harness: CaptainInfo['harness']; name?: string; title?: string | null;
+    origin: CaptainInfo['origin']; model?: string | null; effort?: string | null; announce?: boolean; pid?: number | null;
+  }): { agent: Agent; created: boolean } {
+    const branch = this.detectBranch(o.cwd);
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const handle = this.pickCaptainHandle(project.id, o.name);
+      const id = newId('ag');
+      const now = this.now();
+      const agent: Agent = {
+        id, project_id: project.id, handle, kind: 'human', resume: 'captain', title: 'Captain',
+        harness: 'human', model: o.model ?? null, effort: o.effort ?? null, can_hire: ['*'], parent_id: null, depth: 0, cwd: o.cwd,
+        tmux_session: this.fleetTmuxSession(project.id, handle), tmux_window: '', tmux_window_id: null, session_id: o.sid,
         state: 'idle', call_id: null, last_end_reason: null, last_update: null, last_update_at: null, last_seen_at: now,
-        resume_hash: null, last_run: null, created_at: now, updated_at: now,
+        resume_hash: null, last_run: null, fleet_id: id,
+        captain: { title: o.title ?? null, branch, harness: o.harness, origin: o.origin, archived_at: null },
+        created_at: now, updated_at: now,
       };
-      this.store.insertAgent(a);
-      cap = a;
-      this.emit({ type: 'agent.updated', project_id: a.project_id, agent: a });
-      this.say(`captain registered for ${project.id}`);
-    } else {
-      cap = this.saveAgent(cap.id, { cwd, last_seen_at: now, ...(req.session_id ? { session_id: req.session_id } : {}) });
+      try {
+        this.store.insertAgent(agent);
+        if (o.pid) this.store.patchAgent(id, { captain_pid: o.pid }, now);
+      } catch (e) {
+        if (!isUniqueViolation(e)) throw e;
+        // Lost a race for this session (or this handle): the session's row wins; a taken handle just picks the next one.
+        const winner = o.sid ? this.store.getCaptainBySession(project.id, o.sid) : null;
+        if (winner) return { agent: winner, created: false };
+        continue;
+      }
+      if (o.announce !== false) this.emit({ type: 'agent.updated', project_id: project.id, agent });
+      this.say(`captain @${handle} registered for ${project.id} (${o.origin}${o.sid ? `, session ${o.sid}` : ''})`);
+      return { agent, created: true };
     }
-    return { agent: cap, project };
+    throw new HttpError(409, `Could not pick a free captain handle in ${project.id}; pass --name.`);
+  }
+
+  /** A command from an already-known captain: refresh last_seen, cwd, branch, harness (and its session when the caller moved). */
+  private refreshCaptain(cap: Agent, project: Project, cwd: string, sid: string | null, harness: CaptainInfo['harness'], pid: number | null = null): Agent {
+    const patch: AgentPatch = { last_seen_at: this.now() };
+    if (pid) patch.captain_pid = pid;
+    const captain: Partial<CaptainInfo> = {};
+    let cwdChanged = false;
+    if (cap.cwd !== cwd && this.projectRootFor(cwd) === project.root) { patch.cwd = cwd; cwdChanged = true; }
+    if (cwdChanged || cap.captain?.branch == null) {
+      const b = this.detectBranch(cwdChanged ? cwd : cap.cwd);
+      if (b !== (cap.captain?.branch ?? null)) captain.branch = b;
+    }
+    if (harness !== 'unknown' && cap.captain?.harness !== harness) captain.harness = harness;
+    if (sid && sid !== cap.session_id && !this.store.getCaptainBySession(project.id, sid)) patch.session_id = sid;
+    if (Object.keys(captain).length) patch.captain = captain;
+    const substantive = Object.keys(patch).some((k) => k !== 'last_seen_at' && k !== 'captain_pid');
+    if (!substantive) return this.store.patchAgent(cap.id, patch, this.now()); // routine command: refresh quietly, no event
+    return this.saveAgent(cap.id, patch);
+  }
+
+  /** `sparrow captain adopt @x`: bind THIS session to an existing captain (after /clear, or from a new terminal). */
+  private adoptCaptain(project: Project, cwd: string, sid: string | null, harness: CaptainInfo['harness'], ref: string, pid: number | null): RegisterCaptainRes {
+    if (!sid) throw new HttpError(400, 'adopt needs a harness session id: run it from inside the Claude Code / Codex / OpenCode session that should take over the captain.');
+    const target = this.findCaptain(project.id, ref);
+    if (!target || target.project_id !== project.id) {
+      const names = this.store.listCaptains(project.id, true).map((c) => `@${c.handle}`).join(', ') || '(none)';
+      throw new HttpError(404, `No captain ${ref} in project ${project.id}. Captains: ${names}`);
+    }
+    if (target.session_id === sid) return { agent: this.refreshCaptain(target, project, cwd, sid, harness, pid), project };
+    const agent = this.store.tx(() => {
+      const prev = this.store.getCaptainBySession(project.id, sid);
+      if (prev && prev.id !== target.id) {
+        if (this.store.fleetHires(prev.id) > 0) {
+          throw new HttpError(409, `This session is already captain @${prev.handle}, which has a team (${this.store.fleetHires(prev.id)} agents). Fleets are never merged: keep using @${prev.handle}, or release its agents first.`);
+        }
+        this.saveAgent(prev.id, { session_id: null, captain: { archived_at: this.now() } });
+        this.say(`adopt: @${prev.handle} (no team) archived; session moves to @${target.handle}`);
+      }
+      return this.saveAgent(target.id, { session_id: sid });
+    });
+    this.say(`adopt: session ${sid} → @${agent.handle}`);
+    return { agent: this.refreshCaptain(agent, project, cwd, sid, harness, pid), project };
   }
 
   /** Project semantics: the longest registered project root containing cwd; else its git root; else cwd. */
@@ -389,6 +553,7 @@ export class Core {
       agent: caller,
       project: this.store.getProject(caller.project_id),
       parent: caller.parent_id ? this.store.getAgent(caller.parent_id) : null,
+      captain: this.store.getAgent(caller.fleet_id) ?? caller, // root of the caller's fleet (its own row for a captain)
     };
   }
 
@@ -400,9 +565,16 @@ export class Core {
     return project ? this.store.getAgentByHandle(project, h) : null;
   }
 
-  private rosterText(project: string): string {
-    const r = this.store.listAgents(project).filter((a) => a.state !== 'retired').map((a) => `@${a.handle}`).reverse();
+  /** Who a caller can see in an error: its own fleet (the whole project for an unidentified caller). */
+  private rosterText(project: string, fleetId?: string | null): string {
+    const r = this.store.listAgents(project).filter((a) => a.state !== 'retired' && (!fleetId || a.fleet_id === fleetId)).map((a) => `@${a.handle}`).reverse();
     return r.length ? r.join(', ') : '(nobody)';
+  }
+
+  /** Agents of a project as one caller may see them: its own fleet; unidentified callers (the UI) see everything. */
+  rosterFor(project: string | null, caller: Agent | null): Agent[] {
+    const rows = this.store.listAgents(project);
+    return caller ? rows.filter((a) => a.fleet_id === caller.fleet_id) : rows;
   }
 
   // ======================================================== hire
@@ -431,7 +603,7 @@ export class Core {
     if (req.name) {
       handle = String(req.name).replace(/^@/, '').toLowerCase();
       if (!HANDLE_RE.test(handle)) throw new HttpError(400, `Invalid name "${req.name}": use lowercase letters, digits and '-', starting with a letter, max 24 chars.`);
-      if (RESERVED.has(handle)) throw new HttpError(400, `"${handle}" is reserved; pick another name.`);
+      if (RESERVED.has(handle) || handle.startsWith('cap-')) throw new HttpError(400, `"${handle}" is reserved (captains own the cap- names); pick another name.`);
       if (this.store.getAgentByHandle(project, handle)) throw new HttpError(409, `@${handle} already exists in project ${project}; pick another --name.`);
     } else {
       handle = FRIENDLY.find((n) => !this.store.getAgentByHandle(project, n)) ?? '';
@@ -443,6 +615,7 @@ export class Core {
     if (req.card_id != null) {
       card = this.store.getCard(Number(req.card_id));
       if (!card || card.project_id !== project) throw new HttpError(404, `No card #${req.card_id} in project ${project}.`);
+      this.assertCardFleet(card, caller, `take card #${card.id} for a new hire`);
     }
     const model = req.model ?? resume.model;
     const effort = req.effort ?? resume.effort;
@@ -456,13 +629,14 @@ export class Core {
       throw new HttpError(409, refusal);
     }
     const now = this.now();
+    const fleetRoot = this.store.getAgent(caller.fleet_id);
     const agent: Agent = {
       id: newId('ag'), project_id: project, handle, kind: 'agent', resume: resume.slug, title: resume.title,
       harness: resume.harness, model, effort, can_hire: this.canHireOf(resume),
-      parent_id: caller.id, depth, cwd, tmux_session: req.tmux_session || this.tmuxPrefix + project,
+      parent_id: caller.id, depth, cwd, tmux_session: req.tmux_session || this.fleetTmuxSession(project, fleetRoot?.handle ?? 'captain'),
       tmux_window: req.tmux_window || handle, tmux_window_id: null, session_id: null, state: 'idle', call_id: null,
       last_end_reason: null, last_update: null, last_update_at: null, last_seen_at: null, resume_hash: this.resumes.hash(resume.slug),
-      last_run: null, created_at: now, updated_at: now,
+      last_run: null, fleet_id: caller.fleet_id, captain: null, created_at: now, updated_at: now,
     };
     this.store.insertAgent(agent);
     this.emit({ type: 'agent.updated', project_id: project, agent });
@@ -534,7 +708,9 @@ export class Core {
         tmux_session: this.tmuxPrefix + 'doctor', tmux_window: '', tmux_window_id: null, session_id: null, state: 'idle',
         call_id: null, last_end_reason: null, last_update: null, last_update_at: null, last_seen_at: now,
         resume_hash: null, last_run: null, created_at: now, updated_at: now,
+        fleet_id: '', captain: { title: 'Doctor', branch: null, harness: 'unknown', origin: 'terminal', archived_at: null },
       };
+      cap.fleet_id = cap.id;
       this.store.insertAgent(cap);
     }
     return { project, captain: cap };
@@ -558,7 +734,8 @@ export class Core {
       harness: o.harness, model: o.model, effort: o.effort, can_hire: [], parent_id: captain.id, depth: 1, cwd,
       tmux_session: this.tmuxPrefix + 'doctor', tmux_window: handle, tmux_window_id: null, session_id: null, state: 'idle',
       call_id: null, last_end_reason: null, last_update: null, last_update_at: null, last_seen_at: null,
-      resume_hash: o.resume ? this.resumes.hash(o.resume) : null, last_run: null, created_at: now, updated_at: now,
+      resume_hash: o.resume ? this.resumes.hash(o.resume) : null, last_run: null, fleet_id: captain.fleet_id, captain: null,
+      created_at: now, updated_at: now,
     };
     this.store.insertAgent(agent);
     this.post({ project_id: DOCTOR_PROJECT, thread: this.dmThread(captain.id, agent.id), from_id: captain.id, kind: 'task', text: o.task, to: [agent.id] });
@@ -580,6 +757,101 @@ export class Core {
   }
 
   lastScreenOf(id: string, n = 15): string { return tail(this.lastScreen(id), n); }
+
+  // ======================================================== captains (multi-captain)
+
+  /** A captain by id or handle; `project` scopes handles. 404 when there is none. */
+  captainOr404(ref: string, project: string | null): Agent {
+    const c = this.findCaptain(project, ref);
+    if (!c) throw new HttpError(404, `No captain ${ref}${project ? ` in project ${project}` : ''}. List them with sparrow captains.`);
+    return c;
+  }
+
+  /** PATCH /api/captains/:id — the UI (no caller) or the captain itself. */
+  patchCaptain(caller: Agent | null, ref: string, project: string | null, req: CaptainPatchReq): Agent {
+    const cap = this.captainOr404(ref, project ?? caller?.project_id ?? null);
+    if (caller && caller.id !== cap.id) throw new HttpError(403, `@${caller.handle} may not change captain @${cap.handle}; only the user (UI) or the captain itself can.`);
+    const b = (req ?? {}) as Record<string, unknown>;
+    if (!['title', 'name', 'archived'].some((k) => has(b, k))) throw new HttpError(400, 'nothing to change: send {title?, name?, archived?}');
+    const patch: AgentPatch = {};
+    const captain: Partial<CaptainInfo> = {};
+    if (has(b, 'title')) {
+      if (b.title !== null && typeof b.title !== 'string') throw new HttpError(400, 'title must be a string or null');
+      const t = typeof b.title === 'string' ? b.title.trim().replace(/\s+/g, ' ') : '';
+      if (t.length > 120) throw new HttpError(400, 'title must be at most 120 characters');
+      captain.title = t || null;
+    }
+    if (has(b, 'name')) {
+      if (typeof b.name !== 'string') throw new HttpError(400, 'name must be a string');
+      const h = b.name.replace(/^@/, '').toLowerCase();
+      if (!captainNameOk(h)) throw new HttpError(400, `Invalid name "${b.name}": use lowercase letters, digits and '-', starting with a letter, max 24 chars (not a reserved word).`);
+      const other = this.store.getAgentByHandle(cap.project_id, h);
+      if (other && other.id !== cap.id) throw new HttpError(409, `@${h} already exists in project ${cap.project_id}; pick another name.`);
+      if (h !== cap.handle) patch.handle = h;
+    }
+    if (has(b, 'archived')) {
+      if (typeof b.archived !== 'boolean') throw new HttpError(400, 'archived must be true or false');
+      captain.archived_at = b.archived ? (cap.captain?.archived_at ?? this.now()) : null;
+    }
+    if (Object.keys(captain).length) patch.captain = captain;
+    const out = this.saveAgent(cap.id, patch);
+    this.say(`captain @${cap.handle} patched: ${Object.keys(b).join(', ')}`);
+    return out;
+  }
+
+  /** Record the tmux window a Sparrow-launched captain runs in. */
+  private recordCaptainWindow(id: string, res: CaptainStartRes, origin: CaptainInfo['origin']): Agent {
+    return this.saveAgent(id, { tmux_session: res.session, tmux_window: res.window, tmux_window_id: res.window_id, captain: { origin } });
+  }
+
+  /**
+   * Start a captain Sparrow launches: the row (handle, title, fresh session uuid) exists BEFORE the window, so the
+   * session identifies itself from its first command. A launch that fails leaves nothing behind.
+   */
+  async startCaptain(req: CaptainStartReq, launch: (r: CaptainLaunchReq) => Promise<CaptainStartRes>): Promise<CaptainStartRes> {
+    for (const f of ['name', 'title'] as const) if (req[f] != null && typeof req[f] !== 'string') throw new HttpError(400, `${f} must be a string`);
+    const cwd = resolvePath(req.cwd);
+    const project = this.ensureProject(this.projectRootFor(cwd));
+    let name: string | undefined;
+    if (isText(req.name)) {
+      name = req.name.replace(/^@/, '').toLowerCase();
+      if (!captainNameOk(name)) throw new HttpError(400, `Invalid name "${req.name}": use lowercase letters, digits and '-', starting with a letter, max 24 chars (not a reserved word).`);
+      if (this.store.getAgentByHandle(project.id, name)) throw new HttpError(409, `@${name} already exists in project ${project.id}; pick another name.`);
+    }
+    const title = isText(req.title) ? req.title.trim().replace(/\s+/g, ' ').slice(0, 120) : null;
+    const session_id = crypto.randomUUID();
+    const { agent } = this.createCaptainRow(project, {
+      cwd, sid: session_id, harness: 'claude', name, title, origin: 'sparrow', model: req.model ?? null, effort: req.effort ?? null,
+      announce: false, // nobody should see a captain whose window never opened
+    });
+    let res: CaptainStartRes;
+    try {
+      res = await launch({ cwd, model: req.model ?? null, effort: req.effort ?? null, agent_id: agent.id, session_id, handle: agent.handle });
+    } catch (e) {
+      this.store.deleteAgent(agent.id);
+      throw e;
+    }
+    this.recordCaptainWindow(agent.id, res, 'sparrow');
+    this.say(`captain @${agent.handle} launched (${res.session}:${res.window})`);
+    return { ...res, agent_id: agent.id };
+  }
+
+  /** `claude --resume <sid>` in tmux for a captain whose window is not open. Claude only in v1. */
+  async resumeCaptain(ref: string, project: string | null, launch: (r: CaptainLaunchReq) => Promise<CaptainStartRes>): Promise<CaptainStartRes> {
+    const cap = this.captainOr404(ref, project);
+    const resume = captainResume(cap, null);
+    const how = resume.command ? ` Resume it yourself with: ${resume.command}` : '';
+    if (resume.harness !== 'claude') throw new HttpError(400, `@${cap.handle} runs on ${resume.harness}; Sparrow can only resume Claude Code captains in tmux.${how}`);
+    if (!cap.session_id) throw new HttpError(409, `@${cap.handle} has no session id yet (it has not run a sparrow command), so there is nothing to resume.`);
+    if (cap.tmux_window_id && await this.captainWindowOpen(cap)) {
+      throw new HttpError(409, `@${cap.handle} is already open in tmux: ${captainResume(cap, true).attach}`);
+    }
+    if (!existsSync(cap.cwd) || !statSync(cap.cwd).isDirectory()) throw new HttpError(400, `@${cap.handle}'s folder ${cap.cwd} no longer exists.`);
+    const res = await launch({ cwd: cap.cwd, model: cap.model, effort: cap.effort, agent_id: cap.id, resume: cap.session_id, handle: cap.handle });
+    this.recordCaptainWindow(cap.id, res, 'sparrow');
+    this.say(`captain @${cap.handle} resumed (${res.session}:${res.window})`);
+    return { ...res, agent_id: cap.id };
+  }
 
   // ======================================================== resumes (U1)
 
@@ -655,7 +927,10 @@ export class Core {
     const cardId = this.checkCard(caller.project_id, req.card_id);
     const target = this.resolveAgent(caller.project_id, req.to);
     if (!target || target.project_id !== caller.project_id) {
-      throw new HttpError(404, `No agent ${req.to} in project ${caller.project_id}. Roster: ${this.rosterText(caller.project_id)}`);
+      throw new HttpError(404, `No agent ${req.to} in project ${caller.project_id}. Roster: ${this.rosterText(caller.project_id, caller.fleet_id)}`);
+    }
+    if (target.fleet_id !== caller.fleet_id) {
+      throw new HttpError(403, `@${target.handle} is on @${this.handleOf(target.fleet_id)}'s team; @${caller.handle} can only message its own team (sparrow roster).`);
     }
     if (target.id === caller.id) throw new HttpError(400, 'You cannot message yourself.');
     if (target.state === 'retired') throw new HttpError(409, `@${target.handle} was released (retired) and cannot receive messages. Hire a new agent instead.`);
@@ -666,6 +941,15 @@ export class Core {
     this.say(`dm @${caller.handle} → @${target.handle}: ${clip(text.replace(/\s+/g, ' '), 60)}`);
     this.bg(this.wake(target.id));
     return this.view(m);
+  }
+
+  /** 403 when the card is assigned to someone in another fleet: its tracking belongs to that captain. */
+  private assertCardFleet(card: Card, caller: Agent | null, what: string): void {
+    if (!caller || !card.assignee_id) return;
+    const owner = this.store.getAgent(card.assignee_id);
+    if (owner && owner.fleet_id !== caller.fleet_id) {
+      throw new HttpError(403, `Card #${card.id} is assigned to @${owner.handle} on @${this.handleOf(owner.fleet_id)}'s team; @${caller.handle} cannot ${what}. Add a note instead, or ask that captain.`);
+    }
   }
 
   private checkCard(project: string, cardId: number | undefined | null): number | null {
@@ -868,19 +1152,41 @@ export class Core {
     if (a.state === 'retired') { this.store.dropPending(a.id); return; }
     if (a.state === 'working' || a.state === 'queued') return;
     if (this.store.countWaking(a.id) === 0) return; // quiet-only pending never starts a call
-    if (a.kind === 'probe' || this.store.countWorking() < this.settings.max_running) {
+    if (a.kind === 'probe' || (this.store.countWorking() < this.settings.max_running && this.fleetHasRoom(a))) {
       await this.startCall(a, {});
     } else {
       this.saveAgent(a.id, { state: 'queued', queued_at: this.now() });
-      this.say(`queued @${a.handle} (max_running ${this.settings.max_running} reached)`);
+      this.say(this.fleetHasRoom(a) ? `queued @${a.handle} (max_running ${this.settings.max_running} reached)` : `queued @${a.handle} (max_running_per_captain ${this.settings.max_running_per_captain} reached for @${this.handleOf(a.fleet_id)}'s team)`);
     }
   }
 
+  /** The agent's fleet is under max_running_per_captain (0 = no cap). */
+  private fleetHasRoom(a: Agent): boolean {
+    const cap = this.settings.max_running_per_captain;
+    return !cap || this.store.countWorkingInFleet(a.fleet_id) < cap;
+  }
+
+  /**
+   * Fill free slots fairly across fleets. Each round: fleets over max_running_per_captain are skipped, and of the others
+   * the one with the fewest agents working goes first, then the one served longest ago (never served first), then the
+   * one whose oldest queued agent has waited longest: a round robin, so one captain's burst of hires never starves
+   * another captain's single agent.
+   */
   async dequeue(): Promise<void> {
     const starts: Promise<void>[] = [];
+    const cap = this.settings.max_running_per_captain;
     while (this.store.countWorking() < this.settings.max_running) {
-      const q = this.store.oldestQueued();
-      if (!q) break;
+      const working = this.store.workingByFleet();
+      const heads = new Map<string, { agent: Agent; rank: number }>();
+      this.store.queuedAgents().forEach((agent, rank) => {
+        if (cap && (working.get(agent.fleet_id) ?? 0) >= cap) return;
+        if (!heads.has(agent.fleet_id)) heads.set(agent.fleet_id, { agent, rank });
+      });
+      const w = (h: { agent: Agent }) => working.get(h.agent.fleet_id) ?? 0;
+      const last = (h: { agent: Agent }) => this.served.get(h.agent.fleet_id) ?? 0;
+      const pick = [...heads.values()].sort((x, y) => w(x) - w(y) || last(x) - last(y) || x.rank - y.rank)[0];
+      if (!pick) break;
+      const q = pick.agent;
       if (this.store.countWaking(q.id) === 0) {
         this.saveAgent(q.id, { state: 'idle', queued_at: null });
         continue;
@@ -918,6 +1224,7 @@ export class Core {
       const last_run = { harness: a0.harness, model: a0.model, effort: a0.effort, at: now };
       return this.store.patchAgent(a0.id, { state: 'working', call_id: callId, session_id: sessionId, queued_at: null, last_run }, now);
     });
+    this.served.set(agent.fleet_id, ++this.serveSeq);
     this.emit({ type: 'agent.updated', project_id: agent.project_id, agent });
     this.emit({ type: 'call.started', project_id: agent.project_id, call });
 
@@ -1265,7 +1572,7 @@ export class Core {
       a = this.store.getAgent(a.id)!;
       if (a.state !== 'crashed') return; // something else (a message, a release) took over meanwhile
       const prefix = fresh ? this.replayFor(a, code) : crashResume(code, a.last_update);
-      if (this.store.countWorking() >= this.settings.max_running) {
+      if (this.store.countWorking() >= this.settings.max_running || !this.fleetHasRoom(a)) {
         // No free slot (another hire took it meanwhile): queue the restart; its envelope waits as a pending delivery.
         if (fresh) a = this.saveAgent(a.id, { session_id: null });
         const thread = this.dmThread(a.parent_id ?? '', a.id); // every spawned agent has a parent
@@ -1390,10 +1697,11 @@ export class Core {
   async release(caller: Agent, ref: string): Promise<Agent> {
     if (!isText(ref)) throw new HttpError(400, 'release needs {agent} ("@handle" or agent id)');
     const t = this.resolveAgent(caller.project_id, ref);
-    if (!t || t.project_id !== caller.project_id) throw new HttpError(404, `No agent ${ref} in project ${caller.project_id}. Roster: ${this.rosterText(caller.project_id)}`);
+    if (!t || t.project_id !== caller.project_id) throw new HttpError(404, `No agent ${ref} in project ${caller.project_id}. Roster: ${this.rosterText(caller.project_id, caller.fleet_id)}`);
     if (t.kind === 'human') throw new HttpError(400, 'The human captain cannot be released.');
-    if (!(t.parent_id === caller.id || caller.kind === 'human')) {
-      throw new HttpError(403, `Only @${this.handleOf(t.parent_id ?? '')} (its parent) or the human captain may release @${t.handle}.`);
+    // The parent, or the human captain whose team it is. Another captain's team is out of reach.
+    if (!(t.parent_id === caller.id || (caller.kind === 'human' && t.fleet_id === caller.id))) {
+      throw new HttpError(403, `Only @${this.handleOf(t.parent_id ?? '')} (its parent) or @${this.handleOf(t.fleet_id)} (the captain of its team) may release @${t.handle}.`);
     }
     if (t.state === 'retired') return t;
     const timer = this.closeTimers.get(t.id);
@@ -1418,7 +1726,10 @@ export class Core {
       return me.id;
     }
     const a = this.resolveAgent(project, ref);
-    if (!a || a.project_id !== project) throw new HttpError(404, `No agent ${ref} in project ${project}. Roster: ${this.rosterText(project)}`);
+    if (!a || a.project_id !== project) throw new HttpError(404, `No agent ${ref} in project ${project}. Roster: ${this.rosterText(project, me?.fleet_id)}`);
+    if (me && a.fleet_id !== me.fleet_id) {
+      throw new HttpError(403, `@${a.handle} is on @${this.handleOf(a.fleet_id)}'s team; @${me.handle} may only assign cards to its own team (sparrow roster).`);
+    }
     return a.id;
   }
 
@@ -1514,6 +1825,7 @@ export class Core {
     const by = caller?.handle ?? 'user';
     const captain = !caller || this.isCaptain(caller);
     const keys = Object.keys(req ?? {});
+    if (keys.some((k) => k !== 'note')) this.assertCardFleet(card, caller, 'change it'); // notes stay open to everyone
     if (!captain) {
       if (card.assignee_id !== caller!.id) throw new HttpError(403, `@${caller!.handle} may only update cards assigned to it (card #${id} is not); use \`sparrow propose\` or ask your captain.`);
       const allowed = new Set(['note', 'state', 'check', 'blocked_on']);
@@ -1552,9 +1864,21 @@ export class Core {
 
   listProjects() {
     return this.store.listProjects().filter((p) => p.id !== DOCTOR_PROJECT).map((p) => {
-      const agents = this.store.listAgents(p.id).filter((a) => a.kind === 'agent');
-      return { ...p, agents: agents.length, working: agents.filter((a) => a.state === 'working').length, cards: this.store.countCards(p.id) };
+      const all = this.store.listAgents(p.id);
+      const agents = all.filter((a) => a.kind === 'agent');
+      const captains = all.filter((a) => a.kind === 'human' && !a.captain?.archived_at && !isPhantom(a, all.some((h) => h.kind !== 'human' && h.fleet_id === a.id)));
+      return {
+        ...p, agents: agents.length, working: agents.filter((a) => a.state === 'working').length, cards: this.store.countCards(p.id),
+        captains: captains.length,
+        // captains with an agent working or queued (the sidebar's "n working" next to each project)
+        captains_working: captains.filter((c) => agents.some((a) => a.fleet_id === c.id && (a.state === 'working' || a.state === 'queued'))).length,
+      };
     });
+  }
+
+  /** The project a folder belongs to, without creating anything (null: nothing registered there yet). */
+  resolveProject(cwd: string): Project | null {
+    return this.store.getProjectByRoot(this.projectRootFor(resolvePath(cwd)));
   }
 
   /** Agents for the read API, each with its latest `done` (`last_result`) so the UI can show how its job ended. */
@@ -1563,7 +1887,11 @@ export class Core {
     return agents.map((a) => {
       const m = results.get(a.id);
       const status = m?.meta?.status;
-      return { ...a, last_result: m ? { status: status === 'blocked' || status === 'failed' ? status : 'ok', text: m.text, at: m.created_at } : null };
+      return {
+        ...a,
+        last_result: m ? { status: status === 'blocked' || status === 'failed' ? status : 'ok', text: m.text, at: m.created_at } : null,
+        call_started_at: a.call_id ? this.store.getCall(a.call_id)?.started_at ?? null : null,
+      };
     });
   }
 
@@ -1574,7 +1902,8 @@ export class Core {
     return { agent: a, calls: this.store.callsFor(id, 20).map(publicCall), children };
   }
 
-  messages(q: { project?: string | null; thread?: string | null; after?: number | null; limit?: number; caller?: Agent | null }): MessageView[] {
+  /** `fleet`: a captain id or handle; only messages of that captain's fleet. An identified caller always gets its own fleet. */
+  messages(q: { project?: string | null; thread?: string | null; after?: number | null; before?: number | null; limit?: number; caller?: Agent | null; fleet?: string | null }): MessageView[] {
     const limit = Math.min(Math.max(Number(q.limit) || 100, 1), 1000);
     let thread = q.thread || null;
     let fromOrTo: string | null = null;
@@ -1587,15 +1916,22 @@ export class Core {
       if (q.caller && q.caller.id !== t.id) thread = this.dmThread(q.caller.id, t.id);
       else { thread = null; fromOrTo = t.id; }
     }
-    const rows = this.store.listMessages({ project, thread, after: q.after ?? null, limit, fromOrTo });
+    let fleet: string | null = q.caller?.fleet_id ?? null;
+    if (q.fleet) {
+      const root = this.resolveAgent(project, q.fleet);
+      if (!root) throw new HttpError(404, `No captain ${q.fleet}${project ? ` in project ${project}` : ''}.`);
+      if (q.caller && root.fleet_id !== q.caller.fleet_id) throw new HttpError(403, `@${q.caller.handle} can only read its own team's messages.`);
+      fleet = root.fleet_id;
+    }
+    const rows = this.store.listMessages({ project, thread, after: q.after ?? null, before: q.before ?? null, limit, fromOrTo, fleet });
     // Probe traffic stays out of chat unless the _doctor project is asked for explicitly.
     return (project ? rows : rows.filter((m) => m.project_id !== DOCTOR_PROJECT)).map((m) => this.view(m));
   }
 
-  threads(project: string) {
+  threads(project: string, caller: Agent | null = null) {
     if (!project) throw new HttpError(400, 'threads needs ?project=');
-    // DM threads only (threadSummaries leaves out old 'group' rows), most recent first.
-    return this.store.threadSummaries(project).map((s) => {
+    // DM threads only (threadSummaries leaves out old 'group' rows), most recent first; an identified caller sees its own fleet's.
+    return this.store.threadSummaries(project, caller?.fleet_id).map((s) => {
       const last = this.view(this.store.messageBySeq(s.last_seq)!);
       const members = s.thread.split(':').slice(1).map((id) => this.handleOf(id));
       return { thread: s.thread, label: this.threadLabel(s.thread, true), members, last, count: s.count };

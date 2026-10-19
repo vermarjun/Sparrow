@@ -110,7 +110,8 @@ export interface Ctx {
   req: <T = any>(method: string, path: string, body?: unknown, as?: string | null, call?: string | null) => Promise<{ status: number; body: T }>;
 }
 
-export async function setup(settings: Partial<Settings> = {}, extra: Partial<AppDeps> = {}): Promise<Ctx> {
+/** `register: false` skips the initial captain (ctx.captain is then null): for tests that register their own sessions. */
+export async function setup(settings: Partial<Settings> = {}, extra: Partial<AppDeps> = {}, o: { register?: boolean } = {}): Promise<Ctx> {
   const root = mkdtempSync(join(tmpdir(), 'sparrow-t1-proj-'));
   mkdirSync(join(root, 'sub'), { recursive: true });
   const sp = new FakeSpawner();
@@ -142,8 +143,8 @@ export async function setup(settings: Partial<Settings> = {}, extra: Partial<App
     try { parsed = JSON.parse(text); } catch { /* text */ }
     return { status: res.status, body: parsed };
   };
-  const reg = await req('POST', '/api/captains/register', { cwd: root });
-  return { app, core, store, catalogs, doctor, sp, clock, events, logs, root, captain: reg.body.agent, req };
+  const reg = o.register === false ? null : await req('POST', '/api/captains/register', { cwd: root });
+  return { app, core, store, catalogs, doctor, sp, clock, events, logs, root, captain: reg?.body.agent ?? null as unknown as Agent, req };
 }
 
 /** Hire as the captain (or `as`) and return the new agent. */

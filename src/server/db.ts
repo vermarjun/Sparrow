@@ -1,13 +1,18 @@
 // SQLite state for the server: schema + typed row <-> domain mappers.
 import { Database } from 'bun:sqlite';
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type {
-  Agent, AgentState, Call, CallEndReason, Card, CardNote, CardState, Delivery, DoctorCheck, DoctorRun, HarnessCatalog,
-  Message, MessageKind, Project,
+  Agent, AgentState, Call, CallEndReason, CaptainInfo, Card, CardNote, CardState, Delivery, DoctorCheck, DoctorRun,
+  HarnessCatalog, Message, MessageKind, Project,
 } from '../shared/types';
 
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
+
+/** A patch for `Store.patchAgent`: agent columns, plus `captain` (merged into the captain_* columns) and bookkeeping columns. */
+export type AgentPatch = Omit<Partial<Agent>, 'captain'> & {
+  captain?: Partial<CaptainInfo>; queued_at?: number | null; resume_note?: string | null; captain_pid?: number | null;
+};
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);
@@ -145,6 +150,15 @@ const ADDED_COLUMNS: [table: string, column: string, type: string][] = [
   ['calls', 'model', 'TEXT'],
   ['calls', 'effort', 'TEXT'],
   ['deliveries', 'wake', 'INTEGER NOT NULL DEFAULT 1'], // v3: 0 = quiet delivery (never wakes)
+  // v5 multi-captain. `title` already means the resume title, so the captain's own title is `captain_title`.
+  ['agents', 'fleet_id', 'TEXT'],
+  ['agents', 'captain_title', 'TEXT'],
+  ['agents', 'branch', 'TEXT'],
+  ['agents', 'captain_harness', 'TEXT'],
+  ['agents', 'origin', 'TEXT'],
+  ['agents', 'archived_at', 'INTEGER'],
+  ['agents', 'captain_pid', 'INTEGER'],   // the captain's harness process (CLAUDE_PID): survives /clear, which changes the session id
+  ['messages', 'fleet_id', 'TEXT'],    // the fleet whose thread this is (both ends of a DM are always in one fleet)
   ['cards', 'context', "TEXT NOT NULL DEFAULT ''"],
   ['cards', 'problem', "TEXT NOT NULL DEFAULT ''"],
   ['cards', 'approach', "TEXT NOT NULL DEFAULT ''"],
@@ -175,6 +189,11 @@ export function rowToAgent(r: Row): Agent {
     call_id: r.call_id ?? null, last_end_reason: (r.last_end_reason ?? null) as CallEndReason | null,
     last_update: r.last_update ?? null, last_update_at: r.last_update_at ?? null, last_seen_at: r.last_seen_at ?? null,
     resume_hash: r.resume_hash ?? null, last_run: json(r.last_run, null),
+    fleet_id: r.fleet_id ?? r.id,
+    captain: r.kind === 'human' ? {
+      title: r.captain_title ?? null, branch: r.branch ?? null, harness: (r.captain_harness ?? 'unknown') as CaptainInfo['harness'],
+      origin: r.origin === 'sparrow' ? 'sparrow' : 'terminal', archived_at: r.archived_at ?? null,
+    } : null,
     created_at: r.created_at, updated_at: r.updated_at,
   };
 }
@@ -203,6 +222,9 @@ export function rowToMessage(r: Row): Message {
   };
 }
 
+/** Message plus the fleet it belongs to (stored in its own column; not part of the shared Message). */
+export type MessageInsert = Omit<Message, 'seq'> & { fleet_id?: string | null };
+
 export function rowToCard(r: Row): Card {
   return {
     id: r.id, project_id: r.project_id, title: r.title, details: r.details, category: r.category ?? null,
@@ -225,9 +247,13 @@ export function rowToDelivery(r: Row): Delivery {
 const AGENT_COLS = [
   'id', 'project_id', 'handle', 'kind', 'resume', 'title', 'harness', 'model', 'effort', 'can_hire', 'parent_id', 'depth',
   'cwd', 'tmux_session', 'tmux_window', 'tmux_window_id', 'session_id', 'state', 'call_id', 'last_end_reason',
-  'last_update', 'last_update_at', 'last_seen_at', 'resume_hash', 'last_run', 'created_at', 'updated_at',
+  'last_update', 'last_update_at', 'last_seen_at', 'resume_hash', 'last_run', 'fleet_id', 'created_at', 'updated_at',
 ] as const;
 const JSON_COLS = new Set(['can_hire', 'last_run']);
+const CAPTAIN_COLS: Record<keyof CaptainInfo, string> = {
+  title: 'captain_title', branch: 'branch', harness: 'captain_harness', origin: 'origin', archived_at: 'archived_at',
+};
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Thin typed wrapper over bun:sqlite. All methods are synchronous. */
 export class Store {
@@ -237,8 +263,22 @@ export class Store {
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
     this.db = new Database(path, { create: true });
     this.db.exec('PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = OFF;');
+    if (path !== ':memory:') this.backupBeforeMigrating(path);
     this.db.exec(SCHEMA);
     this.migrate();
+  }
+
+  /** First open of an older database by this version: keep a consistent copy next to it (`VACUUM INTO` is WAL-safe). */
+  private backupBeforeMigrating(path: string) {
+    try {
+      const has = this.db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('schema_version', 'agents')").all() as Row[];
+      if (has.length < 2) return; // brand-new database
+      const v = (this.db.query('SELECT version FROM schema_version LIMIT 1').get() as Row | null)?.version ?? 0;
+      if (v >= SCHEMA_VERSION) return;
+      const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '').replace('T', '-');
+      const dest = `${path}.bak-v${v}-${stamp}`;
+      if (!existsSync(dest)) this.db.exec(`VACUUM INTO '${dest.replace(/'/g, "''")}'`);
+    } catch { /* a missing backup must not stop the server from opening */ }
   }
 
   /** Bring an older database up to SCHEMA_VERSION: add missing columns, then record the version. */
@@ -250,6 +290,46 @@ export class Store {
     const v = this.db.query('SELECT version FROM schema_version LIMIT 1').get() as Row | null;
     if (!v) this.db.query('INSERT INTO schema_version (version) VALUES (?)').run(SCHEMA_VERSION);
     else if (v.version < SCHEMA_VERSION) this.db.query('UPDATE schema_version SET version = ?').run(SCHEMA_VERSION);
+    // Idempotent and cheap: a server of an older version sharing this database inserts rows with a NULL fleet_id.
+    this.db.transaction(() => this.backfillFleets())();
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS messages_fleet ON messages (project_id, fleet_id, seq);
+      CREATE INDEX IF NOT EXISTS agents_fleet ON agents (fleet_id);
+    `);
+    // One human row per harness session within a project. Two rows can never both claim a session (a duplicate left by an
+    // older server would make the index fail, so the older rows lose the session id first).
+    this.db.exec(`UPDATE agents SET session_id = NULL WHERE kind = 'human' AND session_id IS NOT NULL AND rowid NOT IN (
+      SELECT MAX(rowid) FROM agents WHERE kind = 'human' AND session_id IS NOT NULL GROUP BY project_id, session_id)`);
+    this.db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS agents_captain_session ON agents (project_id, session_id) WHERE kind = 'human' AND session_id IS NOT NULL`);
+  }
+
+  /**
+   * v4 → v5: every human row is a captain and the root of its own fleet; every other agent joins the fleet of its root
+   * ancestor (orphans: their own). Messages take the fleet of whichever end of their DM thread is a known agent.
+   */
+  private backfillFleets() {
+    const needs = this.db.query('SELECT 1 AS x FROM agents WHERE fleet_id IS NULL LIMIT 1').get()
+      || this.db.query("SELECT 1 AS x FROM messages WHERE fleet_id IS NULL AND thread LIKE 'dm:%' LIMIT 1").get();
+    if (!needs) return;
+    const rows = this.db.query('SELECT id, kind, parent_id, session_id FROM agents').all() as Row[];
+    const byId = new Map(rows.map((r) => [r.id as string, r]));
+    const fleetOf = (id: string): string => {
+      const seen = new Set<string>();
+      let cur = byId.get(id);
+      while (cur && cur.kind !== 'human' && cur.parent_id && byId.has(cur.parent_id) && !seen.has(cur.id)) { seen.add(cur.id); cur = byId.get(cur.parent_id); }
+      return (cur?.kind === 'human' ? cur.id : id) as string;
+    };
+    const upd = this.db.query('UPDATE agents SET fleet_id = ? WHERE id = ? AND fleet_id IS NULL');
+    for (const r of rows) upd.run(fleetOf(r.id), r.id);
+    const human = this.db.query("UPDATE agents SET origin = 'terminal', captain_harness = ? WHERE id = ? AND kind = 'human' AND origin IS NULL");
+    for (const r of rows) if (r.kind === 'human') human.run(UUID_RE.test(r.session_id ?? '') ? 'claude' : 'unknown', r.id);
+    const fleets = new Map(rows.map((r) => [r.id as string, fleetOf(r.id)]));
+    const threads = this.db.query("SELECT DISTINCT thread FROM messages WHERE fleet_id IS NULL AND thread LIKE 'dm:%'").all() as Row[];
+    const setMsg = this.db.query('UPDATE messages SET fleet_id = ? WHERE thread = ? AND fleet_id IS NULL');
+    for (const t of threads) {
+      const fleet = (t.thread as string).split(':').slice(1).map((id) => fleets.get(id)).find(Boolean);
+      if (fleet) setMsg.run(fleet, t.thread);
+    }
   }
 
   schemaVersion(): number {
@@ -275,23 +355,70 @@ export class Store {
   }
 
   // ---------- agents
+  /**
+   * Row → Agent. A row with no fleet_id (inserted by a server of an older version into this database) is placed in
+   * its fleet from its parent chain, and written back, so every read path sees the same fleet.
+   */
+  private toAgent(r: Row): Agent {
+    if (r.fleet_id == null) {
+      let top: Row = r;
+      for (let i = 0; i < 10 && top.kind !== 'human' && top.parent_id; i++) {
+        const p = this.db.query('SELECT * FROM agents WHERE id = ?').get(top.parent_id) as Row | null;
+        if (!p) break;
+        top = p;
+      }
+      r.fleet_id = top.kind === 'human' ? top.id : r.id;
+      this.db.query('UPDATE agents SET fleet_id = ? WHERE id = ? AND fleet_id IS NULL').run(r.fleet_id, r.id);
+      if (r.kind === 'human' && r.origin == null) {
+        r.origin = 'terminal';
+        r.captain_harness = UUID_RE.test(r.session_id ?? '') ? 'claude' : 'unknown';
+        this.db.query('UPDATE agents SET origin = ?, captain_harness = ? WHERE id = ?').run(r.origin, r.captain_harness, r.id);
+      }
+    }
+    return rowToAgent(r);
+  }
   getAgent(id: string): Agent | null {
     const r = this.db.query('SELECT * FROM agents WHERE id = ?').get(id) as Row | null;
-    return r ? rowToAgent(r) : null;
+    return r ? this.toAgent(r) : null;
   }
   getAgentByHandle(projectId: string, handle: string): Agent | null {
     const r = this.db.query('SELECT * FROM agents WHERE project_id = ? AND handle = ?').get(projectId, handle) as Row | null;
-    return r ? rowToAgent(r) : null;
+    return r ? this.toAgent(r) : null;
   }
+  /** The human row that owns a harness session in a project (at most one: the partial unique index). */
+  getCaptainBySession(projectId: string, sessionId: string): Agent | null {
+    const r = this.db.query("SELECT * FROM agents WHERE project_id = ? AND session_id = ? AND kind = 'human'").get(projectId, sessionId) as Row | null;
+    return r ? this.toAgent(r) : null;
+  }
+  /** A human row whose harness process is `pid` and that was seen since `since` (re-attach after /clear). */
+  getCaptainByPid(projectId: string, pid: number, since: number): Agent | null {
+    const r = this.db.query("SELECT * FROM agents WHERE project_id = ? AND kind = 'human' AND captain_pid = ? AND last_seen_at >= ? ORDER BY last_seen_at DESC LIMIT 1").get(projectId, pid, since) as Row | null;
+    return r ? this.toAgent(r) : null;
+  }
+  /** Human captains of a project, oldest first. */
+  listCaptains(projectId: string, includeArchived = false): Agent[] {
+    const rows = this.db.query(`SELECT * FROM agents WHERE project_id = ? AND kind = 'human' ${includeArchived ? '' : 'AND archived_at IS NULL'} ORDER BY created_at, rowid`).all(projectId) as Row[];
+    return rows.map((r) => this.toAgent(r));
+  }
+  /** Everyone in a fleet (the captain included), oldest first. */
+  fleetMembers(fleetId: string): Agent[] {
+    return (this.db.query('SELECT * FROM agents WHERE fleet_id = ? ORDER BY created_at, rowid').all(fleetId) as Row[]).map((r) => this.toAgent(r));
+  }
+  /** Hires of a fleet (everyone but the human at its root). */
+  fleetHires(fleetId: string): number {
+    return (this.db.query("SELECT COUNT(*) AS n FROM agents WHERE fleet_id = ? AND kind != 'human'").get(fleetId) as Row).n;
+  }
+  /** Delete a row nothing refers to yet (a pre-created captain whose launch failed). */
+  deleteAgent(id: string) { this.db.query('DELETE FROM agents WHERE id = ?').run(id); }
   listAgents(projectId?: string | null): Agent[] {
     const rows = projectId
       ? this.db.query('SELECT * FROM agents WHERE project_id = ? ORDER BY created_at DESC, rowid DESC').all(projectId)
       : this.db.query('SELECT * FROM agents ORDER BY created_at DESC, rowid DESC').all();
-    return (rows as Row[]).map(rowToAgent);
+    return (rows as Row[]).map((r) => this.toAgent(r));
   }
   /** Spawned agents (kind agent or probe) in a state. */
   agentsInState(state: AgentState): Agent[] {
-    return (this.db.query("SELECT * FROM agents WHERE state = ? AND kind != 'human' ORDER BY created_at, rowid").all(state) as Row[]).map(rowToAgent);
+    return (this.db.query("SELECT * FROM agents WHERE state = ? AND kind != 'human' ORDER BY created_at, rowid").all(state) as Row[]).map((r) => this.toAgent(r));
   }
   /** Changed resume text waiting to be prepended to the agent's next envelope; read-and-clear. */
   takeResumeNote(id: string): string | null {
@@ -301,23 +428,40 @@ export class Store {
     return r.resume_note as string;
   }
   children(agentId: string): Agent[] {
-    return (this.db.query('SELECT * FROM agents WHERE parent_id = ? ORDER BY created_at, rowid').all(agentId) as Row[]).map(rowToAgent);
+    return (this.db.query('SELECT * FROM agents WHERE parent_id = ? ORDER BY created_at, rowid').all(agentId) as Row[]).map((r) => this.toAgent(r));
   }
   /** Working agents that count against max_running (probes don't). */
   countWorking(): number {
     return (this.db.query("SELECT COUNT(*) AS n FROM agents WHERE state = 'working' AND kind = 'agent'").get() as Row).n;
   }
-  oldestQueued(): Agent | null {
-    const r = this.db.query("SELECT * FROM agents WHERE state = 'queued' AND kind = 'agent' ORDER BY queued_at, created_at, rowid LIMIT 1").get() as Row | null;
-    return r ? rowToAgent(r) : null;
+  /** Working agents per fleet (same rule as countWorking). */
+  workingByFleet(): Map<string, number> {
+    const rows = this.db.query("SELECT fleet_id, COUNT(*) AS n FROM agents WHERE state = 'working' AND kind = 'agent' GROUP BY fleet_id").all() as Row[];
+    return new Map(rows.map((r) => [r.fleet_id as string, r.n as number]));
+  }
+  countWorkingInFleet(fleetId: string): number {
+    return (this.db.query("SELECT COUNT(*) AS n FROM agents WHERE state = 'working' AND kind = 'agent' AND fleet_id = ?").get(fleetId) as Row).n;
+  }
+  /** Queued agents, oldest first. */
+  queuedAgents(): Agent[] {
+    return (this.db.query("SELECT * FROM agents WHERE state = 'queued' AND kind = 'agent' ORDER BY queued_at, created_at, rowid").all() as Row[]).map((r) => this.toAgent(r));
   }
   insertAgent(a: Agent) {
-    const vals = AGENT_COLS.map((c) => (JSON_COLS.has(c) ? ((a as any)[c] == null ? null : JSON.stringify((a as any)[c])) : (a as any)[c] ?? null));
-    this.db.query(`INSERT INTO agents (${AGENT_COLS.join(', ')}) VALUES (${AGENT_COLS.map(() => '?').join(', ')})`).run(...vals);
+    const captain = a.captain
+      ? Object.fromEntries((Object.keys(CAPTAIN_COLS) as (keyof CaptainInfo)[]).map((k) => [CAPTAIN_COLS[k], a.captain![k] ?? null]))
+      : {};
+    const cols = [...AGENT_COLS, ...Object.keys(captain)];
+    const vals = [
+      ...AGENT_COLS.map((c) => (JSON_COLS.has(c) ? ((a as any)[c] == null ? null : JSON.stringify((a as any)[c])) : (a as any)[c] ?? null)),
+      ...Object.values(captain),
+    ];
+    this.db.query(`INSERT INTO agents (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`).run(...(vals as any[]));
   }
   /** Patch columns of an agent (bumps updated_at) and return the new row. */
-  patchAgent(id: string, patch: Partial<Agent> & { queued_at?: number | null; resume_note?: string | null }, now: number): Agent {
-    const entries = Object.entries({ ...patch, updated_at: now }).filter(([k]) => k !== 'id');
+  patchAgent(id: string, patch: AgentPatch, now: number): Agent {
+    const { captain, ...rest } = patch;
+    const captainCols = Object.fromEntries(Object.entries(captain ?? {}).map(([k, v]) => [CAPTAIN_COLS[k as keyof CaptainInfo], v]));
+    const entries = Object.entries({ ...rest, ...captainCols, updated_at: now }).filter(([k]) => k !== 'id');
     const sets = entries.map(([k]) => `${k} = ?`).join(', ');
     const vals = entries.map(([k, v]) => (JSON_COLS.has(k) ? (v == null ? null : JSON.stringify(v)) : v ?? null));
     this.db.query(`UPDATE agents SET ${sets} WHERE id = ?`).run(...(vals as any[]), id);
@@ -350,19 +494,21 @@ export class Store {
   }
 
   // ---------- messages + deliveries
-  insertMessage(m: Omit<Message, 'seq'>): Message {
-    const res = this.db.query('INSERT INTO messages (id, project_id, thread, from_id, kind, text, mentions, card_id, meta, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(m.id, m.project_id, m.thread, m.from_id, m.kind, m.text, JSON.stringify(m.mentions), m.card_id, JSON.stringify(m.meta), m.created_at);
-    return { ...m, seq: Number(res.lastInsertRowid) };
+  insertMessage(m: MessageInsert): Message {
+    const res = this.db.query('INSERT INTO messages (id, project_id, thread, from_id, kind, text, mentions, card_id, meta, created_at, fleet_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(m.id, m.project_id, m.thread, m.from_id, m.kind, m.text, JSON.stringify(m.mentions), m.card_id, JSON.stringify(m.meta), m.created_at, m.fleet_id ?? null);
+    const { fleet_id: _f, ...msg } = m;
+    return { ...msg, seq: Number(res.lastInsertRowid) };
   }
   getMessage(id: string): Message | null {
     const r = this.db.query('SELECT * FROM messages WHERE id = ?').get(id) as Row | null;
     return r ? rowToMessage(r) : null;
   }
   /** Old 'group' rows (group chat was removed) are never listed. */
-  listMessages(q: { project?: string | null; thread?: string | null; threadLike?: string | null; after?: number | null; limit: number; fromOrTo?: string | null }): Message[] {
+  listMessages(q: { project?: string | null; thread?: string | null; threadLike?: string | null; after?: number | null; before?: number | null; limit: number; fromOrTo?: string | null; fleet?: string | null }): Message[] {
     const where: string[] = ["thread != 'group'"];
     const args: any[] = [];
+    if (q.fleet) { where.push('fleet_id = ?'); args.push(q.fleet); }
     if (q.project) { where.push('project_id = ?'); args.push(q.project); }
     if (q.thread) { where.push('thread = ?'); args.push(q.thread); }
     if (q.threadLike) { where.push('thread LIKE ?'); args.push(q.threadLike); }
@@ -371,6 +517,9 @@ export class Store {
     let rows: Row[];
     if (q.after != null) {
       rows = this.db.query(`SELECT * FROM messages ${w} AND seq > ? ORDER BY seq ASC LIMIT ?`).all(...args, q.after, q.limit) as Row[];
+    } else if (q.before != null) {
+      // the `limit` messages just older than `before`, returned in seq order
+      rows = (this.db.query(`SELECT * FROM messages ${w} AND seq < ? ORDER BY seq DESC LIMIT ?`).all(...args, q.before, q.limit) as Row[]).reverse();
     } else {
       rows = (this.db.query(`SELECT * FROM messages ${w} ORDER BY seq DESC LIMIT ?`).all(...args, q.limit) as Row[]).reverse();
     }
@@ -384,8 +533,28 @@ export class Store {
     ).all(...(project ? [project] : [])) as Row[];
     return new Map(rows.map((r) => [r.from_id as string, rowToMessage(r)]));
   }
-  threadSummaries(project: string): { thread: string; count: number; last_seq: number }[] {
-    return this.db.query("SELECT thread, COUNT(*) AS count, MAX(seq) AS last_seq FROM messages WHERE project_id = ? AND thread != 'group' GROUP BY thread ORDER BY last_seq DESC").all(project) as any[];
+  threadSummaries(project: string, fleet?: string | null): { thread: string; count: number; last_seq: number }[] {
+    return this.db.query(`SELECT thread, COUNT(*) AS count, MAX(seq) AS last_seq FROM messages WHERE project_id = ? AND thread != 'group' ${fleet ? 'AND fleet_id = ?' : ''} GROUP BY thread ORDER BY last_seq DESC`).all(...(fleet ? [project, fleet] : [project])) as any[];
+  }
+  /** Per fleet of a project: newest message time (any kind), and the newest message that is not an `update`. */
+  fleetMessageStats(project: string): { activity: Map<string, number>; last: Map<string, Message> } {
+    const act = this.db.query("SELECT fleet_id, MAX(created_at) AS at FROM messages WHERE project_id = ? AND thread != 'group' AND fleet_id IS NOT NULL GROUP BY fleet_id").all(project) as Row[];
+    const last = this.db.query("SELECT * FROM messages WHERE seq IN (SELECT MAX(seq) FROM messages WHERE project_id = ? AND kind != 'update' AND thread != 'group' AND fleet_id IS NOT NULL GROUP BY fleet_id)").all(project) as Row[];
+    return { activity: new Map(act.map((r) => [r.fleet_id as string, r.at as number])), last: new Map(last.map((r) => [r.fleet_id as string, rowToMessage(r)])) };
+  }
+  /** Pending deliveries to the project's human captains: total, waking, and `question` messages. */
+  captainPending(project: string): Map<string, { unread: number; waking: number; questions: number }> {
+    const rows = this.db.query(
+      `SELECT d.to_id AS id, COUNT(*) AS unread, SUM(d.wake = 1) AS waking, SUM(m.kind = 'question') AS questions
+       FROM deliveries d JOIN messages m ON m.id = d.message_id JOIN agents a ON a.id = d.to_id
+       WHERE d.state = 'pending' AND a.kind = 'human' AND a.project_id = ? GROUP BY d.to_id`,
+    ).all(project) as Row[];
+    return new Map(rows.map((r) => [r.id as string, { unread: r.unread, waking: r.waking ?? 0, questions: r.questions ?? 0 }]));
+  }
+  /** Cards assigned to a member of each fleet in a project. */
+  cardsByFleet(project: string): Map<string, number> {
+    const rows = this.db.query('SELECT a.fleet_id AS fleet_id, COUNT(*) AS n FROM cards c JOIN agents a ON a.id = c.assignee_id WHERE c.project_id = ? GROUP BY a.fleet_id').all(project) as Row[];
+    return new Map(rows.map((r) => [r.fleet_id as string, r.n as number]));
   }
   messageBySeq(seq: number): Message | null {
     const r = this.db.query('SELECT * FROM messages WHERE seq = ?').get(seq) as Row | null;
