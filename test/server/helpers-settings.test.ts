@@ -229,7 +229,7 @@ describe('settings API', () => {
     const f = (k: string) => r.body.fields.find((x: any) => x.key === k);
     expect(f('max_running')).toMatchObject({ value: 4, default: 3, saved: false, env_override: false, min: 1, unit: 'agents', group: 'Capacity' });
     expect(f('max_depth')).toMatchObject({ value: 3, default: 3 });
-    expect(r.body.fields.length).toBe(13);
+    expect(r.body.fields.length).toBe(14);
     expect(r.body.file.endsWith('config.json')).toBe(true);
   });
 

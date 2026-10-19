@@ -9,12 +9,12 @@ import { BIN, LOG_FILE, PORT, REPO_ROOT, SERVER_URL, SPARROW_HOME, TMUX_SOCKET }
 import { CARD_STATES } from '../shared/types';
 import { CARD_SORTS, cardKey, parseCardRef, sortCardsBy } from '../shared/cards';
 import type {
-  Agent, Card, CardState, DoneStatus, EndCallRes, HireRes, InboxRes, MessageRes, MessageView, Project,
-  RegisterCaptainRes, ResumeView,
+  Agent, Card, CardState, CaptainDetail, CaptainStartReq, CaptainStartRes, CaptainSummary, DoneStatus, EndCallRes, HireRes,
+  InboxRes, MessageRes, MessageView, Project, RegisterCaptainReq, RegisterCaptainRes, ResumeView,
 } from '../shared/types';
 import {
-  age, agentSummary, cardBoard, cardBriefText, cardDetail, hhmm, inboxBlock, logLines, oneLine, resumesDirectory,
-  rosterTable, teamDigest, tmuxAttach,
+  age, agentSummary, captainHint, captainSelf, captainStartText, captainsTable, cardBoard, cardBriefText, cardDetail, hhmm,
+  inboxBlock, logLines, oneLine, resumesDirectory, rosterTable, teamDigest, tmuxAttach,
 } from './format';
 
 /** Messages that wake their recipient. Quiet deliveries (amendment A5) are updates and FYI system notices. */
@@ -30,9 +30,11 @@ const USAGE: Record<string, string> = {
   sandbox: 'sparrow sandbox up [--dir path] | down [--dir path]   a throwaway server: own home, free port (never 4040), tmux socket; allowed for agents',
   install: 'sparrow install [--force]   seed resumes, link ~/.local/bin/sparrow, install skills + harness assets',
   stop: 'sparrow stop [--sandbox]   stop the server of this SPARROW_HOME/SPARROW_PORT (agents: --sandbox, with SPARROW_HOME set to a non-default dir)',
-  captain: 'sparrow captain [--cwd dir] [--model m] [--effort e]   open your Claude Code captain in tmux',
+  captain: 'sparrow captain [--cwd dir] [--name n] [--title "<what it works on>"] [--model m] [--effort e] | resume <@handle|id> | adopt <@handle>   launch a new Claude Code captain in tmux; reopen one on its session; or bind THIS session to an existing captain (after /clear)',
+  captains: 'sparrow captains [--all]   this project\'s captains: handle, title, status, team (working/total), last activity, resume line; --all adds archived',
+  title: 'sparrow title "<what you work on>"   name this captain\'s work (human captains; shown in the UI and `sparrow captains`)',
   status: 'sparrow status   server health + working agents and their windows',
-  whoami: 'sparrow whoami',
+  whoami: 'sparrow whoami   who I am: handle, project, and for a captain its title, fleet and resume line',
   resumes: 'sparrow resumes   the directory: slug, title, harness/model/effort, status, can_hire, description',
   roster: 'sparrow roster [--all]   agents in my project',
   hire: 'sparrow hire <resume> "<task>" [--name h] [--cwd d] [--tmux-session s] [--tmux-window w] [--card N] [--model m] [--effort e]',
@@ -73,6 +75,7 @@ interface Ctx {
   me: Agent | null;
   project: Project | null;
   inbox: MessageView[];
+  notices: string[];        // one-time hints (a new captain was created); printed before the output, never with --json
 }
 
 interface Out {
@@ -108,17 +111,33 @@ async function identify(ctx: Ctx, opts: { noInbox?: boolean } = {}): Promise<voi
   if (envId) { ctx.agentId = envId; return; }
   const lost = lostIdentityRefusal();
   if (lost) throw new Error(lost);
-  const body: Record<string, string> = { cwd: process.cwd() };
+  await register(ctx, {}, opts);
+}
+
+/** The captain's identity request: cwd, harness session, SPARROW_CAPTAIN_ID (wins on the server), plus `extra` (adopt). */
+function registerBody(extra: Partial<RegisterCaptainReq> = {}): RegisterCaptainReq {
+  const body: RegisterCaptainReq = { cwd: process.cwd() };
   const det = detectHarness();
   if (det.harness) body.harness = det.harness;
   if (det.session_id) body.session_id = det.session_id;
+  const captainId = process.env.SPARROW_CAPTAIN_ID?.trim();
+  if (captainId) body.captain_id = captainId;
+  // /clear gives Claude Code a new session id in the same process: the pid lets the server re-attach this session.
+  const pid = Number(process.env.CLAUDE_PID);
+  if (Number.isInteger(pid) && pid > 0) body.pid = pid;
+  return { ...body, ...extra };
+}
+
+async function register(ctx: Ctx, extra: Partial<RegisterCaptainReq>, opts: { noInbox?: boolean } = {}): Promise<RegisterCaptainRes> {
   const path = opts.noInbox ? '/api/captains/register?no_inbox=1' : '/api/captains/register';
-  const res = await api<RegisterCaptainRes>('POST', path, body, { agentId: null });
+  const res = await api<RegisterCaptainRes>('POST', path, registerBody(extra), { agentId: null });
   if (!opts.noInbox) collect(ctx, res);
   ctx.agentId = res.agent.id;
   ctx.me = res.agent;
   ctx.project = res.project;
   ctx.captain = true;
+  if (res.created) ctx.notices.push(captainHint(res.agent, res.project));
+  return res;
 }
 
 /** Who am I + my project (captain mode already knows from register). */
@@ -129,6 +148,41 @@ async function self(ctx: Ctx): Promise<{ me: Agent; project: Project; parent: Ag
   ctx.me = res.agent;
   ctx.project = res.project;
   return { me: res.agent, project: res.project, parent: res.parent };
+}
+
+/** Does this shell carry any sign of being a captain session (agent id, SPARROW_CAPTAIN_ID, a harness session id)? */
+const hasIdentitySignal = () => !!(process.env.SPARROW_AGENT_ID || process.env.SPARROW_CAPTAIN_ID || detectHarness().session_id);
+
+/** The project of cwd without creating or needing a captain row (server rule: worktrees belong to their repo's project). */
+async function resolveProject(cwd = process.cwd()): Promise<Project> {
+  return api<Project>('GET', `/api/projects/resolve?cwd=${encodeURIComponent(cwd)}`, undefined, { agentId: null });
+}
+
+/**
+ * Project-only commands (captains, captain resume, card list/show) never create or require a captain: an identified call
+ * goes through identify(); when register answers 409 (ambiguous plain shell) or there is no identity signal at all, the
+ * project comes from the server's cwd resolution. `meId` is null for the unidentified call.
+ */
+async function projectScope(ctx: Ctx, opts: { quietShell?: boolean } = {}): Promise<{ project: Project; meId: string | null }> {
+  if (ctx.me && ctx.project) return { project: ctx.project, meId: ctx.me.id };
+  if (opts.quietShell && !hasIdentitySignal()) return { project: await resolveProject(), meId: null };
+  try {
+    const { me, project } = await self(ctx);
+    return { project, meId: me.id };
+  } catch (e) {
+    if (!(e instanceof ApiError) || e.status !== 409 || process.env.SPARROW_AGENT_ID) throw e;
+    ctx.agentId = null; ctx.captain = false; ctx.me = null;
+    return { project: await resolveProject(), meId: null };
+  }
+}
+
+/** `all` = archived and phantom (no title, no team) captains too. */
+const captainsPath = (project: Project, all: boolean) =>
+  `/api/captains?project=${encodeURIComponent(project.id)}${all ? '&archived=1&all=1' : ''}`;
+
+/** Best effort: the captain's resume lines for whoami / start output. */
+async function captainDetail(ctx: Ctx, id: string): Promise<CaptainDetail | null> {
+  try { return await api<CaptainDetail>('GET', `/api/captains/${encodeURIComponent(id)}`, undefined, { agentId: ctx.agentId, retries: 0, timeoutMs: 5000 }); } catch { return null; }
 }
 
 // ---------------------------------------------------------------- arg helpers
@@ -282,16 +336,76 @@ const commands: Record<string, Handler> = {
     return { raw: { ok: true, message: text }, text };
   },
   async captain(ctx, args) {
-    const { values, positionals } = parse('captain', args, { cwd: { type: 'string' }, model: { type: 'string' }, effort: { type: 'string' } });
-    if (positionals.length) throw new UsageError('captain', 'unexpected positional argument');
-    await api('GET', '/api/health', undefined, { agentId: null });
-    const { launchCaptain } = await import('../harness/captain');
-    const r = await launchCaptain({ cwd: values.cwd ?? process.cwd(), model: values.model, effort: values.effort });
-    return { raw: r, text: `Captain: ${r.cwd} · ${r.session}:${r.window}\n${r.attach}` };
+    const sub = args[0];
+    if (sub === 'resume' || sub === 'adopt') {
+      const { positionals } = parse('captain', args.slice(1));
+      if (positionals.length !== 1) throw new UsageError('captain', `captain ${sub} takes exactly one <@handle>${sub === 'resume' ? ' or id' : ''}`);
+      const target = positionals[0];
+      if (sub === 'adopt') {
+        if (!detectHarness().session_id)
+          throw new Error('no harness session id here; run `sparrow captain adopt` inside the captain session you want to bind (Claude Code / Codex / OpenCode).');
+        const res = await register(ctx, { adopt: handleArg(target).slice(1), captain_id: undefined });
+        const c = res.agent.captain;
+        return { raw: res, text: `This session is now @${res.agent.handle}${c?.title ? ` — ${c.title}` : ''} (project ${res.project.id}). Its team and inbox are yours again.` };
+      }
+      let id = target;
+      if (!target.startsWith('ag_')) {
+        const { project } = await projectScope(ctx, { quietShell: true });
+        const list = await api<CaptainSummary[]>('GET', captainsPath(project, true), undefined, { agentId: null });
+        const h = handleArg(target).slice(1).toLowerCase();
+        const hit = list.find((c) => c.agent.handle === h);
+        if (!hit) throw new Error(`no captain @${h} in ${project.id}${list.length ? ` (${list.map((c) => '@' + c.agent.handle).join(', ')})` : ''}`);
+        id = hit.agent.id;
+      }
+      const res = await api<CaptainStartRes>('POST', `/api/captains/${encodeURIComponent(id)}/resume`, undefined, { agentId: null });
+      return { raw: res, text: captainStartText(res, await captainDetail(ctx, res.agent_id ?? id), 'Resumed') };
+    }
+    const { values, positionals } = parse('captain', args, {
+      cwd: { type: 'string' }, name: { type: 'string' }, title: { type: 'string' }, model: { type: 'string' }, effort: { type: 'string' },
+    });
+    if (positionals.length) throw new UsageError('captain', `unexpected argument "${positionals[0]}" (subcommands: resume, adopt)`);
+    if (inAgentWindow()) throw new Error('agents hire teammates (sparrow hire); only the user starts captains. Run `sparrow captain` from your own shell.');
+    let cwd = process.cwd();
+    if (values.cwd !== undefined) {
+      cwd = resolve(values.cwd as string);
+      if (!existsSync(cwd) || !statSync(cwd).isDirectory()) throw new UsageError('captain', `--cwd ${cwd} is not a directory`);
+    }
+    const body: CaptainStartReq = { cwd };
+    if (values.name) body.name = String(values.name).replace(/^@/, '');
+    if (values.title !== undefined) body.title = (await flagText(String(values.title))).trim();
+    if (values.model) body.model = values.model;
+    if (values.effort) body.effort = values.effort;
+    const res = await api<CaptainStartRes>('POST', '/api/captain/start', body, { agentId: null });
+    return { raw: res, text: captainStartText(res, res.agent_id ? await captainDetail(ctx, res.agent_id) : null, 'Captain') };
   },
+
+  async captains(ctx, args) {
+    const { values, positionals } = parse('captains', args, { all: { type: 'boolean' } });
+    if (positionals.length) throw new UsageError('captains', 'unexpected positional argument');
+    const { project, meId } = await projectScope(ctx, { quietShell: true });
+    const list = await call<CaptainSummary[]>(ctx, 'GET', captainsPath(project, !!values.all));
+    // The API has no hidden count: ask for everything once more to say what the default view left out.
+    let hidden = { archived: 0, empty: 0 };
+    if (!values.all) {
+      const full = await call<CaptainSummary[]>(ctx, 'GET', captainsPath(project, true));
+      const shown = new Set(list.map((s) => s.agent.id));
+      const rest = full.filter((s) => !shown.has(s.agent.id));
+      hidden = { archived: rest.filter((s) => s.status === 'archived').length, empty: rest.filter((s) => s.status !== 'archived').length };
+    }
+    return { raw: list, text: captainsTable(list, project.id, meId, !!values.all, Date.now(), hidden) };
+  },
+
+  async title(ctx, args) {
+    const { positionals } = parse('title', args);
+    const title = (await textArg('title', positionals, '"<what you work on>"')).trim();
+    await identify(ctx);
+    if (!ctx.captain || !ctx.me) throw new Error('only a human captain has a title; agents are named by their resume and task.');
+    const res = await call<{ agent: Agent }>(ctx, 'PATCH', `/api/captains/${encodeURIComponent(ctx.me.id)}`, { title });
+    return { raw: res, text: `@${res.agent.handle} now works on: ${res.agent.captain?.title ?? title}` };
+  },
+
   async whoami(ctx, args) {
-    const { values } = parse('whoami', args);
-    void values;
+    parse('whoami', args);
     const r = await self(ctx);
     const lines = [
       agentSummary(r.me),
@@ -299,7 +413,9 @@ const commands: Record<string, Handler> = {
       `  can hire: ${r.me.can_hire.length ? r.me.can_hire.join(', ') : 'nobody'}`,
     ];
     if (ctx.captain) lines.push('  mode: human captain (no SPARROW_AGENT_ID)');
-    return { raw: r, text: lines.join('\n') };
+    const detail = await captainDetail(ctx, r.me.fleet_id ?? r.me.id);
+    lines.push(...captainSelf(r.me, detail));
+    return { raw: { ...r, ...(detail ? { fleet: detail.summary } : {}) }, text: lines.join('\n') };
   },
 
   async resumes(ctx, args) {
@@ -503,8 +619,9 @@ const commands: Record<string, Handler> = {
 
   async card(ctx, args) {
     const [sub = 'list', ...rest] = args[0]?.startsWith('-') && args[0] !== '-' ? ['list', ...args] : args;
-    const handles = async () => {
-      const { project } = await self(ctx);
+    // Read-only subcommands (list, show) work from an ambiguous shell too; the rest need a captain identity.
+    const handles = async (readOnly = false) => {
+      const { project } = readOnly ? await projectScope(ctx) : await self(ctx);
       const agents = await call<Agent[]>(ctx, 'GET', `/api/agents?project=${encodeURIComponent(project.id)}`);
       return { project, handles: new Map(agents.map((a) => [a.id, a.handle])) };
     };
@@ -514,7 +631,7 @@ const commands: Record<string, Handler> = {
           state: { type: 'string' }, sort: { type: 'string' }, category: { type: 'string' },
           urgent: { type: 'boolean' }, blocked: { type: 'boolean' }, all: { type: 'boolean' },
         });
-        const { project, handles: hs } = await handles();
+        const { project, handles: hs } = await handles(true);
         const all = await call<Card[]>(ctx, 'GET', `/api/cards?project=${encodeURIComponent(project.id)}`);
         let cards = all.filter((c) => values.all || c.state !== 'dropped');
         if (values.state) {
@@ -533,9 +650,8 @@ const commands: Record<string, Handler> = {
         const { positionals } = parse('card', rest);
         if (positionals.length !== 1) throw new UsageError('card', 'card show <N>');
         const id = cardIdArg('card', positionals[0]);
-        await identify(ctx);
+        const { handles: hs } = await handles(true);
         const card = await call<Card>(ctx, 'GET', `/api/cards/${id}`);
-        const { handles: hs } = await handles();
         return { raw: card, text: cardDetail(card, hs) };
       }
       case 'pick': {
@@ -884,7 +1000,7 @@ export async function main(argv: string[]): Promise<number> {
     return 0;
   }
 
-  const ctx: Ctx = { json, agentId: null, captain: false, me: null, project: null, inbox: [] };
+  const ctx: Ctx = { json, agentId: null, captain: false, me: null, project: null, inbox: [], notices: [] };
   try {
     const out = await handler(ctx, args);
     if (typeof out === 'number') return out;
@@ -895,6 +1011,7 @@ export async function main(argv: string[]): Promise<number> {
       console.log(JSON.stringify(raw, null, 2));
       return 0;
     }
+    for (const n of ctx.notices) console.log(n);
     if (out.text) console.log(out.text);
     if (ctx.inbox.length) {
       let handle = ctx.me?.handle ?? null;
@@ -911,6 +1028,7 @@ export async function main(argv: string[]): Promise<number> {
     const msg = (e as Error).message;
     if (e instanceof UsageError) console.error(`sparrow ${e.cmd}: ${msg}\nusage: ${USAGE[e.cmd] ?? fullUsage()}`);
     else console.error(`sparrow ${cmd}: ${msg}`);
+    if (!json) for (const n of ctx.notices) console.log(n);
     // Never lose messages that earlier requests of this command already marked delivered.
     if (json) console.log(JSON.stringify({ error: msg, inbox: ctx.inbox }, null, 2));
     else if (ctx.inbox.length) console.log(inboxBlock(ctx.inbox, ctx.me?.handle ?? null));

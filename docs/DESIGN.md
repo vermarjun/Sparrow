@@ -1,12 +1,12 @@
 # Sparrow — design
 
-Sparrow is a personal, harness-agnostic agent factory that runs on one Mac. Your own Claude Code session is the captain. It hires named agents from resumes; a local server opens each one in its own tmux window as a real interactive Claude Code, Codex or OpenCode session; agents report through the `sparrow` CLI; finished agents are closed to free RAM and resumed on the same session when messaged again.
+Sparrow is a personal, harness-agnostic agent factory that runs on one Mac. Your own Claude Code session is a captain (one per feature or fix, many at once). It hires named agents from resumes; a local server opens each one in its own tmux window as a real interactive Claude Code, Codex or OpenCode session; agents report through the `sparrow` CLI; finished agents are closed to free RAM and resumed on the same session when messaged again.
 
 Code layout: `src/shared` (types, config), `src/server` (state, API, lifecycle), `src/harness` (tmux + one driver per harness), `src/cli` (the `sparrow` command and hooks), `assets` (protocol, skills, resumes, OpenCode plugin), `web` (observer UI).
 
 ## 0. Requirements
 
-- A captain (the user's own Claude Code session) hires named agents from **resumes** (role cards). The **server spawns each agent in its own tmux window** as a real interactive session the user can watch:
+- A captain (the user's own Claude Code session; several can run in one project, each with a private team) hires named agents from **resumes** (role cards). The **server spawns each agent in its own tmux window** as a real interactive session the user can watch:
   `claude --dangerously-skip-permissions …`, `codex --yolo …`, `opencode --auto …` (OpenCode has no `--yolo`; `--auto` is its auto-approve flag).
 - The server passes the correct **system prompt** (protocol + resume) and the **message** as the first prompt.
 - **Agents push their own updates** to the server through the `sparrow` CLI, as taught by a skill + the system prompt. The server never scrapes the TUI for updates. The server's jobs: spawn, route messages, enforce limits, notice failures.
@@ -14,7 +14,7 @@ Code layout: `src/shared` (types, config), `src/server` (state, API, lifecycle),
 - Failure cases are handled: the agent crashes / dies / forgets to report.
 - Captain flags on hire: `--cwd`, `--tmux-session`, `--tmux-window` (defaults: captain's cwd, `sparrow-<project>`, the handle).
 - Kanban is tracking only. Dragging a card in the UI never spawns or messages anything. Agents propose cards; captains move them. A card is a ticket (context, problem, approach, checks, markers) that a captain or the user can hand to an agent by key; the board follows the work (§3.12) and times every move.
-- Everything runs on one Mac. No auth, no sandbox, no worktree management (a captain may pass `--cwd` to a worktree it made).
+- Everything runs on one Mac. No auth, no sandbox, no worktree management (a captain may pass `--cwd` to a worktree it made, or run in any git worktree of the project).
 
 ## 1. Vocabulary
 
@@ -24,7 +24,8 @@ Code layout: `src/shared` (types, config), `src/server` (state, API, lifecycle),
 | **CLI** | `sparrow <cmd>` — how every agent (and the captain) talks to the server. Identity from env `SPARROW_AGENT_ID`. |
 | **Resume** | role card `~/.sparrow/resumes/<slug>.md` (seeded from `assets/resumes/`). |
 | **Agent** | one hire of a resume in a project. Has a permanent id (`ag_…`, the "phone number"), a handle (`@james`), a harness session id (the "SIM"). |
-| **Captain** | the user's own session (`kind: human`, depth 0, never spawned) — or an agent whose `can_hire` names at least one non-helper resume (a sub-captain). |
+| **Captain** | one of the user's own sessions (`kind: human`, depth 0, never spawned; one row per harness session, many per project) — or an agent whose `can_hire` names at least one non-helper resume (a sub-captain). |
+| **Fleet** | a human captain plus everyone hired under it, transitively (`fleet_id` = the captain's id). Messages, releases and card assignments never cross fleets; the board stays shared. Design: `docs/plans/multi-captain.md`. |
 | **Helper** | a leaf resume (`helper: true`: `deckhand`, `advisor`) other agents may be allowed to hire. It never hires (its `can_hire` is ignored), and being able to hire only helpers does not make an agent a captain (no captain card rights). |
 | **Call** | one window lifetime: spawn → `done`/`ask`/`wait`/crash/… The agent is "on a call" only while its window is open. |
 | **Delivery** | a message addressed to an agent that has not reached it yet (`pending`) or has (`delivered`). |
@@ -35,7 +36,8 @@ Code layout: `src/shared` (types, config), `src/server` (state, API, lifecycle),
 
 ### 3.1 Identity
 - Agent windows get env: `SPARROW_AGENT_ID`, `SPARROW_CALL_ID`, `SPARROW_URL`, `SPARROW_HARNESS`, and `PATH` prefixed with `<repo>/bin`. `CLAUDECODE`, `CLAUDE_CODE_SESSION_ID`, `CLAUDE_CODE_ENTRYPOINT` and any `CODEX_*`/`OPENCODE_*` session vars inherited from the parent are unset.
-- CLI without `SPARROW_AGENT_ID` = **captain mode**: it calls `POST /api/captains/register {cwd}` and uses the returned agent id. Project = basename of `git rev-parse --show-toplevel` of cwd (or cwd). One human captain per project (handle `captain`), idempotent.
+- CLI without `SPARROW_AGENT_ID` = **captain mode**: it calls `POST /api/captains/register {cwd, harness?, session_id?, captain_id?}` and uses the returned agent id. Project = the longest registered project root containing cwd, else the main checkout of cwd's git repo (a linked worktree anywhere belongs to its repo's project and shares its board; `GET /api/projects/resolve?cwd=` answers this without creating a captain), else cwd. **Many captains per project, one per harness session** (`CLAUDE_CODE_SESSION_ID`, `CODEX_THREAD_ID`/`CODEX_SESSION_ID`, `OPENCODE_SESSION_ID`); the first is `@captain`, later ones `@cap-<star>` or the `--name` the user picks. `SPARROW_CAPTAIN_ID` (set when Sparrow launches a captain) wins over the session id and survives `/clear`. The CLI also sends `pid` (`CLAUDE_PID`): `/clear` changes the session id but not the process, so an unknown session whose pid matches a recently seen captain re-attaches to it; `sparrow captain adopt` is the manual fallback. OpenCode terminal captains have no session id (no-session rules below). Registering again from the same session is idempotent; a new session gets `created: true` and the CLI prints once `You are @<handle>, a new captain in <project>. Name your work: sparrow title "…"`. With no session id (plain shell, OpenCode): one captain → it, none → create, several → 409 naming them. Project-only commands (`captains`, `captain resume`, `card list|show`) never create or need a captain: on that 409, or in a shell with no identity signal, they resolve the project from cwd and run unidentified.
+- A captain's team (fleet) is private: `send` to, `release` of and card assignment to another fleet's agents are 403; `roster` and `whoami` show the own fleet only. The UI and unidentified callers read everything.
 
 ### 3.2 Hire (`POST /api/hire`)
 1. Caller must be a captain: human captain may hire any resume; an agent may hire only slugs in its resume `can_hire`. Else 403 `"@<handle> (<resume>) may not hire <slug>: can_hire = [..]"`.
@@ -151,7 +153,12 @@ Identity header `x-sparrow-agent`; hooks add `x-sparrow-call`. Every response to
 | Method & path | Body / query | Returns |
 |---|---|---|
 | GET `/api/health` | | `{ok:true, version, pid, started_at}` |
-| POST `/api/captains/register` | `RegisterCaptainReq` | `RegisterCaptainRes` |
+| POST `/api/captains/register` | `RegisterCaptainReq` `{cwd, harness?, session_id?, captain_id?, adopt?, name?}` (`adopt`: bind this session to that captain's handle) | `RegisterCaptainRes` `{agent, project, created?}` |
+| GET `/api/captains` | `?project=` `&archived=1` `&all=1` (archived; untitled team-less terminal sessions are hidden otherwise) | `CaptainSummary[]` (status, fleet counts, unread, last activity, `resume` lines), newest activity first |
+| GET `/api/captains/:id` | id or handle (+`?project=`) | `CaptainDetail` |
+| PATCH `/api/captains/:id` | `CaptainPatchReq` `{title?, name?, archived?}` — the captain itself or the UI | `{agent}` |
+| POST `/api/captains/:id/resume` | – | `CaptainStartRes`; 409 with the attach line while its window is open |
+| POST `/api/captain/start` | `CaptainStartReq` `{cwd, name?, title?, model?, effort?}` | `CaptainStartRes` (+`agent_id`): the server creates the captain row, then opens its tmux window |
 | GET `/api/whoami` | | `{agent, project, parent: Agent\|null}` + inbox |
 | GET `/api/settings` | | `SettingsView` (fields with value, default, range, unit, help, saved, env_override; doctor_models; file) |
 | PUT `/api/settings` | `SettingsWriteReq` `{values?: {key: number\|null}, doctor_models?: {harness: model\|null}}` | `SettingsView`; 400 bad value, 403 agent caller, 409 env-owned key |
@@ -194,7 +201,12 @@ sparrow up [--port N] [--home DIR] [--max-running N] [--tmux] [--sandbox]   star
 sparrow sandbox up [--dir path] | down [--dir path]   throwaway server (D19) owning <dir>: `home` (SPARROW_HOME), `skills-home` (SPARROW_SKILLS_HOME, created; a value the caller already set wins), a free port (never 4040), its own tmux socket/prefix, and a `sbx` wrapper that pins them. The server env carries SPARROW_SKILLS_HOME, so the library, harness skill roots, staging and backups of the sandbox and of every agent it launches stay inside it: a sandbox can never touch the real ~/Skills or harness folders
 sparrow install [--force]                          seed resumes, link ~/.local/bin/sparrow, install skills + harness assets
 sparrow status                                     server health + working agents and their windows
-sparrow whoami
+sparrow captain [--cwd d] [--name n] [--title "…"] [--model m] [--effort e]   launch a new captain in tmux (POST /api/captain/start); prints handle, attach and resume lines
+sparrow captain resume <@handle|id>                reopen a captain on its session in tmux (POST /api/captains/:id/resume)
+sparrow captain adopt <@handle>                    bind THIS session to an existing captain (after /clear); its previous empty row is archived
+sparrow captains [--all]                           this project's captains: @handle (you), title, status, team working/total, last activity, resume line under each
+sparrow title "<what you work on>"                 set my captain title (PATCH /api/captains/<me>); agents get an error
+sparrow whoami                                     + for a captain: handle, title, fleet and resume line; for an agent: whose team it is on
 sparrow resumes                                    the directory: slug, title, harness/model, can_hire, description
 sparrow roster [--all]                             agents in my project: @handle, resume, harness, state, last update + age
 sparrow hire <resume> "<task>" [--name h] [--cwd d] [--tmux-session s] [--tmux-window w] [--card N] [--model m] [--effort e]

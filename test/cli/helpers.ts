@@ -97,14 +97,15 @@ export function agent(over: Partial<Agent> = {}): Agent {
     harness: 'claude', model: 'opus', effort: 'high', can_hire: [], parent_id: 'ag_CAPTAIN', depth: 1,
     cwd: '/x/plutus', tmux_session: 'sparrow-plutus', tmux_window: 'james', tmux_window_id: '@3',
     session_id: null, state: 'working', call_id: 'call_1', last_end_reason: null, last_update: null,
-    last_update_at: null, last_seen_at: null, resume_hash: null, last_run: null, created_at: T0, updated_at: T0, ...over,
+    last_update_at: null, last_seen_at: null, resume_hash: null, last_run: null, fleet_id: 'ag_CAPTAIN', captain: null, created_at: T0, updated_at: T0, ...over,
   };
 }
 
 export const captain = agent({
   id: 'ag_CAPTAIN', handle: 'captain', kind: 'human', resume: 'captain', title: 'Captain', harness: 'human',
   model: null, effort: null, can_hire: ['*'], parent_id: null, depth: 0, tmux_window: 'captain', tmux_window_id: null,
-  state: 'idle', call_id: null,
+  state: 'idle', call_id: null, fleet_id: 'ag_CAPTAIN',
+  captain: { title: null, branch: 'main', harness: 'claude', origin: 'terminal', archived_at: null },
 });
 
 export function msg(over: Partial<MessageView> = {}): MessageView {

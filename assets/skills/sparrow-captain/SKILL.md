@@ -5,13 +5,26 @@ description: "Run a team of AI agents with Sparrow from your own session (you ar
 
 # Sparrow captain
 
-Sparrow is a local server that spawns named agents (Claude Code, Codex, OpenCode) as real TUIs in tmux windows. You hire them from **resumes**, they report back through the `sparrow` CLI, and their results land in your **inbox**. You are the human's captain: plan, delegate, review, integrate. Your own session is never spawned; with no `SPARROW_AGENT_ID` set, the CLI registers you as `@captain` of the project (the git root of your cwd).
+Sparrow is a local server that spawns named agents (Claude Code, Codex, OpenCode) as real TUIs in tmux windows. You hire them from **resumes**, they report back through the `sparrow` CLI, and their results land in your **inbox**. You are the human's captain: plan, delegate, review, integrate. Your own session is never spawned; with no `SPARROW_AGENT_ID` set, the CLI registers this session as a captain of the project (the git root of your cwd).
+
+**One captain per session.** Many captains can work in one project at once (one per feature or fix); each has its own team. Your first captain in a project is `@captain`, later ones are `@cap-orion`, `@cap-vega`, … The first `sparrow` command of a new session prints `You are @cap-… , a new captain in <project>`.
 
 ## 1. Make sure the server runs
 ```bash
 sparrow status            # "Sparrow server: up …" or "not running"
 ```
 If the server is down, tell the user and stop. Never start it unprompted. The user starts Sparrow explicitly by running `sparrow`.
+
+## 1b. Name your work, find your way back
+- **Start every job with `sparrow title "<what you work on>"`** (one line: "Rate limiting for login"). The user sees it in the UI and in `sparrow captains`, so it is how they tell your feature from the others.
+- **Your team is private.** `sparrow roster` lists only you and your hires; you cannot message, release or assign cards to another captain's agents (403). Results, questions and updates from your hires reach only you. The board is shared by every captain of the project.
+- `sparrow captains [--all]` lists this project's captains: handle (you), title, status, team working/total, last activity, and the exact line to reopen each.
+- `sparrow whoami` shows your handle, title, fleet and resume line.
+- **Getting back in:** the user reopens a captain with its resume line (`cd <dir> && claude --resume <session>`), or `sparrow captain resume @cap-orion` (opens it in tmux).
+- **After `/clear`** Claude Code gives the same process a new session id. Sparrow re-attaches by the process id (`CLAUDE_PID`), so you normally stay the same captain with your team. If a command instead prints `You are @cap-…, a new captain`, run `sparrow captain adopt @<your handle>` to take your old identity back. Captains launched by `sparrow captain` keep their identity through `/clear` too.
+- Codex and OpenCode terminal sessions: Codex has a session id; an OpenCode terminal captain has none, so it is "the project's only captain" while it is alone and gets a 409 naming the captains once there are several (set `SPARROW_CAPTAIN_ID=<id|handle>`).
+- `sparrow captains` hides untitled, team-less terminal sessions (background or nested `claude -p` runs); `--all` shows them and archived captains.
+- The user (not you) launches captains: `sparrow captain [--cwd d] [--name n] [--title "…"]`.
 
 ## 2. Pick the right resume
 ```bash
@@ -34,7 +47,7 @@ A good brief = goal, files/context, acceptance checks (commands that prove it), 
 
 Flags:
 - `--cwd <dir>` — where the agent works (default: your cwd). Need isolation? Only when the user asks, create a git worktree yourself (`git worktree add ../proj-maya -b maya/rate-limit`) and pass `--cwd ../proj-maya`.
-  - A git worktree is its own Sparrow project. The project is the git root of the directory you run `sparrow` from, and a worktree has its own root: running `sparrow` inside `../proj-maya` registers a separate `@captain` there, with its own board, roster, inbox and tmux session `sparrow-<worktree-dir>` (`sparrow-proj-maya`), and cards on the main checkout's board are not visible. `--cwd` only sets where the hired agent works; it never changes the project. To keep one board and one roster, run `sparrow` from the main checkout and pass `--cwd <worktree>`. Work the other way round (captain inside the worktree) only when you want that isolated project.
+  - **Worktrees belong to their repo's project.** The project is the repo's main checkout, found from the directory you run `sparrow` in: a linked git worktree, anywhere on disk, resolves to the same project, shares its board, and gets its own tmux session. Run **one captain per worktree** (one per feature); each has its own team and inbox. `--cwd` only sets where a hired agent works; it never changes the project. A directory outside any git repo is a project of its own.
 - `--tmux-session <s>` / `--tmux-window <w>` — where its window opens (default `sparrow-<project>` / the handle). Respawns reuse them.
 - `--model`, `--effort` — don't. Hire the resume as is; its model and effort are the user's choice (set in the UI). Pass them only when the user explicitly asks for a specific model or effort.
 - `--card N` — assign a board card (moves it to In progress).
@@ -61,7 +74,7 @@ sparrow send @maya "Use Redis, not memory; REDIS_URL is in .env"   # answers a q
 sparrow log @maya -n 20                                           # what it said and received
 ```
 Messaging an agent whose window closed respawns it **on the same session** — it remembers everything. Crashed agents restart automatically once; after that you get a crash notice and one message from you resumes it.
-Communication uses direct messages; `group` is a reserved handle and cannot be used with `send` or `log`.
+Communication uses direct messages; `group` is a reserved handle and cannot be used with `send` or `log`. You can only message your own team; other captains' agents answer 403.
 
 Verify before you trust: for important results, hire a `verifier` with the builder's evidence and acceptance checks.
 
@@ -111,8 +124,8 @@ sparrow release @maya               # closes its window for good; it never wakes
 - Order: build → verify → merge → release. Never release a builder before its verifier passes; a released agent can't take the fix.
 
 ## Watch
-- Agent windows: `tmux attach -t sparrow-<project>` (each agent is a window named after its handle). `sparrow status` prints exact attach lines.
-- Web UI (board, chat, agents, live screen peek): use the URL printed by `sparrow status`.
+- Agent windows: `tmux attach -t sparrow-<project>` for `@captain`'s team, `sparrow-<project>-<captain handle>` for any other captain's (each agent is a window named after its handle). `sparrow status` prints exact attach lines.
+- Web UI (captains, board, live screen peek): use the URL printed by `sparrow status`.
 
 ## Rules of thumb
 - Delegate whole, checkable tasks; keep integration and final judgment yourself.

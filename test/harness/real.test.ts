@@ -38,7 +38,7 @@ function agentFor(h: HarnessName, cwd: string): Agent {
     id: `ag_real${h}${Date.now().toString(36)}`, project_id: 'real', handle: `real-${h}`, kind: 'agent', resume: h, title: 'Real',
     harness: h, model: CFG[h].model, effort: CFG[h].effort, can_hire: [], parent_id: null, depth: 1, cwd,
     tmux_session: 'sptest-real', tmux_window: h, tmux_window_id: null, session_id: null, state: 'working', call_id: null,
-    last_end_reason: null, last_update: null, last_update_at: null, last_seen_at: null, resume_hash: null, last_run: null, created_at: Date.now(), updated_at: Date.now(),
+    last_end_reason: null, last_update: null, last_update_at: null, last_seen_at: null, resume_hash: null, last_run: null, fleet_id: 'ag_realfleet', captain: null, created_at: Date.now(), updated_at: Date.now(),
   };
 }
 

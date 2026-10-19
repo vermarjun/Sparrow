@@ -30,6 +30,7 @@ export interface Settings {
   doctor_timeout_ms: number;  // per-harness cap for the doctor's live round trip
   provider_error_threshold: number;       // consecutive provider errors that mark a harness+provider degraded
   provider_error_window_minutes: number;  // ...within this many minutes
+  max_running_per_captain: number; // working agents per captain fleet; 0 = no per-fleet cap (multi-captain)
   doctor_models: Partial<Record<'claude' | 'codex' | 'opencode', string>>; // override the auto-picked cheapest model per harness
 }
 
@@ -47,6 +48,7 @@ export const DEFAULT_SETTINGS: Settings = {
   doctor_timeout_ms: 90000,
   provider_error_threshold: 3,
   provider_error_window_minutes: 15,
+  max_running_per_captain: 0,
   doctor_models: {},
 };
 

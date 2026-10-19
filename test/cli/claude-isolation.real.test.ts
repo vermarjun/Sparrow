@@ -30,7 +30,7 @@ describe.skipIf(process.env.SPARROW_REAL_CLI !== '1')('real Claude worker isolat
       harness: 'claude', model: 'haiku', effort: 'low', can_hire: [], parent_id: null, depth: 1, cwd,
       tmux_session: 'u1cli-isolation', tmux_window: 'haiku', tmux_window_id: null, session_id: null, state: 'working', call_id: 'cli-real',
       last_end_reason: null, last_update: null, last_update_at: null, last_seen_at: null, resume_hash: null, last_run: null,
-      created_at: Date.now(), updated_at: Date.now(),
+      fleet_id: 'ag_u1cli_isolation', captain: null, created_at: Date.now(), updated_at: Date.now(),
     };
     try {
       const user = JSON.parse(readFileSync(join(homedir(), '.claude/settings.json'), 'utf8'));

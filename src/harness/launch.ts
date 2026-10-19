@@ -64,7 +64,7 @@ export function writeCallTexts(agentId: string, callId: string, systemPrompt: st
 // Session-identity env vars a spawned harness must NOT inherit from whoever started the server.
 export const UNSET_VARS = ['CLAUDECODE', 'CLAUDE_CODE_SESSION_ID', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_MESSAGING_SOCKET',
   'CLAUDE_CODE_MESSAGING_TOKEN', 'CLAUDE_PID', 'CLAUDE_EFFORT', 'CLAUDE_CODE_SSE_PORT', 'TMUX_PANE_SPARROW',
-  'CLAUDE_CODE_CHILD_SESSION', 'CLAUDE_CODE_SESSION_ATTENDED', 'CLAUDE_CODE_EXECPATH'];
+  'CLAUDE_CODE_CHILD_SESSION', 'CLAUDE_CODE_SESSION_ATTENDED', 'CLAUDE_CODE_EXECPATH', 'SPARROW_CAPTAIN_ID'];
 // Prefix families unset too — except configuration homes, which hold auth.
 export const UNSET_PREFIX_RE = '^(CODEX_|OPENCODE_)';
 export const KEEP_RE = '^(CODEX_HOME|OPENCODE_CONFIG|OPENCODE_CONFIG_DIR|OPENCODE_CONFIG_CONTENT)$';
