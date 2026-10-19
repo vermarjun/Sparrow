@@ -22,10 +22,21 @@ describe('sortListCards', () => {
   })
 
   test('sorts values and leaves unset estimates last', () => {
-    expect(ids('return')).toEqual([2, 1, 3])
-    expect(ids('effort')).toEqual([1, 2, 3])
+    expect(ids('payoff')).toEqual([2, 1, 3])
+    expect(ids('payoff', 'desc')).toEqual([1, 2, 3])
     expect(ids('estimate')).toEqual([1, 2, 3])
     expect(ids('estimate', 'desc')).toEqual([2, 1, 3])
+  })
+
+  test('payoff sorts by return per effort and leaves cards without a payoff last', () => {
+    const mixed = [
+      mkCard(1, { impact: 'high', effort: 'high' }), // Big bet: 3/3
+      mkCard(2, { impact: 'high', effort: 'low' }), // Quick win: 3/1
+      mkCard(3, { impact: 'high', effort: null }), // only return set: no payoff
+      mkCard(4, { impact: 'low', effort: 'high' }), // Money pit: 1/3
+    ]
+    expect(sortListCards(mixed, 'payoff', 'asc').map((c) => c.id)).toEqual([4, 1, 2, 3])
+    expect(sortListCards(mixed, 'payoff', 'desc').map((c) => c.id)).toEqual([2, 1, 4, 3])
   })
 
   test('age is newest first ascending; updated is oldest first ascending', () => {

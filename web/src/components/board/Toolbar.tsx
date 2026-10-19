@@ -1,5 +1,5 @@
 import { type RefObject } from 'react'
-import { ArrowUpDown, Ban, Check, ChevronLeft, ChevronRight, Columns3, Flame, List, Plus, Search, Tag, User, X, Zap } from 'lucide-react'
+import { ArrowUpDown, Check, ChevronLeft, ChevronRight, Columns3, Keyboard, List, Plus, Search, Tag, User, X } from 'lucide-react'
 import type { Agent, Card } from '@shared/types'
 import { CARD_SORTS, type CardSort } from '@shared/cards'
 import { Button } from '@/components/ui/button'
@@ -7,25 +7,29 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { type BoardFilters, hasFilters, NO_FILTERS } from '@/lib/boardFilter'
 import type { BoardPrefs } from '@/lib/boardPrefs'
+import { TRIAGE_KEYS } from '@/lib/triage'
 import { cn } from '@/lib/utils'
 import { Insights } from './Insights'
 import { CategoryChip, Segmented } from './markers'
+import { Swatch } from './swatch'
+import type { SwatchKind } from '@/lib/swatchStyle'
 
-export interface Counts { urgent: number; blocked: number; quick: number }
+export interface Counts { urgent: number; blocked: number; quick: number; later: number }
 
-function FilterChip({ on, onClick, icon, label, count, tone, name }: { on: boolean; onClick: () => void; icon: React.ReactNode; label: string; count: number; tone: string; name: string }) {
+function FilterChip({ on, onClick, kind, label, count, tone, hint }: { on: boolean; onClick: () => void; kind: SwatchKind; label: string; count: number; tone: string; hint?: string }) {
   return (
     <button
       type="button"
       aria-pressed={on}
-      data-filter={name}
+      data-filter={kind}
+      title={hint}
       onClick={onClick}
       className={cn(
-        'inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium whitespace-nowrap transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none [&_svg]:size-3.5',
+        'inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium whitespace-nowrap transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none',
         on ? tone : 'border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50',
       )}
     >
-      {icon}
+      <Swatch kind={kind} />
       {label}
       <span className={cn('tabular-nums', on ? 'opacity-80' : 'text-zinc-400')}>{count}</span>
     </button>
@@ -42,6 +46,7 @@ export function Toolbar({ prefs, update, categories, agents, counts, searchRef }
 }) {
   const f = prefs.filters
   const setF = (patch: Partial<BoardFilters>) => update((p) => ({ ...p, filters: { ...p.filters, ...patch } }))
+  const laterOn = prefs.laterOpen.proposed && prefs.laterOpen.todo
   const toggleCat = (c: string) => setF({ categories: f.categories.includes(c.toLowerCase()) ? f.categories.filter((x) => x !== c.toLowerCase()) : [...f.categories, c.toLowerCase()] })
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-2 px-4 pb-2.5" data-testid="toolbar">
@@ -77,9 +82,10 @@ export function Toolbar({ prefs, update, categories, agents, counts, searchRef }
       )}
 
       <span className="mx-0.5 h-4 w-px bg-zinc-200" />
-      <FilterChip name="urgent" on={f.urgent} onClick={() => setF({ urgent: !f.urgent })} icon={<Flame />} label="Urgent" count={counts.urgent} tone="border-red-300 bg-red-50 text-red-700" />
-      <FilterChip name="blocked" on={f.blocked} onClick={() => setF({ blocked: !f.blocked })} icon={<Ban />} label="Blocked" count={counts.blocked} tone="border-orange-300 bg-orange-50 text-orange-700" />
-      <FilterChip name="quick" on={f.quick} onClick={() => setF({ quick: !f.quick })} icon={<Zap />} label="Quick wins" count={counts.quick} tone="border-green-300 bg-green-50 text-green-700" />
+      <FilterChip kind="urgent" on={f.urgent} onClick={() => setF({ urgent: !f.urgent })} label="Urgent" count={counts.urgent} tone="border-red-300 bg-red-50 text-red-700" />
+      <FilterChip kind="blocked" on={f.blocked} onClick={() => setF({ blocked: !f.blocked })} label="Blocked" count={counts.blocked} tone="border-orange-300 bg-orange-50 text-orange-700" />
+      <FilterChip kind="quick" on={f.quick} onClick={() => setF({ quick: !f.quick })} label="Quick wins" count={counts.quick} tone="border-emerald-300 bg-emerald-50 text-emerald-700" />
+      <FilterChip kind="later" on={laterOn} onClick={() => update((p) => ({ ...p, laterOpen: { proposed: !laterOn, todo: !laterOn } }))} label="Later" count={counts.later} tone="border-slate-300 bg-slate-100 text-slate-700" hint={laterOn ? 'Hide the Later lists' : 'Show the Later lists'} />
 
       <Popover>
         <PopoverTrigger asChild>
@@ -126,7 +132,39 @@ export function Toolbar({ prefs, update, categories, agents, counts, searchRef }
           <X /> Clear
         </Button>
       )}
+
+      {prefs.view === 'board' && <KeyboardHint />}
     </div>
+  )
+}
+
+/** "Keyboard: j/k a l d u": the triage keys of the board, in a popover. */
+function KeyboardHint() {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          data-testid="keyboard-hint"
+          className="ml-auto inline-flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none [&_svg]:size-3.5"
+        >
+          <Keyboard />
+          Keyboard: <span className="font-mono text-[11px] tracking-tight">j/k a l d u</span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-72" align="end" data-testid="keyboard-help">
+        <p className="px-1 pb-1.5 text-xs font-semibold text-zinc-700">Triage from the keyboard</p>
+        <dl className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1.5 px-1 text-xs">
+          {TRIAGE_KEYS.map(([keys, what]) => (
+            <div key={keys} className="contents">
+              <dt><kbd className="rounded border border-zinc-200 bg-zinc-50 px-1.5 py-px font-mono text-[11px] whitespace-nowrap text-zinc-600">{keys}</kbd></dt>
+              <dd className="text-zinc-600">{what}</dd>
+            </div>
+          ))}
+        </dl>
+        <p className="px-1 pt-2 text-[11px] text-zinc-400">a, l, d work on Proposed and To do cards. Keys pause while a field or the ticket sheet is open.</p>
+      </PopoverContent>
+    </Popover>
   )
 }
 

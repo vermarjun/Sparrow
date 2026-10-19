@@ -1,17 +1,20 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useDroppable } from '@dnd-kit/core'
-import { ChevronRight, Moon } from 'lucide-react'
+import { ChevronRight, Clock, Moon } from 'lucide-react'
 import type { Agent, Card, CardState } from '@shared/types'
-import type { CardSort } from '@shared/cards'
+import { type CardSort, formatEstimate } from '@shared/cards'
 import { type DragEndEvent, KanbanBoard, KanbanCard, KanbanCards, KanbanHeader, KanbanProvider } from '@/components/kibo-ui/kanban'
 import { type ColumnView, LATER_STATES } from '@/lib/boardFilter'
 import { type DragItem, laterZoneId, planDrop, zoneState } from '@/lib/boardDrag'
 import type { BoardPrefs } from '@/lib/boardPrefs'
 import { COLUMNS, type ColumnStyle } from '@/lib/boardStyle'
 import { patchCard } from '@/lib/cardActions'
+import { columnStats, STALE_DAYS } from '@/lib/triage'
 import { useStore } from '@/lib/store'
 import { cn } from '@/lib/utils'
 import { CardFace, type FaceActions } from './CardFace'
+import { Tip } from './markers'
+import { Swatch } from './swatch'
 
 type Col = ColumnStyle & Record<string, unknown>
 
@@ -22,6 +25,39 @@ const COLUMN_HINT: Partial<Record<CardState, React.ReactNode>> = {
   in_progress: <>A ticket moves here when an agent picks it up.</>,
   review: 'Agents send finished work here for your review.',
   done: 'Approved tickets land here.',
+}
+
+const plural = (n: number, word: string) => `${n} ${word}`
+
+/** Planning numbers beside the count: urgent / blocked dots (Proposed, To do), stale proposals, and the total estimate. No words, tooltips carry them. */
+function HeaderStats({ state, active, now }: { state: CardState; active: Card[]; now: number }) {
+  const st = columnStats(state, active, now)
+  const triage = LATER_STATES.includes(state)
+  const num = 'inline-flex items-center gap-1 text-[11px] font-semibold tabular-nums'
+  return (
+    <span className="ml-auto flex items-center gap-2" data-stats={state}>
+      {state === 'proposed' && st.stale > 0 && (
+        <Tip label={`${st.stale} proposed more than ${STALE_DAYS} days ago`}>
+          <span className={cn(num, 'text-zinc-500')} data-stat="stale"><Clock className="size-3" />{st.stale}</span>
+        </Tip>
+      )}
+      {triage && st.urgent > 0 && (
+        <Tip label={plural(st.urgent, 'urgent')}>
+          <span className={cn(num, 'text-red-700')} data-stat="urgent"><Swatch kind="urgent" shape="dot" />{st.urgent}</span>
+        </Tip>
+      )}
+      {triage && st.blocked > 0 && (
+        <Tip label={plural(st.blocked, 'blocked')}>
+          <span className={cn(num, 'text-orange-700')} data-stat="blocked"><Swatch kind="blocked" shape="dot" />{st.blocked}</span>
+        </Tip>
+      )}
+      {st.estimate > 0 && (
+        <Tip label={`Estimated ${formatEstimate(st.estimate)} of work in this column`}>
+          <span className="text-[11px] font-medium text-zinc-500/90 tabular-nums" data-stat="estimate">~{formatEstimate(st.estimate)}</span>
+        </Tip>
+      )}
+    </span>
+  )
 }
 
 /** The dashed divider that ends Proposed and To do. It is also a drop target: dropping a card on it shelves the card. */
@@ -46,7 +82,7 @@ function LaterLine({ state, count, open, dragging, onToggle }: { state: CardStat
   )
 }
 
-export function BoardColumns({ groups, columns, prefs, sort, agents, now, act, onOpen, onLaterToggle, emptyText }: {
+export function BoardColumns({ groups, columns, prefs, sort, agents, now, act, onOpen, onLaterToggle, emptyText, focusId }: {
   groups: Record<CardState, ColumnView>
   columns: ColumnStyle[]
   prefs: BoardPrefs
@@ -57,6 +93,8 @@ export function BoardColumns({ groups, columns, prefs, sort, agents, now, act, o
   onOpen: (id: number) => void
   onLaterToggle: (s: 'proposed' | 'todo') => void
   emptyText: string | null
+  /** The card the keyboard focus ring is on (j/k triage). */
+  focusId: number | null
 }) {
   const cards = useStore((s) => s.cards)
   const [dragging, setDragging] = useState(false)
@@ -80,6 +118,11 @@ export function BoardColumns({ groups, columns, prefs, sort, agents, now, act, o
   useEffect(() => {
     if (!dragging) setItems(derived)
   }, [derived, dragging])
+
+  // Keep the keyboard-focused card in view while j/k walks the board.
+  useEffect(() => {
+    if (focusId !== null) document.querySelector(`[data-card-id="${focusId}"]`)?.scrollIntoView({ block: 'nearest' })
+  }, [focusId])
 
   const onDragEnd = (event: DragEndEvent, final: DragItem[]) => {
     const card = snapshot[Number(event.active.id)]
@@ -116,7 +159,8 @@ export function BoardColumns({ groups, columns, prefs, sort, agents, now, act, o
             <KanbanHeader data-column={column.id} className={cn('flex items-center gap-2 border-b px-3 py-2 text-[12.5px] font-semibold', style.head, style.edge, style.title)}>
               <span className={cn('size-2 rounded-full', style.dot)} />
               {style.name}
-              <span className={cn('ml-auto min-w-5 rounded-full px-1.5 py-px text-center text-[11px] font-semibold tabular-nums', style.count)} data-count={column.id}>{count}</span>
+              <HeaderStats state={column.id as CardState} active={g.active} now={now} />
+              <span className={cn('min-w-5 rounded-full px-1.5 py-px text-center text-[11px] font-semibold tabular-nums', style.count)} data-count={column.id}>{count}</span>
             </KanbanHeader>
             <div className="min-h-0 flex-1 overflow-y-auto [&_[data-radix-scroll-area-viewport]>div]:block! [&_[data-slot=scroll-area]]:overflow-visible">
               <KanbanCards<DragItem> id={column.id} className="min-h-16 gap-2 px-2 pt-2 pb-1">
@@ -130,7 +174,7 @@ export function BoardColumns({ groups, columns, prefs, sort, agents, now, act, o
                       <KanbanCard<DragItem>
                         {...item}
                         onActivate={() => onOpen(card.id)}
-                        className={cn('gap-0 rounded-lg border-zinc-200/90 bg-white p-0 shadow-xs ring-0 transition-shadow hover:border-zinc-300 hover:shadow-sm', item.later && 'border-dashed bg-slate-50 hover:bg-white')}
+                        className={cn('gap-0 rounded-lg border-zinc-200/90 bg-white p-0 shadow-xs ring-0 transition-shadow hover:border-zinc-300 hover:shadow-sm', item.later && 'border-dashed bg-slate-50 hover:bg-white', item.cardId === focusId && 'kb-focus ring-2 ring-indigo-500 ring-offset-1 ring-offset-white')}
                       >
                         <CardFace card={card} agents={agents} density={prefs.density} now={now} act={act} onOpen={() => onOpen(card.id)} />
                       </KanbanCard>

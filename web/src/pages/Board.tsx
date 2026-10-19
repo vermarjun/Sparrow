@@ -8,9 +8,10 @@ import { TicketSheet } from '@/components/board/TicketSheet'
 import { useBoardPrefs } from '@/components/board/usePrefs'
 import type { FaceActions } from '@/components/board/CardFace'
 import { useNow } from '@/components/sparrow/bits'
-import { categoriesOf, filterCards, groupColumns, hasFilters, isLive, summarize, summaryText } from '@/lib/boardFilter'
+import { categoriesOf, filterCards, groupColumns, hasFilters, isLive, isShelved, summarize, summaryText } from '@/lib/boardFilter'
 import { COLUMNS } from '@/lib/boardStyle'
-import { quickMove, setLater } from '@/lib/cardActions'
+import { patchCard, quickMove, setLater } from '@/lib/cardActions'
+import { boardOrder, focusAfterRemoval, stepFocus, triageAction } from '@/lib/triage'
 import { useStore } from '@/lib/store'
 
 const typing = (el: EventTarget | null) => {
@@ -27,6 +28,7 @@ export function BoardPage() {
   const [open, setOpen] = useState<number | null>(null)
   const [creating, setCreating] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
+  const [focusId, setFocusId] = useState<number | null>(null)
 
   const all = useMemo(() => Object.values(cards), [cards])
   const scope = useMemo(() => (prefs.showDropped ? all : all.filter((c) => c.state !== 'dropped')), [all, prefs.showDropped])
@@ -34,7 +36,7 @@ export function BoardPage() {
   const groups = useMemo(() => groupColumns(filtered, prefs.sort), [filtered, prefs.sort])
   const counts = useMemo(() => {
     const s = summarize(scope, scope)
-    return { urgent: s.urgent, blocked: s.blocked, quick: scope.filter((c) => isLive(c) && isQuickWin(c)).length }
+    return { urgent: s.urgent, blocked: s.blocked, quick: scope.filter((c) => isLive(c) && isQuickWin(c)).length, later: s.later }
   }, [scope])
   const summary = summaryText(summarize(filtered, scope))
   const categories = useMemo(() => categoriesOf(all), [all])
@@ -60,6 +62,37 @@ export function BoardPage() {
     drop: (c) => void quickMove(c, 'dropped', 'dropped'),
   }
 
+  // Keyboard triage (board view): j/k move a focus ring through the cards in board order, a/l/d/u/1-3 act on the focused card.
+  // The listener is registered once and reads the latest state through a ref.
+  const order = useMemo(() => boardOrder(groups, columns, prefs.laterOpen), [groups, columns, prefs.laterOpen])
+  const live = useRef({ order, board: prefs.view === 'board', focusId, act, open })
+  useEffect(() => { live.current = { order, board: prefs.view === 'board', focusId, act, open } })
+  useEffect(() => {
+    const on = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null
+      const { order, board, focusId, act, open } = live.current
+      if (!board || open !== null || e.defaultPrevented || typing(e.target) || document.querySelector('[role=dialog]')) return
+      if (t?.closest('[role=listbox],[role=menu],[aria-pressed=true][data-kanban-item]')) return // an open menu, or a keyboard drag in flight
+      if (e.key === 'Enter' && t?.closest('button,a,[data-kanban-item]')) return // those handle Enter themselves
+      const card = order.find((c) => c.id === focusId) ?? null
+      const a = triageAction(e, card)
+      if (!a || (a.kind === 'clear' && focusId === null)) return
+      e.preventDefault()
+      const advance = () => card && setFocusId(focusAfterRemoval(order, card.id))
+      switch (a.kind) {
+        case 'step': setFocusId(stepFocus(order, focusId, a.dir)); break
+        case 'clear': setFocusId(null); break
+        case 'open': if (card) setOpen(card.id); break
+        case 'accept': if (card) { act.accept(card); advance() } break
+        case 'later': if (card) { if (isShelved(card)) act.bringBack(card); else act.later(card); advance() } break
+        case 'drop': if (card) { act.drop(card); advance() } break
+        case 'patch': if (card) void patchCard(card.id, a.body); break
+      }
+    }
+    window.addEventListener('keydown', on)
+    return () => window.removeEventListener('keydown', on)
+  }, [])
+
   return (
     <div className="flex h-full flex-col">
       <BoardHeader summary={summary} prefs={prefs} update={update} droppedCount={droppedCount} onNew={() => setCreating(true)} cards={all} />
@@ -83,7 +116,8 @@ export function BoardPage() {
             agents={agents}
             now={now}
             act={act}
-            onOpen={setOpen}
+            onOpen={(id) => { setOpen(id); setFocusId(id) }}
+            focusId={focusId}
             onLaterToggle={(s) => update((p) => ({ ...p, laterOpen: { ...p.laterOpen, [s]: !p.laterOpen[s] } }))}
             emptyText={hasFilters(prefs.filters) ? 'No tickets match the filters.' : null}
           />
@@ -94,7 +128,7 @@ export function BoardPage() {
           onOpen={setOpen}
           sortKey={prefs.list.key}
           sortDir={prefs.list.dir}
-          onSort={(k) => update((p) => ({ ...p, list: { key: k, dir: p.list.key === k ? (p.list.dir === 'asc' ? 'desc' : 'asc') : k === 'return' ? 'desc' : 'asc' } }))}
+          onSort={(k) => update((p) => ({ ...p, list: { key: k, dir: p.list.key === k ? (p.list.dir === 'asc' ? 'desc' : 'asc') : k === 'payoff' ? 'desc' : 'asc' } }))}
         />
       )}
 

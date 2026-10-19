@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
-import { ArrowDown, ArrowUp, ArrowUpDown, Ban, Check, Flame, Moon, Zap } from 'lucide-react'
+import { ArrowDown, ArrowUp, ArrowUpDown, Check, Moon } from 'lucide-react'
 import type { Agent, Card } from '@shared/types'
-import { formatEstimate, isQuickWin } from '@shared/cards'
+import { formatEstimate } from '@shared/cards'
 import { ago, fullDate } from '@/lib/format'
 import { isShelved } from '@/lib/boardFilter'
 import { sortListCards, listKeyFor, listSortLabel } from '@/lib/listSort'
@@ -10,9 +10,11 @@ import { useNow } from '@/components/sparrow/bits'
 import { COLUMNS, COLUMN_BY_STATE } from '@/lib/boardStyle'
 import { useStore } from '@/lib/store'
 import { cn } from '@/lib/utils'
-import { Assignee, CategoryChip, DoneMark, StatePill, Tip } from './markers'
+import { railOf } from '@/lib/faceA'
+import { Avatar, CategoryLabel, PayoffLabel, StatePill, Tip } from './markers'
+import { Swatch } from './swatch'
 
-const SORT_KEYS: ListKey[] = ['key', 'title', 'state', 'category', 'return', 'effort', 'estimate', 'age', 'assignee', 'updated']
+const SORT_KEYS: ListKey[] = ['key', 'title', 'state', 'category', 'payoff', 'estimate', 'age', 'assignee', 'updated']
 
 export function ListView({ cards, onOpen, sortKey, sortDir, onSort }: {
   cards: Card[]
@@ -32,18 +34,18 @@ export function ListView({ cards, onOpen, sortKey, sortDir, onSort }: {
   return (
     <div className="flex min-h-0 flex-1 flex-col px-4 pb-4">
       <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-zinc-200/80 bg-white shadow-sm" data-testid="board-list">
-        <table className="w-full min-w-[1120px] border-separate border-spacing-0 text-left text-xs">
+        <table className="w-full min-w-[1000px] border-separate border-spacing-0 text-left text-xs">
           <thead className="sticky top-0 z-10 bg-zinc-50/95 text-[10px] font-semibold tracking-[0.08em] text-zinc-500 uppercase backdrop-blur">
             <tr>
               {SORT_KEYS.slice(0, 4).map((key) => <SortHeader key={key} sortKey={sortKey} sortDir={sortDir} onSort={onSort} listKey={key} />)}
-              <th scope="col" className="w-48 border-b border-zinc-200 px-3 py-2">Flags</th>
+              <th scope="col" className="w-20 border-b border-zinc-200 px-3 py-2">Flags</th>
               {SORT_KEYS.slice(4).map((key) => <SortHeader key={key} sortKey={sortKey} sortDir={sortDir} onSort={onSort} listKey={key} />)}
             </tr>
           </thead>
           {byState.length ? byState.map((group) => (
             <tbody key={group.id}>
               <tr className={cn('sticky top-9 z-[5] border-b', COLUMN_BY_STATE[group.id].head, COLUMN_BY_STATE[group.id].edge)}>
-                <th colSpan={11} scope="rowgroup" className={cn('h-7 px-3 text-left text-[11px] font-semibold', COLUMN_BY_STATE[group.id].title)}>
+                <th colSpan={10} scope="rowgroup" className={cn('h-7 px-3 text-left text-[11px] font-semibold', COLUMN_BY_STATE[group.id].title)}>
                   <span className="inline-flex items-center gap-2"><span className={cn('size-1.5 rounded-full', COLUMN_BY_STATE[group.id].dot)} />{group.name}<span className="font-normal opacity-70 tabular-nums">{group.cards.length}</span></span>
                 </th>
               </tr>
@@ -52,7 +54,7 @@ export function ListView({ cards, onOpen, sortKey, sortDir, onSort }: {
               ))}
             </tbody>
           )) : (
-            <tbody><tr><td colSpan={11} className="px-4 py-14 text-center">
+            <tbody><tr><td colSpan={10} className="px-4 py-14 text-center">
               <div className="mx-auto flex max-w-xs flex-col items-center gap-2 text-zinc-400">
                 <div className="flex size-8 items-center justify-center rounded-full bg-zinc-100"><Check className="size-4 text-zinc-500" /></div>
                 <p className="text-xs font-medium text-zinc-600">No tickets match this view</p>
@@ -72,7 +74,7 @@ export function ListView({ cards, onOpen, sortKey, sortDir, onSort }: {
 
 function SortHeader({ listKey, sortKey, sortDir, onSort }: { listKey: ListKey; sortKey: ListKey; sortDir: 'asc' | 'desc'; onSort: (key: ListKey) => void }) {
   const active = sortKey === listKey
-  const widths: Partial<Record<ListKey, string>> = { key: 'w-24', title: 'w-[28%] min-w-64', state: 'w-28', category: 'w-28', return: 'w-20', effort: 'w-20', estimate: 'w-24', age: 'w-16', assignee: 'w-28', updated: 'w-20' }
+  const widths: Partial<Record<ListKey, string>> = { key: 'w-24', title: 'w-[30%] min-w-64', state: 'w-28', category: 'w-28', payoff: 'w-28', estimate: 'w-24', age: 'w-16', assignee: 'w-32', updated: 'w-20' }
   return (
     <th scope="col" className={cn('h-9 border-b border-zinc-200 px-3', widths[listKey])}>
       <button
@@ -93,6 +95,7 @@ function SortHeader({ listKey, sortKey, sortDir, onSort }: { listKey: ListKey; s
 function TicketRow({ card, agents, now, onOpen }: { card: Card; agents: Record<string, Agent>; now: number; onOpen: (id: number) => void }) {
   const later = isShelved(card)
   const done = card.state === 'done'
+  const rail = railOf(card)
   const assignee = card.assignee_id ? agents[card.assignee_id] : null
   const createdBy = card.created_by === 'user' ? 'you' : agents[card.created_by] ? `@${agents[card.created_by].handle}` : card.created_by
   return (
@@ -105,55 +108,37 @@ function TicketRow({ card, agents, now, onOpen }: { card: Card; agents: Record<s
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(card.id) } }}
       className={cn('group cursor-pointer outline-none focus-visible:relative focus-visible:z-[1] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-500', later ? 'bg-slate-50/90 text-slate-500 hover:bg-slate-100/80' : 'bg-white text-zinc-700 hover:bg-violet-50/40')}
     >
-      <td className={cn('whitespace-nowrap border-b border-zinc-100 px-3 py-2.5 font-mono text-[11px] tabular-nums text-zinc-400', card.urgent && !done ? 'border-l-[3px] border-l-red-500' : card.blocked_on && !done ? 'border-l-[3px] border-l-orange-500' : done ? 'border-l-[3px] border-l-emerald-400' : 'border-l-[3px] border-l-transparent')}>
+      <td className={cn('whitespace-nowrap border-b border-zinc-100 px-3 py-2.5 font-mono text-[11px] tabular-nums text-zinc-400')}>
         {listKeyFor(card)}
       </td>
       <td className="max-w-0 border-b border-zinc-100 px-3 py-2.5">
         <div className="flex min-w-0 items-center gap-1.5">
-          {done && <DoneMark className="size-3.5 shrink-0" />}
+          {done && <Check className="size-3.5 shrink-0 text-emerald-600" strokeWidth={3} aria-label="Done" />}
           <span className={cn('truncate text-[12px] font-medium', later ? 'text-slate-500' : 'text-zinc-800 group-hover:text-zinc-950')}>{card.title}</span>
         </div>
       </td>
       <td className="border-b border-zinc-100 px-3 py-2.5"><StatePill state={card.state} /></td>
-      <td className="border-b border-zinc-100 px-3 py-2.5">{card.category ? <CategoryChip name={card.category} /> : <span className="text-zinc-300">—</span>}</td>
+      <td className="border-b border-zinc-100 px-3 py-2.5">{card.category ? <CategoryLabel name={card.category} /> : <span className="text-zinc-300">—</span>}</td>
       <td className="border-b border-zinc-100 px-3 py-2.5">
-        <div className="flex min-w-0 max-w-48 flex-nowrap items-center gap-1 overflow-hidden whitespace-nowrap">
-          {card.urgent && <FlagChip icon={<Flame className="size-3 shrink-0" />} text="Urgent" tooltip="Urgent" tone="urgent" />}
-          {card.blocked_on && <FlagChip icon={<Ban className="size-3 shrink-0" />} text={`Blocked · ${card.blocked_on}`} tooltip={`Blocked on ${card.blocked_on}`} tone="blocked" />}
-          {isQuickWin(card) && <FlagChip icon={<Zap className="size-3 shrink-0 fill-green-600/20" />} text="Quick win" tooltip="Quick win: good return for low effort" tone="quick" />}
-          {later && <FlagChip icon={<Moon className="size-3 shrink-0" />} text="Later" tooltip="Shelved under Later" tone="later" />}
-          {!card.urgent && !card.blocked_on && !isQuickWin(card) && !later && <span className="text-zinc-300">—</span>}
+        <div className="flex items-center gap-1.5" data-flags>
+          {(rail === 'urgent' || rail === 'both') && <FlagSwatch kind="urgent" tip="Urgent" />}
+          {(rail === 'blocked' || rail === 'both') && <FlagSwatch kind="blocked" tip={`Blocked on ${card.blocked_on}${card.blocked_at ? ` · ${ago(card.blocked_at, now)}` : ''}`} />}
+          {later && <Tip label="Later: parked"><Moon className="size-3 text-slate-400" data-flag="later" aria-label="Later" /></Tip>}
+          {!rail && !later && <span className="text-zinc-300">—</span>}
         </div>
       </td>
-      <td className="border-b border-zinc-100 px-3 py-2.5"><LevelText value={card.impact} label="Return" /></td>
-      <td className="border-b border-zinc-100 px-3 py-2.5"><LevelText value={card.effort} label="Effort" /></td>
+      <td className="border-b border-zinc-100 px-3 py-2.5">{card.impact || card.effort ? <PayoffLabel card={card} /> : <span className="text-zinc-300">—</span>}</td>
       <td className="whitespace-nowrap border-b border-zinc-100 px-3 py-2.5 font-mono text-[11px] tabular-nums text-zinc-500">{card.estimate_min ? `~${formatEstimate(card.estimate_min)}` : <span className="text-zinc-300">—</span>}</td>
       <td className="border-b border-zinc-100 px-3 py-2.5 font-mono text-[11px] tabular-nums text-zinc-500">
         <Tip label={`Created ${fullDate(card.created_at)} by ${createdBy}`}><span>{ago(card.created_at, now)}</span></Tip>
       </td>
-      <td className="border-b border-zinc-100 px-3 py-2.5">{assignee ? <Assignee agent={assignee} /> : <span className="text-zinc-300">—</span>}</td>
+      <td className="border-b border-zinc-100 px-3 py-2.5">{assignee ? <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-zinc-700"><Avatar agent={assignee} />@{assignee.handle}</span> : <span className="text-zinc-300">—</span>}</td>
       <td className="border-b border-zinc-100 px-3 py-2.5 font-mono text-[11px] tabular-nums text-zinc-400">{ago(card.updated_at, now)}</td>
     </tr>
   )
 }
 
-function FlagChip({ icon, text, tooltip, tone }: { icon: React.ReactNode; text: string; tooltip: string; tone: 'urgent' | 'blocked' | 'quick' | 'later' }) {
-  const tones = {
-    urgent: 'border-red-200 bg-red-50 text-red-700',
-    blocked: 'border-orange-200 bg-orange-50 text-orange-700',
-    quick: 'border-green-200 bg-green-50 text-green-700',
-    later: 'border-slate-200 bg-slate-100 text-slate-600',
-  }
-  return (
-    <Tip label={tooltip}>
-      <span className={cn('inline-flex min-w-0 max-w-[72px] shrink items-center gap-0.5 rounded-md border px-1 py-0.5 text-[9px] leading-none font-semibold', tones[tone])}>
-        {icon}
-        <span className="min-w-0 truncate">{text}</span>
-      </span>
-    </Tip>
-  )
-}
-
-function LevelText({ value, label }: { value: string | null; label: string }) {
-  return <span className="text-[11px] capitalize text-zinc-600" title={`${label}: ${value ?? 'not set'}`}>{value ?? <span className="text-zinc-300">—</span>}</span>
+/** A legend swatch (same as the toolbar and the card rail) with a tooltip; the padding makes the thin stripe easy to hover. */
+function FlagSwatch({ kind, tip }: { kind: 'urgent' | 'blocked'; tip: string }) {
+  return <Tip label={tip}><span className="inline-flex cursor-help p-1" data-flag={kind}><Swatch kind={kind} /></span></Tip>
 }

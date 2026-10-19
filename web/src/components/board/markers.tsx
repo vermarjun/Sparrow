@@ -1,13 +1,13 @@
 // Small visual vocabulary shared by the card face, list rows and the ticket sheet.
-// Colour is never alone: every marker carries an icon or text.
+// Colour is never alone: every marker carries an icon, text or a pattern.
 import { type ReactNode } from 'react'
-import { Ban, Check, CheckCircle2, Flame, Moon, Zap } from 'lucide-react'
-import type { Agent, Card, CardLevel, CardState } from '@shared/types'
-import { formatEstimate } from '@shared/cards'
+import { Anchor, ArrowDown, Ban, Equal, Flame, Gem, Minus, Moon, Mountain, Rocket, Zap, type LucideIcon } from 'lucide-react'
+import type { Agent, Card, CardState } from '@shared/types'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { StateDot } from '@/components/sparrow/bits'
 import { COLUMN_BY_STATE, categoryClass } from '@/lib/boardStyle'
+import { assigneeTip, avatarTone, categoryDot, initials, partialOf, payoffOf, payoffTip, type PayoffId, type PayoffTone } from '@/lib/faceA'
 import { cn } from '@/lib/utils'
+import { QUICK_COLOR } from '@/lib/swatchStyle'
 
 export function Tip({ label, children, side }: { label: ReactNode; children: ReactNode; side?: 'top' | 'bottom' | 'left' | 'right' }) {
   return (
@@ -22,10 +22,6 @@ export function CategoryChip({ name, className }: { name: string; className?: st
   return <span className={cn('inline-flex max-w-[9rem] items-center truncate rounded-md px-1.5 py-px text-[11px] leading-4 font-medium', categoryClass(name), className)}>{name}</span>
 }
 
-export function TagChip({ name }: { name: string }) {
-  return <span className="inline-flex items-center rounded-md border border-zinc-300/80 bg-white/70 px-1.5 py-px text-[10.5px] leading-4 text-zinc-600">{name}</span>
-}
-
 export function StatePill({ state, className }: { state: CardState; className?: string }) {
   const s = COLUMN_BY_STATE[state]
   return (
@@ -36,31 +32,57 @@ export function StatePill({ state, className }: { state: CardState; className?: 
   )
 }
 
-const LEVEL_RANK: Record<CardLevel, number> = { low: 1, medium: 2, high: 3 }
-const LEVEL_WORD: Record<CardLevel, string> = { low: 'low', medium: 'medium', high: 'high' }
+const PAYOFF_ICON: Record<PayoffId, LucideIcon> = { quick: Zap, worth: Gem, bet: Rocket, steady: Equal, heavy: Mountain, filler: Minus, lowvalue: ArrowDown, pit: Anchor }
+const PAYOFF_TEXT: Record<PayoffTone, string> = {
+  good: 'text-emerald-700',
+  invest: 'text-indigo-700',
+  neutral: 'text-zinc-500',
+  costly: 'text-amber-900/65',
+  dim: 'text-zinc-400',
+}
 
-/** The three-bar signal glyph (rank 0-3). */
-export function Bars({ rank, className }: { rank: number; className?: string }) {
+/** Return x effort as one plain word with a small icon ("Quick win", "Big bet"). Only one of the two set: a quiet grey half-answer. Nothing set: nothing. */
+export function PayoffLabel({ card, className }: { card: Pick<Card, 'impact' | 'effort' | 'estimate_min'>; className?: string }) {
+  const payoff = payoffOf(card)
+  const partial = payoff ? null : partialOf(card)
+  if (!payoff && !partial) return null
+  if (!payoff) {
+    return <Tip label={payoffTip(card)}><span className={cn('shrink-0 text-[11px] text-zinc-400', className)} data-payoff="partial">{partial}</span></Tip>
+  }
+  const Icon = PAYOFF_ICON[payoff.id]
   return (
-    <span className={cn('flex items-end gap-px', className)} aria-hidden>
-      {[1, 2, 3].map((i) => (
-        <span key={i} className={cn('w-[3px] rounded-[1px]', i === 1 ? 'h-1.5' : i === 2 ? 'h-2' : 'h-2.5', i <= rank ? 'bg-zinc-700' : 'bg-zinc-300')} />
-      ))}
+    <Tip label={payoffTip(card)}>
+      <span className={cn('inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold whitespace-nowrap', PAYOFF_TEXT[payoff.tone], className)} data-payoff={payoff.id}>
+        {payoff.id === 'quick' ? <Zap className="size-3" style={{ color: QUICK_COLOR, fill: `${QUICK_COLOR}40` }} aria-hidden /> : <Icon className="size-3" aria-hidden />}
+        {payoff.label}
+      </span>
+    </Tip>
+  )
+}
+
+/** Category as a coloured dot and quiet lowercase text. */
+export function CategoryLabel({ name, className }: { name: string; className?: string }) {
+  return (
+    <span className={cn('inline-flex min-w-0 items-center gap-1 text-[11px] leading-4 text-zinc-500 lowercase', className)}>
+      <span className={cn('size-1.5 shrink-0 rounded-full', categoryDot(name))} aria-hidden />
+      <span className="truncate">{name}</span>
     </span>
   )
 }
 
-/** Three-bar signal glyph with an R / E label. Empty level renders nothing on the face (`showEmpty` for the list/sheet). */
-export function Meter({ kind, level, showEmpty, className }: { kind: 'return' | 'effort'; level: CardLevel | null; showEmpty?: boolean; className?: string }) {
-  if (!level && !showEmpty) return null
-  const rank = level ? LEVEL_RANK[level] : 0
-  const letter = kind === 'return' ? 'R' : 'E'
-  const label = `${kind === 'return' ? 'Return' : 'Effort'}: ${level ? LEVEL_WORD[level] : 'not set'}`
+/** Initials avatar (colour hashed from the handle) with a corner dot while the agent works or has crashed. */
+export function Avatar({ agent, className }: { agent: Agent; className?: string }) {
   return (
-    <Tip label={label}>
-      <span className={cn('inline-flex items-center gap-1 text-[10.5px] font-semibold text-zinc-500', !level && 'opacity-50', className)} aria-label={label} data-meter={kind} data-level={level ?? ''}>
-        <span className="tracking-wide">{letter}</span>
-        <Bars rank={rank} />
+    <Tip label={assigneeTip(agent)}>
+      <span
+        className={cn('relative inline-flex size-[18px] shrink-0 items-center justify-center rounded-full text-[8.5px] leading-none font-semibold tracking-tight', avatarTone(agent.handle), agent.kind === 'human' && 'ring-1 ring-violet-400', className)}
+        data-avatar={agent.handle}
+        aria-label={`@${agent.handle}`}
+      >
+        {initials(agent.handle)}
+        {(agent.state === 'working' || agent.state === 'crashed') && (
+          <span className={cn('absolute -right-px -bottom-px size-[7px] rounded-full ring-[1.5px] ring-white', agent.state === 'working' ? 'bg-emerald-500' : 'bg-red-500')} aria-hidden />
+        )}
       </span>
     </Tip>
   )
@@ -100,35 +122,6 @@ export function LaterFlag({ className }: { className?: string }) {
   return (
     <span className={cn('inline-flex items-center gap-0.5 text-[11px] font-medium text-slate-500', className)} data-flag="later">
       <Moon className="size-3" />Later
-    </span>
-  )
-}
-
-export function DoneMark({ className }: { className?: string }) {
-  return <CheckCircle2 className={cn('size-3.5 text-emerald-600', className)} aria-label="Done" />
-}
-
-export function Estimate({ min, className }: { min: number | null; className?: string }) {
-  if (!min) return null
-  return <span className={cn('text-[11px] text-zinc-500 tabular-nums', className)} title="Estimate">~{formatEstimate(min)}</span>
-}
-
-export function ChecksProgress({ checks, className }: { checks: Card['checks']; className?: string }) {
-  if (!checks?.length) return null
-  const done = checks.filter((c) => c.done).length
-  const all = done === checks.length
-  return (
-    <span className={cn('inline-flex items-center gap-0.5 text-[11px] tabular-nums', all ? 'text-emerald-700' : 'text-zinc-500', className)} title={`${done} of ${checks.length} done-when checks`}>
-      <Check className="size-3" />{done}/{checks.length}
-    </span>
-  )
-}
-
-export function Assignee({ agent, className }: { agent: Agent | null | undefined; className?: string }) {
-  if (!agent) return null
-  return (
-    <span className={cn('inline-flex items-center gap-1 text-[11px] font-medium text-zinc-700', className)}>
-      <StateDot state={agent.kind === 'human' ? 'human' : agent.state} />@{agent.handle}
     </span>
   )
 }

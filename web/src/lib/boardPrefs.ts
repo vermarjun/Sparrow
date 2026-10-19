@@ -5,7 +5,7 @@ import { NO_FILTERS, type BoardFilters } from './boardFilter'
 
 export type Density = 'compact' | 'detailed'
 export type View = 'board' | 'list'
-export type ListKey = 'state' | 'key' | 'title' | 'category' | 'return' | 'effort' | 'estimate' | 'age' | 'assignee' | 'updated'
+export type ListKey = 'state' | 'key' | 'title' | 'category' | 'payoff' | 'estimate' | 'age' | 'assignee' | 'updated'
 
 export interface BoardPrefs {
   sort: CardSort
@@ -24,7 +24,7 @@ export const DEFAULT_PREFS: BoardPrefs = {
   list: { key: 'state', dir: 'asc' },
 }
 
-const LIST_KEYS: ListKey[] = ['state', 'key', 'title', 'category', 'return', 'effort', 'estimate', 'age', 'assignee', 'updated']
+const LIST_KEYS: ListKey[] = ['state', 'key', 'title', 'category', 'payoff', 'estimate', 'age', 'assignee', 'updated']
 const str = (v: unknown, fallback: string) => (typeof v === 'string' ? v : fallback)
 const bool = (v: unknown, fallback: boolean) => (typeof v === 'boolean' ? v : fallback)
 

@@ -1,13 +1,13 @@
 // Stable sorting for the board's dense planning list.
 import type { Card, CardState } from '@shared/types'
-import { cardKey, sortCardsBy } from '@shared/cards'
+import { cardKey, roiScore, sortCardsBy } from '@shared/cards'
 import type { ListKey } from './boardPrefs'
+import { payoffOf } from './faceA'
 
 export type ListDirection = 'asc' | 'desc'
 export type AssigneeLabel = (id: string | null) => string | null
 
 const STATE_ORDER: CardState[] = ['proposed', 'todo', 'in_progress', 'review', 'done', 'dropped']
-const LEVEL_ORDER = { low: 1, medium: 2, high: 3 } as const
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
 
 const compareNullable = <T>(a: T | null | undefined, b: T | null | undefined, compare: (x: T, y: T) => number): number => {
@@ -28,8 +28,8 @@ export function sortListCards(cards: Card[], key: ListKey, direction: ListDirect
       case 'key': return a.id - b.id
       case 'title': return collator.compare(a.title, b.title)
       case 'category': return compareNullable(a.category?.toLowerCase(), b.category?.toLowerCase(), collator.compare)
-      case 'return': return compareNullable(a.impact, b.impact, (x, y) => LEVEL_ORDER[x] - LEVEL_ORDER[y])
-      case 'effort': return compareNullable(a.effort, b.effort, (x, y) => LEVEL_ORDER[x] - LEVEL_ORDER[y])
+      // The payoff word ranks by return per effort; a card with return or effort unset has no payoff yet.
+      case 'payoff': return compareNullable(payoffOf(a) && roiScore(a), payoffOf(b) && roiScore(b), (x, y) => x - y)
       case 'estimate': return compareNullable(a.estimate_min, b.estimate_min, (x, y) => x - y)
       // Smaller age means newer. Updated dates use their natural oldest-to-newest order.
       case 'age': return b.created_at - a.created_at
@@ -39,8 +39,7 @@ export function sortListCards(cards: Card[], key: ListKey, direction: ListDirect
   }
   const hasMissingSortValue = (card: Card) => {
     if (key === 'category') return !card.category
-    if (key === 'return') return !card.impact
-    if (key === 'effort') return !card.effort
+    if (key === 'payoff') return !payoffOf(card)
     if (key === 'estimate') return card.estimate_min == null
     if (key === 'assignee') return !assigneeLabel(card.assignee_id)
     return false
@@ -53,7 +52,7 @@ export function sortListCards(cards: Card[], key: ListKey, direction: ListDirect
 }
 
 export const listSortLabel = (key: ListKey) => ({
-  state: 'State', key: 'Key', title: 'Title', category: 'Category', return: 'Return', effort: 'Effort',
+  state: 'State', key: 'Key', title: 'Title', category: 'Category', payoff: 'Payoff',
   estimate: 'Est.', age: 'Age', assignee: 'Assignee', updated: 'Updated',
 }[key])
 
