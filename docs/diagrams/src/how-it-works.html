@@ -23,7 +23,7 @@
   .srv .tables { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
   .srv .tables .tag { text-transform: none; letter-spacing: 0; font-size: 13.5px; }
   .note { left: 980px; top: 215px; width: 188px; }
-  .tmux { margin-top: 70px; padding: 18px 22px 16px; }
+  .tmux { margin-top: 96px; padding: 18px 22px 16px; }
   .tmux .th { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
   .tmux .th .l { display: flex; align-items: center; gap: 10px; font: 650 17px/1 'Geist'; }
   .tmux .th .l .ic { color: var(--accent-ink); }
@@ -91,9 +91,11 @@
 <b class="edge-def" data-from="#cap" data-to="#cli" data-fs="r" data-ts="l" data-fp="36" data-tp="36" data-tone="accent" data-label="<span class=step>2</span>sparrow hire" data-lclass="accent" data-ly="-24"></b>
 <b class="edge-def" data-from="#cli" data-to="#srv" data-fs="r" data-ts="l" data-fp="36" data-tp="36" data-tone="accent" data-label="<span class=step>3</span>HTTP" data-lclass="accent" data-ly="-24"></b>
 <b class="edge-def" data-from="#web" data-to="#srv" data-fs="b" data-ts="t" data-both data-label="HTTP + SSE" data-lclass="text"></b>
-<b class="edge-def" data-from="#srv" data-to="#tmux" data-fs="b" data-ts="t" data-fp="96" data-tp="716" data-tone="accent" data-label="<span class=step>4</span>opens windows" data-lclass="accent" data-lx="-92"></b>
-<b class="edge-def" data-from="#tmux" data-to="#srv" data-fs="t" data-ts="b" data-fp="870" data-tp="250" data-dashed data-label="turn ends" data-lclass="text" data-lx="50"></b>
-<b class="edge-def" data-from="#tmux" data-to="#cap" data-fs="t" data-ts="b" data-fp="103" data-tp="103" data-tone="ok" data-label="<span class=step>5</span>sparrow update | ask | done" data-lclass="ok" data-lx="184"></b>
+<b class="edge-def" data-from="#srv" data-to="#tmux" data-fs="b" data-ts="t" data-fp="100" data-tp="720" data-tone="accent" data-label="<span class=step>4</span>opens windows" data-lclass="accent" data-lx="106"></b>
+<b class="edge-def" data-from="#tmux" data-to="#srv" data-fs="t" data-ts="b" data-fp="640" data-tp="20" data-tone="ok" data-label="<span class=step>5</span>sparrow update | ask | done" data-lclass="ok" data-lx="-146"></b>
+<b class="edge-def" data-from="#srv" data-to="#cap" data-fs="l" data-ts="r" data-fp="180" data-tp="180" data-tone="ok" data-label="<span class=step>6</span>sparrow inbox --wait" data-lclass="ok" data-ly="-22"></b>
+<b class="edge-def" data-from="#tmux" data-to="#note" data-fs="t" data-ts="b" data-fp="1074" data-tp="94" data-dashed data-label="turn ends" data-lclass="text" data-lx="50"></b>
+<b class="edge-def" data-from="#note" data-to="#srv" data-fs="l" data-ts="r" data-fp="60" data-tp="60" data-dashed></b>
 </div>
 <script src="icons.js"></script><script src="diagram.js"></script>
 </body></html>
