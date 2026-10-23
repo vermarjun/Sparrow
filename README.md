@@ -232,10 +232,10 @@ a doctor that tests your harnesses. The UI never hires anything by itself. Your 
 
 ## Built by its own crew
 
-This launch was crewed by Sparrow. One captain session and {CREW_COUNT} agents across Claude Code and Codex wrote this
-README, drew the ten diagrams, shot the screenshots, packaged the binary, and fixed the delivery protocol you just read
-about. Two researchers mapped the competition, a sub-captain ran its own packaging crew, verifiers tried to break every
-branch, and an advisor read this page cold and told us which jokes to cut. Halfway through, Codex hit its usage
+This launch was crewed by Sparrow. One captain session and 19 agents across Claude Code and Codex wrote this README,
+drew the ten diagrams, shot the screenshots, packaged the binary, and fixed the delivery protocol you just read about,
+in about an hour and a half. Two researchers mapped the competition, a sub-captain ran its own packaging crew,
+verifiers tried to break the work, and an advisor read this page cold and told us which jokes to cut. Halfway through, Codex hit its usage
 limit. The captain moved the rest of the Codex work to Claude Code and kept going. That's the whole pitch, really.
 
 ## Sparrow vs. what you already have
