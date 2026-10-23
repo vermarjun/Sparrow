@@ -60,19 +60,23 @@ logged in.
 > Workers run with their harness's permission-bypass flag (`--dangerously-skip-permissions`, `--yolo`, `--auto`)
 > as your user. Read [SECURITY.md](SECURITY.md) before you point a crew at anything you love.
 
-<!-- install: finalize after oss/dist merge -->
 ```sh
 curl -fsSL https://raw.githubusercontent.com/vermarjun/Sparrow/main/install.sh | sh
 sparrow
 ```
 
-The first `sparrow` sets itself up, checks which harnesses you have, starts a local server on `127.0.0.1:4040` and
-opens the UI. Package managers work too:
+That's one self-contained binary in `~/.local/bin`, checksum-verified. No Bun, no clone, no build step. The first
+`sparrow` sets itself up, tells you which harnesses it found and which roles you can hire, starts a local server on
+`127.0.0.1:4040` and opens the UI. Only have Claude Code? Roles that expect Codex or OpenCode fall back to Claude and
+say so. Package managers work too:
 
 ```sh
 npm i -g sparrow-agents            # or: npx sparrow-agents, bunx sparrow-agents
 brew install vermarjun/tap/sparrow
 ```
+
+Changed your mind? `sparrow stop && sparrow uninstall` removes the link, skills, plugins and app files it installed.
+Add `--purge` to delete your Sparrow data too.
 
 ## Your first voyage
 
