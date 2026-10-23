@@ -46,8 +46,8 @@ export function seedCards(now = Date.now()): Card[] {
       problem: 'Observed: the session token is readable by any script on the page. Expected: it lives in an HttpOnly, SameSite=Lax cookie and the API reads it from there.',
       approach: 'Set the cookie on login, read it in the auth middleware, keep the Authorization header working for one release so old clients do not break.',
       checks: ck(['Token is not readable from JavaScript', true], ['Existing sessions keep working after deploy', true], ['Logout clears the cookie', true]),
-      path: [[10 * D, 'proposed'], [9 * D + 20, 'todo', 'user'], [9 * D, 'in_progress', 'ag_maya'], [9 * D - 140, 'review', 'ag_maya'], [9 * D - 160, 'done', 'user']],
-      comments: [[9 * D - 135, 'ag_maya', 'Cookie set in `login.ts`, middleware reads it first and falls back to the header. 12 new tests, all green.']],
+      path: [[6 * D, 'proposed'], [5 * D + 20, 'todo', 'user'], [5 * D, 'in_progress', 'ag_maya'], [5 * D - 140, 'review', 'ag_maya'], [5 * D - 200, 'done', 'user']],
+      comments: [[5 * D - 135, 'ag_maya', 'Cookie set in `login.ts`, middleware reads it first and falls back to the header. 12 new tests, all green.']],
     }),
     C(3, 'done', 'Document the REST error format', {
       category: 'docs', assignee_id: 'ag_juno', created_by: 'ag_cap', impact: 'low', effort: 'low', estimate_min: 45,

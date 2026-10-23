@@ -88,7 +88,7 @@ export function seedResumes(): Row[] {
       slug, title: fm.title, harness: fm.harness as HarnessName, model: fm.model ?? null, effort: fm.effort ?? null, can_hire: list(fm.can_hire ?? '[]'),
       description: (fm.description ?? '').replace('{{runtime}}', `${fm.harness} · ${fm.model}`), limits: { quiet_minutes: num('quiet_minutes'), max_call_minutes: num('max_call_minutes') },
       body: m[2].trimStart(), path: `${HOME}/.sparrow/app/0.1.0/assets/resumes/${file}`, builtin: true,
-      ...(fm.helper === 'true' ? { helper: true } : {}), ...(fm.one_shot === 'true' ? { one_shot: true } : {}),
+      ...(fm.skills ? { skills: list(fm.skills) } : {}), ...(fm.helper === 'true' ? { helper: true } : {}), ...(fm.one_shot === 'true' ? { one_shot: true } : {}),
     })
   }
   return rows
@@ -264,6 +264,22 @@ export function createU1(ctx: U1Ctx, opts: { now?: number; doctorMs?: number; do
   const json = (data: unknown, status = 200) => Response.json(data, { status })
   const err = (status: number, error: string) => json({ error }, status)
 
+  // Just enough of the skills library for the resume editor's Skills row (the Skills page itself is not mocked).
+  const skill = (name: string, description: string, locked = false) => ({
+    name, description, path: `${HOME}/Skills/${name}`, locked, source: locked ? 'sparrow' : 'local', sourceUrl: null, inManifest: true,
+    harnesses: ['claude', 'codex', 'opencode'], links: [], problems: [],
+  })
+  const skillsState = () => ({
+    library_missing: false, library_problem: null, unmanaged: [], external: [], conflicts: [], broken: [], warnings: [],
+    library: [
+      skill('sparrow-captain', 'Run a team of agents with Sparrow.', true), skill('sparrow-worker', 'How a Sparrow agent reports its work.', true),
+      skill('systematic-debugging', 'Find the root cause before proposing a fix.'), skill('codebase-design', 'Deepen modules and shape interfaces.'),
+      skill('verification-before-completion', 'Run the check before claiming it passes.'), skill('ast-grep', 'Structural code search and rewrite.'), skill('file-search', 'Find files and symbols fast.'),
+    ],
+    git: { available: false, branch: null, dirty: [], ahead: null, behind: null, remote: null },
+    paths: { library: `${HOME}/Skills`, home: HOME, backup: `${HOME}/.sparrow/skills-backup`, roots: { claude: `${HOME}/.claude/skills`, codex: `${HOME}/.codex/skills`, opencode: `${HOME}/.config/opencode/skills` }, sandbox: false },
+  })
+
   async function handle(req: Request, p: string, body: any): Promise<Response | null> {
     const method = req.method
     if (p === '/api/catalog' && method === 'GET') return json(catalogs)
@@ -279,6 +295,7 @@ export function createU1(ctx: U1Ctx, opts: { now?: number; doctorMs?: number; do
       if (run && !run.ended_at) return err(409, 'a doctor run is already in progress; watch it on the Doctor page')
       return json({ run: startDoctor() })
     }
+    if (p === '/api/skills' && method === 'GET') return json(skillsState())
     if (p === '/api/settings' && method === 'GET') return json(settingsView())
     if (p === '/api/settings' && method === 'PUT') {
       const values = (body?.values ?? {}) as Record<string, number | null>

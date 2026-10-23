@@ -16,7 +16,7 @@ export const MAYA_SCREEN = `╭────────────────�
 ╰────────────────────────────────────────────────────────────╯
 
 > [sparrow] 1 new message for @maya (project tortuga):
-  ── task from @captain · 09:12 · card #4 ──
+  ── task from @captain · card #4 ──
   Add rate limiting to login …
 
 ⏺ Read(src/auth/login.ts)
@@ -33,7 +33,7 @@ export const MAYA_SCREEN = `╭────────────────�
      0 fail
      Ran 23 tests across 4 files. [1.42s]
 
-⏺ Bash(sparrow update "limiter wired into POST /login; 23/23 auth tests pass")
+⏺ Bash(sparrow update "limiter wired into POST /login; 23/23 pass")
   ⎿  Update posted.
 
 ✻ Writing the 429 end-to-end test… (2m 41s · ↓ 3.1k tokens)
@@ -55,7 +55,7 @@ export const LEO_SCREEN = `╭────────────────�
     ✓ Retry-After counts down with the window [41ms]
     2 pass, 0 fail
 
-• Ran sparrow update "e2e 429 path covered; docs/auth.md has a Lockouts section"
+• Ran sparrow update "e2e 429 path covered; docs/auth.md updated"
   └ Update posted.
 
 ▌ Working (1m 08s · esc to interrupt)
