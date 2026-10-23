@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Sparrow: build, verify, ship</title>
+<link rel="stylesheet" href="diagram.css">
+<style>
+  .stage { position: relative; height: 650px; margin-top: 14px; }
+  .lane { position: absolute; left: 0; right: 0; background: var(--surface-2); border-radius: 14px; border: 1px solid var(--line); }
+  .ll { position: absolute; left: 12px; width: 126px; display: flex; flex-direction: column; justify-content: center; gap: 4px; }
+  .ll .who { font: 650 17px 'Geist'; }
+  .ll .sl { display: flex; align-items: flex-start; gap: 6px; font-size: 13.5px; color: var(--ink-2); line-height: 1.25; }
+  .ll .sl .dot { margin-top: 5px; }
+  .sh { position: absolute; top: 0; height: 36px; display: flex; align-items: center; gap: 8px; padding-left: 8px; font: 650 15.5px 'Geist'; }
+  .sh .step { width: 22px; height: 22px; font-size: 12px; }
+  .it { position: absolute; padding: 10px 12px; display: flex; flex-direction: column; gap: 5px; font-size: 14px; line-height: 1.3; color: var(--ink-2); }
+  .it b { font: 650 14.5px/1.25 'Geist'; color: var(--ink); }
+  .it .sm { font-size: 13px; }
+  .it.cmdc { border-color: var(--accent); background: var(--accent-soft); }
+  .it .cmd { font: 500 13.5px/1.35 'Geist Mono', monospace; color: var(--accent-ink); }
+  .it .stubs { display: flex; flex-direction: column; gap: 4px; }
+  .it .stubs span { font: 500 12.5px 'Geist Mono', monospace; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; }
+  .it.b, .it.v { border-color: var(--line); }
+  .it .tag { align-self: flex-start; font-size: 11.5px; padding: 4px 7px; }
+  .chk { display: flex; gap: 5px; }
+  .chk span { width: 24px; height: 24px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font: 650 13px 'Geist Mono', monospace; }
+  .chk .p { background: var(--surface-2); color: var(--ok-ink); border: 1.5px solid var(--ok); }
+  .chk .f { background: var(--bad-ink); color: #fff; border: 1.5px solid var(--bad-ink); }
+  :root[data-theme='dark'] .chk .f { color: #1b0a08; }
+  .it .fail { font-size: 13.5px; color: var(--ink); line-height: 1.35; }
+  .it .fail b { color: var(--bad-ink); } .it .okt b { color: var(--ok-ink); font-size: 15px; }
+</style></head>
+<body>
+<div class="frame edges-top"><div class="layer">
+  <div class="head"><span class="eyebrow">Build, verify, ship</span><span class="wordmark"><i class="ic" data-i="sparrow"></i>Sparrow</span></div>
+  <h1 class="title">Rate limiting for login, end to end.</h1>
+  <div class="stage">
+    <div class="lane" style="top:48px;height:116px"></div><div class="ll" style="top:48px;height:116px"><span class="who">@captain</span><span class="sl"><i class="dot claude"></i>Claude Code</span></div>
+    <div class="lane" style="top:180px;height:108px"></div><div class="ll" style="top:180px;height:108px"><span class="who">@maya</span><span class="sl"><i class="dot claude"></i>builder · Claude Code</span></div>
+    <div class="lane" style="top:324px;height:108px"></div><div class="ll" style="top:324px;height:108px"><span class="who">@leo</span><span class="sl"><i class="dot codex"></i>builder-codex · Codex</span></div>
+    <div class="lane" style="top:454px;height:172px"></div><div class="ll" style="top:454px;height:172px"><span class="who">@vera</span><span class="sl"><i class="dot codex"></i>verifier · Codex, read-only</span></div>
+    <div class="sh" style="left:156px;width:168px"><span class="step">1</span>Split</div>
+    <div class="sh" style="left:324px;width:168px"><span class="step">2</span>Build in parallel</div>
+    <div class="sh" style="left:492px;width:168px"><span class="step">3</span>Verify</div>
+    <div class="sh" style="left:660px;width:168px"><span class="step">4</span>Fix</div>
+    <div class="sh" style="left:828px;width:168px"><span class="step">5</span>Re-verify</div>
+    <div class="sh" style="left:996px;width:168px"><span class="step">6</span>Ship</div>
+    <div class="card it " id="a1" style="left:164px;top:52px;width:152px;height:108px"><b>Splits the work into two cards</b><span>TOR-21 API, TOR-22 tests and docs</span></div>
+    <div class="card it b" id="b2" style="left:332px;top:184px;width:152px;height:100px"><b>Builds the API</b><span class="mono sm">TOR-21</span><span class="tag ok">result ok</span></div>
+    <div class="card it b" id="c2" style="left:332px;top:328px;width:152px;height:100px"><b>Writes tests and docs</b><span class="mono sm">TOR-22</span><span class="tag ok">result ok</span></div>
+    <div class="card it cmdc" id="a3" style="left:500px;top:52px;width:152px;height:108px"><span class="mono cmd">sparrow hire verifier</span><span>with the acceptance checks</span></div>
+    <div class="card it v" id="d3" style="left:500px;top:458px;width:152px;height:164px"><b>Acceptance checks</b><div class="chk"><span class="p">1</span><span class="p">2</span><span class="f">3</span><span class="p">4</span><span class="p">5</span></div><span class="fail"><b>4 PASS, 1 FAIL</b><br>6th attempt returns 500, not 429</span></div>
+    <div class="card it cmdc" id="a4" style="left:668px;top:52px;width:152px;height:108px"><span class="mono cmd">sparrow send @maya "check 3 fails: …"</span></div>
+    <div class="card it b" id="b4" style="left:668px;top:184px;width:152px;height:100px"><b>Resumes in the same session</b><span>and fixes check 3</span></div>
+    <div class="card it v" id="d5" style="left:836px;top:458px;width:152px;height:164px"><b>Re-runs the checks</b><div class="chk"><span class="p">1</span><span class="p">2</span><span class="p">3</span><span class="p">4</span><span class="p">5</span></div><span class="okt"><b>5 of 5 PASS</b></span></div>
+    <div class="card it cmdc" id="a6" style="left:1004px;top:52px;width:152px;height:108px"><b>Merges. Cards move to Review.</b><span class="mono sm">sparrow release</span><span class="sm">@maya, @leo, @vera</span></div>
+  </div>
+  <div class="foot"><span class="caption">Claude writes, Codex checks. Different model families, different blind spots.</span><span class="wave"><svg viewBox="0 0 600 14" preserveAspectRatio="none"><path d="M0 7 q15 -8 30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span></div>
+</div>
+<b class="edge-def" data-from="#a1" data-to="#b2" data-fs="b" data-ts="l" data-fp="40" data-tp="40" data-tone="accent"></b>
+<b class="edge-def" data-from="#a1" data-to="#c2" data-fs="b" data-ts="l" data-fp="40" data-tp="40" data-tone="accent"></b>
+<b class="edge-def" data-from="#b2" data-to="#c2" data-fs="b" data-ts="t" data-fp="76" data-tp="76" data-both data-dashed data-tone="ok" data-label="agree on the error shape" data-lclass="ok" data-lx="-106"></b>
+<b class="edge-def" data-from="#b2" data-to="#a3" data-fs="r" data-ts="l" data-fp="50" data-tp="54" data-mx="553" data-tone="ok" data-label="result" data-lclass="ok" data-nohead></b>
+<b class="edge-def" data-from="#c2" data-to="#a3" data-fs="r" data-ts="l" data-fp="50" data-tp="54" data-mx="553" data-tone="ok"></b>
+<b class="edge-def" data-from="#a3" data-to="#d3" data-fs="b" data-ts="t" data-tone="accent" data-label="hire" data-lclass="accent"></b>
+<b class="edge-def" data-from="#d3" data-to="#a4" data-fs="r" data-ts="l" data-fp="100" data-tp="54" data-mx="721" data-tone="bad" data-label="FAIL" data-lclass="bad"></b>
+<b class="edge-def" data-from="#a4" data-to="#b4" data-fs="b" data-ts="t" data-tone="accent"></b>
+<b class="edge-def" data-from="#b4" data-to="#d5" data-fs="r" data-ts="l" data-fp="50" data-tp="50" data-mx="889" data-tone="accent"></b>
+<b class="edge-def" data-from="#d5" data-to="#a6" data-fs="r" data-ts="l" data-fp="50" data-tp="50" data-mx="1057" data-tone="ok"></b>
+</div>
+<script src="icons.js"></script><script src="diagram.js"></script>
+</body></html>

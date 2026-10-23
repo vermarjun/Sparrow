@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Sparrow: the board</title>
+<link rel="stylesheet" href="diagram.css">
+<style>
+  .stage { position: relative; height: 690px; margin-top: 12px; }
+  .abs { position: absolute; }
+  .src { left: 0; top: 0; width: 206px; padding: 11px 13px; }
+  .src .m { font: 500 14px/1.3 'Geist Mono', monospace; color: var(--accent-ink); white-space: nowrap; }
+  .src p { font-size: 13.5px !important; margin-top: 4px; line-height: 1.3; }
+  .col { top: 150px; width: 208px; height: 214px; padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+  .col .ch { display: flex; align-items: center; gap: 8px; padding: 12px 14px; font: 650 16px 'Geist'; border-bottom: 1.5px solid var(--line); background: var(--surface-2); }
+  .col .ch .n { margin-left: auto; font: 500 13px 'Geist Mono', monospace; color: var(--ink-2); }
+  .col .cb { padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+  .tk { position: relative; background: var(--surface); border: 1.5px solid var(--line); border-radius: 10px; padding: 8px 10px 8px 12px; font-size: 14px; line-height: 1.25; box-shadow: 0 1px 2px rgba(14,32,56,.08); }
+  .tk .id { font: 500 12.5px 'Geist Mono', monospace; color: var(--ink-3); }
+  .tk .t { margin-top: 2px; font-weight: 550; }
+  .tk.hot { border-color: var(--accent); }
+  .cdot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; background: var(--c); }
+  .later { left: 0; top: 410px; width: 208px; height: 128px; padding: 14px 16px; }
+  .drop { left: 240px; top: 410px; width: 208px; height: 128px; padding: 14px 16px; background: var(--surface-2); box-shadow: none; }
+  .drop h3, .later h3 { font-size: 16px; }
+  .drop p, .later p { margin-top: 6px; font-size: 14.5px; }
+  .timing { left: 0; top: 560px; width: 448px; padding: 12px 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+  .timing .ic { color: var(--accent-ink); width: 18px; height: 18px; }
+  .timing b { font: 650 15px 'Geist'; }
+  .timing .pill-cmd { font-size: 13.5px; padding: 5px 8px; }
+  .inset { left: 480px; top: 410px; width: 688px; height: 270px; padding: 16px 20px; }
+  .inset .ih { display: flex; align-items: center; justify-content: space-between; }
+  .inset .ih b { font: 650 17px 'Geist'; }
+  .grid { margin-top: 12px; display: grid; grid-template-columns: 70px repeat(3, 84px); grid-template-rows: 26px repeat(3, 56px); gap: 5px; font-size: 14px; }
+  .grid .hd { font: 600 12px/1 'Geist Mono', monospace; letter-spacing: .08em; color: var(--ink-3); display: flex; align-items: center; justify-content: center; text-transform: uppercase; }
+  .grid .cell { border: 1.5px solid var(--line); border-radius: 10px; display: flex; align-items: center; justify-content: center; text-align: center; font-weight: 600; font-size: 14px; line-height: 1.15; padding: 2px 4px; background: var(--surface-2); color: var(--ink-3); }
+  .grid .cell.f { background: var(--surface); color: var(--ink); border-color: var(--accent); }
+  .grid .cell.dim { border-style: dashed; background: transparent; }
+  .faces { position: absolute; left: 372px; top: 56px; width: 296px; display: flex; flex-direction: column; gap: 12px; }
+  .face { position: relative; display: block; border: 1.5px solid var(--line); border-radius: 12px; background: var(--surface); padding: 10px 12px 10px 18px; overflow: hidden; box-shadow: var(--shadow); }
+  .face::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 6px; background: var(--rail); }
+  .face.urgent { --rail: var(--bad); }
+  .face.blocked { --rail: repeating-linear-gradient(135deg, var(--warn) 0 5px, transparent 5px 9px); }
+  .face .t { font-weight: 600; font-size: 15px; }
+  .face .m { display: flex; align-items: center; gap: 9px; margin-top: 6px; font-size: 13.5px; color: var(--ink-2); }
+  .face .m .pay { font-weight: 650; color: var(--accent-ink); }
+  .face .lbl { margin-top: 5px; font: 600 12.5px 'Geist Mono', monospace; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+</style></head>
+<body>
+<div class="frame edges-top"><div class="layer">
+  <div class="head"><span class="eyebrow">The board</span><span class="wordmark"><i class="ic" data-i="sparrow"></i>Sparrow</span></div>
+  <div class="stage">
+    <div class="card src abs" id="src"><div class="m"><span class="step" style="width:20px;height:20px;font-size:12px;margin-right:6px">1</span>sparrow propose "…"</div><p>an agent proposes, with impact, effort, estimate and 2 to 7 checks</p></div>
+
+    <div class="card col abs" id="c0" style="left:0"><div class="ch"><span class="sd" style="width:10px;height:10px;border-radius:50%;background:var(--ink-3)"></span>Proposed<span class="n">3</span></div><div class="cb"><div class="tk"><div class="id">TOR-12</div><div class="t">Rate limit login</div></div><div class="tk"><div class="id">TOR-13</div><div class="t">Retry webhooks</div></div></div></div>
+    <div class="card col abs" id="c1" style="left:240px"><div class="ch"><span style="width:10px;height:10px;border-radius:50%;background:var(--edge)"></span>Todo<span class="n">2</span></div><div class="cb"><div class="tk"><div class="id">TOR-9</div><div class="t">Audit log export</div></div></div></div>
+    <div class="card col abs accent" id="c2" style="left:480px"><div class="ch"><span style="width:10px;height:10px;border-radius:50%;background:var(--accent)"></span>In progress<span class="n">1</span></div><div class="cb"><div class="tk hot"><div class="id">TOR-12</div><div class="t">Rate limit login</div><div class="m" style="margin-top:4px;font-size:12.5px"><span class="chip claude" style="padding:3px 8px 3px 7px;font-size:12.5px">@maya</span></div></div></div></div>
+    <div class="card col abs" id="c3" style="left:720px"><div class="ch"><span style="width:10px;height:10px;border-radius:50%;background:var(--warn)"></span>Review<span class="n">1</span></div><div class="cb"><div class="tk"><div class="id">TOR-7</div><div class="t">Cache user lookups</div></div></div></div>
+    <div class="card col abs" id="c4" style="left:960px"><div class="ch"><span style="width:10px;height:10px;border-radius:50%;background:var(--ok)"></span>Done<span class="n">8</span></div><div class="cb"><div class="tk"><div class="id">TOR-4</div><div class="t">Move to Postgres</div></div></div></div>
+
+    <div class="card dashed later abs" id="later"><h3><i class="ic" data-i="clock"></i>Later</h3><p>A shelf, not a column. Cards come back when you want them.</p></div>
+    <div class="card drop abs" id="drop"><h3><i class="ic" data-i="x"></i>Dropped</h3><p>Out of the way, history kept.</p></div>
+    <div class="card soft timing abs"><i class="ic" data-i="timer"></i><b>Every move is timed</b><span class="pill-cmd">estimate 2h</span><span class="pill-cmd">built in 1h40</span><span class="pill-cmd">review 20m</span></div>
+
+    <div class="card inset abs">
+      <div class="ih"><b>Payoff, in plain words</b><span class="tag">impact × effort</span></div>
+      <div class="grid">
+        <span class="hd" style="flex-direction:column;gap:2px;font-size:11px;text-transform:none;letter-spacing:0"><span>impact ↓</span><span>effort →</span></span><span class="hd">low</span><span class="hd">medium</span><span class="hd">high</span>
+        <span class="hd" style="justify-content:flex-end">high</span><span class="cell f">Quick win</span><span class="cell f">Worth it</span><span class="cell f">Big bet</span>
+        <span class="hd" style="justify-content:flex-end">medium</span><span class="cell f">Quick win</span><span class="cell dim"></span><span class="cell f">Heavy lift</span>
+        <span class="hd" style="justify-content:flex-end">low</span><span class="cell dim"></span><span class="cell dim"></span><span class="cell f">Money pit</span>
+      </div>
+            <div class="faces">
+        <div class="face urgent"><div class="t">Rate limit login</div><div class="m"><span class="cdot" style="--c:var(--claude)"></span><span class="pay">Quick win</span><span>2d</span></div><div class="lbl">red rail: urgent</div></div>
+        <div class="face blocked"><div class="t">Audit log export</div><div class="m"><span class="cdot" style="--c:var(--opencode)"></span><span class="pay">Heavy lift</span><span>5d</span></div><div class="lbl">striped rail: blocked</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="caption">Tracking only. Dragging a card never hires anyone. We checked.</span><span class="wave"><svg viewBox="0 0 600 14" preserveAspectRatio="none"><path d="M0 7 q15 -8 30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span></div>
+</div>
+<b class="edge-def" data-from="#src" data-to="#c0" data-fs="b" data-ts="t" data-fp="60" data-tp="60" data-tone="accent"></b>
+<b class="edge-def" data-from="#c0" data-to="#c1" data-fs="t" data-ts="t" data-fp="176" data-tp="104" data-moff="-30" data-ly="-62" data-label="<span class=step>2</span><b>you</b> triage<br><span class=sm>accept · later<br>drop · urgent</span>" data-lclass="text"></b>
+<b class="edge-def" data-from="#c1" data-to="#c2" data-fs="t" data-ts="t" data-fp="104" data-tp="104" data-moff="-30" data-ly="-62" data-tone="accent" data-label="<span class=step>3</span><span class=mono>sparrow hire builder</span><br><span class=mono>--card TOR-12</span><br><span class=sm>hands over the whole ticket</span>" data-lclass="accent"></b>
+<b class="edge-def" data-from="#c2" data-to="#c3" data-fs="t" data-ts="t" data-fp="104" data-tp="104" data-moff="-30" data-ly="-62" data-tone="ok" data-label="<span class=step>4</span><span class=mono>sparrow done</span><br><span class=sm>an ok report moves it</span>" data-lclass="ok"></b>
+<b class="edge-def" data-from="#c3" data-to="#c4" data-fs="t" data-ts="t" data-fp="104" data-tp="104" data-moff="-30" data-ly="-62" data-label="<span class=step>5</span><b>only you</b><br><span class=sm>move it to Done</span>" data-lclass="text"></b>
+<b class="edge-def" data-from="#c0" data-to="#later" data-fs="b" data-ts="t" data-fp="60" data-tp="60" data-dashed data-label="later" data-lclass="text"></b>
+<b class="edge-def" data-from="#c0" data-to="#drop" data-fs="b" data-ts="t" data-fp="150" data-tp="104" data-dashed data-label="drop" data-lclass="text" data-moff="0"></b>
+</div>
+<script src="icons.js"></script><script src="diagram.js"></script>
+</body></html>

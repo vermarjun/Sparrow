@@ -9,7 +9,7 @@ const LUCIDE = [
   'git-branch', 'check', 'file-text', 'users', 'inbox', 'eye', 'eye-off', 'zap', 'brain', 'hammer', 'compass', 'life-buoy',
   'package', 'plug', 'monitor', 'arrow-right', 'mail', 'settings', 'flag', 'layers', 'workflow', 'square-kanban', 'wrench', 'gauge',
   'timer', 'user', 'search', 'lock', 'x', 'circle-check', 'arrow-left-right', 'unplug', 'key-round', 'square-terminal', 'clipboard-list',
-  'book-open', 'microscope', 'file-search', 'cpu', 'sparkles', 'feather', 'message-square', 'folder-git', 'folder', 'link', 'ban',
+  'book-open', 'microscope', 'file-search', 'cpu', 'sparkles', 'feather', 'message-square', 'folder-git', 'folder', 'link', 'ban', 'clock', 'archive', 'git-merge', 'circle-x', 'list-checks', 'rocket', 'circle-alert', 'bug', 'split', 'hourglass',
 ]
 const CUSTOM: Record<string, string> = {
   // The Sparrow mark: a small bird, head right, filled body with a notched tail.

@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Sparrow: no message overboard</title>
+<link rel="stylesheet" href="diagram.css">
+<style>
+  .stage { position: relative; height: 668px; margin-top: 20px; }
+  .abs { position: absolute; }
+  .colh { position: absolute; top: 0; display: flex; align-items: center; gap: 8px; }
+  .send { left: 0; top: 34px; width: 268px; }
+  .send .body { padding: 14px 16px; font: 500 15px/1.7 'Geist Mono', monospace; }
+  .db { left: 372px; top: 34px; width: 330px; padding: 18px 18px 18px; }
+  .db .tbl { margin-top: 12px; border: 1.5px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .db .tbl .th { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--surface-2); font: 600 14px 'Geist Mono', monospace; }
+  .db .tbl .tr { padding: 9px 12px; font: 500 14px 'Geist Mono', monospace; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .db .tbl .tr span.d { color: var(--ink-2); }
+  .readers { left: 836px; top: 34px; width: 332px; display: flex; flex-direction: column; gap: 12px; }
+  .reader { padding: 13px 16px; }
+  .reader h3 { font-size: 16px; }
+  .reader h3 .step { width: 22px; height: 22px; font-size: 12px; }
+  .reader p { margin-top: 5px; font-size: 14.5px; }
+  .reader .mono { font-size: 13.5px; color: var(--ink); }
+  .others { left: 0; top: 374px; width: 800px; height: 168px; }
+  .term-line { font: 500 15px/1.6 'Geist Mono', monospace; }
+  .sticky { position: absolute; left: 22px; top: 66px; transform: rotate(-1.2deg); background: var(--accent-soft); border: 1.5px solid var(--accent); border-radius: 6px; padding: 10px 14px; font: 500 14.5px/1.4 'Geist Mono', monospace; color: var(--ink); box-shadow: var(--shadow); width: 480px; }
+  .crossed { position: absolute; right: 28px; top: 50px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+  .crossed .x { position: relative; font: 500 15px 'Geist Mono', monospace; padding: 5px 10px; border: 1.5px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink-2); }
+  .crossed .x::after { content: ''; position: absolute; left: -4px; right: -4px; top: 50%; border-top: 2px solid var(--bad); transform: rotate(-4deg); }
+  .crossed .cap { font: 600 14.5px 'Geist'; color: var(--bad-ink); }
+  .kinds { left: 836px; top: 374px; width: 332px; height: 168px; padding: 14px 16px; }
+  .kinds .row { display: flex; align-items: flex-start; gap: 10px; margin-top: 9px; }
+  .kinds .row .tag { flex: none; width: 66px; justify-content: center; margin-top: 2px; }
+  .kinds .row .ch { display: flex; flex-wrap: wrap; gap: 5px; }
+  .kinds .ch .chip { font-size: 13.5px; padding: 4px 9px; }
+  .kinds .ch .chip::before { display: none; }
+  .guards { left: 0; top: 562px; width: 1168px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .guards .card { padding: 14px 16px; }
+  .guards .card h3 { font-size: 16px; }
+  .guards .card p { margin-top: 6px; font-size: 14.5px; }
+  .guards .mini { margin-top: 8px; background: var(--term-bg); color: var(--term-ink); border-radius: 8px; padding: 8px 11px; font: 500 14px/1.4 'Geist Mono', monospace; }
+</style></head>
+<body>
+<div class="frame"><div class="layer">
+  <div class="head"><span class="eyebrow">No message overboard</span><span class="wordmark"><i class="ic" data-i="sparrow"></i>Sparrow</span></div>
+  <div class="stage">
+    <span class="colh k">Send</span>
+    <span class="colh k" style="left:372px">Stored</span>
+    <span class="colh k" style="left:836px">Read (the only three ways)</span>
+
+    <div class="term send abs" id="send"><div class="bar"><span class="lights"><i></i><i></i><i></i></span><span>@maya</span></div>
+      <div class="body"><div><span class="gold">❯</span> sparrow done</div><div class="dim" style="font-size:13.5px">or</div><div><span class="gold">❯</span> sparrow send @leo "…"</div></div></div>
+
+    <div class="card db abs" id="db">
+      <h3><i class="ic" data-i="database"></i>SQLite</h3>
+      <div class="tbl"><div class="th"><span>messages</span><span class="tag">1 row</span></div><div class="tr"><span>#41 result</span><span class="d">@maya</span></div></div>
+      <div class="tbl"><div class="th"><span>deliveries</span><span class="tag">1 per recipient</span></div><div class="tr"><span>#41 to @captain</span><span class="tag" style="color:var(--bad-ink);border-color:var(--bad)">pending</span></div></div>
+    </div>
+
+    <div class="readers abs">
+      <div class="card reader" id="r1"><h3><span class="step">1</span>Ask the inbox</h3><p><span class="mono">sparrow inbox</span> and <span class="mono">inbox --wait</span>, the captain's background loop.</p></div>
+      <div class="card reader" id="r2"><h3><span class="step">2</span>The call envelope</h3><p>Handed to an agent when its call starts. Closed window? It reopens.</p></div>
+      <div class="card reader" id="r3"><h3><span class="step">3</span>The turn-end handoff</h3><p>Claude Stop hook, or typed into Codex and OpenCode.</p></div>
+    </div>
+
+    <div class="card soft others abs"><div class="k" style="padding:16px 20px 0;display:flex;align-items:center;gap:8px"><i class="ic" data-i="terminal" style="width:17px;height:17px"></i>Every other command only warns</div>
+      <div class="sticky">📨 1 unread for @captain: @maya result(ok). Read: sparrow inbox</div>
+      <div class="crossed"><span class="x">&gt; /dev/null</span><span class="x">| tail -3</span><span class="cap">can't swallow mail anymore</span></div>
+    </div>
+
+    <div class="card kinds abs"><div class="k">Which messages wake an agent</div>
+      <div class="row"><span class="tag accent">waking</span><span class="ch"><span class="chip plain">task</span><span class="chip plain">DM</span><span class="chip plain">question</span><span class="chip plain">result</span><span class="chip plain">action-needed notice</span></span></div>
+      <div class="row"><span class="tag">quiet</span><span class="ch"><span class="chip plain">update</span><span class="chip plain">waiting</span><span class="chip plain">FYI</span></span></div>
+    </div>
+
+    <div class="guards abs">
+      <div class="card"><h3><i class="ic" data-i="lock"></i>No done with unread mail</h3><div class="mini">Not sent: read @leo's message first</div></div>
+      <div class="card"><h3><i class="ic" data-i="arrow-left-right"></i>Spawn or paste failed</h3><p>The message goes back to <span class="mono">pending</span>.</p></div>
+      <div class="card"><h3><i class="ic" data-i="scroll-text"></i>Missed one?</h3><p><span class="mono">sparrow inbox --last</span> re-reads history.</p></div>
+    </div>
+  </div>
+  <div class="foot"><span class="caption">Dead men tell no tales. Dead windows still get their mail.</span><span class="wave"><svg viewBox="0 0 600 14" preserveAspectRatio="none"><path d="M0 7 q15 -8 30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span></div>
+</div>
+<b class="edge-def" data-from="#send" data-to="#db" data-fs="r" data-ts="l" data-fp="50" data-tp="50" data-tone="accent" data-label="stored" data-lclass="accent" data-ly="-18"></b>
+<b class="edge-def" data-from="#db" data-to="#r1" data-fs="r" data-ts="l" data-fp="90" data-tp="38" data-tone="ok" data-mx="780" data-label="marks read" data-lclass="ok" data-lt=".5" data-lx="0" data-ly="40"></b>
+<b class="edge-def" data-from="#db" data-to="#r2" data-fs="r" data-ts="l" data-fp="90" data-tp="38" data-tone="ok" data-mx="780"></b>
+<b class="edge-def" data-from="#db" data-to="#r3" data-fs="r" data-ts="l" data-fp="90" data-tp="38" data-tone="ok" data-mx="780"></b>
+</div>
+<script src="icons.js"></script><script src="diagram.js"></script>
+</body></html>

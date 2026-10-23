@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Sparrow: the lifecycle of an agent</title>
+<link rel="stylesheet" href="diagram.css">
+<style>
+  .stage { position: relative; height: 352px; margin-top: 14px; }
+  .pillst { position: absolute; top: 176px; width: 104px; height: 44px; display: flex; align-items: center; justify-content: center; gap: 8px; font: 600 15.5px 'Geist'; background: var(--surface); border: 1.5px solid var(--line); border-radius: 999px; box-shadow: var(--shadow); }
+  .pillst.accent { border-color: var(--accent); }
+  .pillst.dashed { border-style: dashed; box-shadow: none; background: transparent; }
+  .pillst.muted { color: var(--ink-2); box-shadow: none; background: var(--surface-2); }
+  .sd { width: 10px; height: 10px; border-radius: 50%; background: var(--edge); flex: none; }
+  .sd.ok { background: var(--ok); } .sd.warn { background: var(--warn); } .sd.bad { background: var(--bad); } .sd.plain { background: var(--ink-3); }
+  .lab { position: absolute; width: 340px; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+  .lab .ln { display: flex; align-items: center; white-space: nowrap; font: 500 14.5px 'Geist Mono', monospace; color: var(--accent-ink); background: var(--accent-soft); border: 1.5px solid var(--accent); border-radius: 8px; padding: 5px 9px; height: 36px; }
+  .lab .tx { font-family: 'Geist'; font-size: 14.5px; color: var(--ink-2); }
+  .lab .ln:has(.tx) { background: transparent; border-color: var(--line); }
+  .lab .sub { font: 500 14px 'Geist'; color: var(--ink-2); white-space: nowrap; height: 22px; }
+  .lead { position: absolute; width: 0; border-left: 1.5px dashed var(--edge); }
+  .lab .step { width: 20px; height: 20px; font-size: 12px; margin-right: 8px; }
+  .note { position: absolute; top: 238px; width: 152px; font-size: 14px; line-height: 1.35; color: var(--ink-2); text-align: center; padding: 0 4px; }
+  .note .re { display: block; margin-bottom: 6px; } .note .re b { color: var(--ink); }
+  .note .rc { display: flex; align-items: center; justify-content: flex-start; margin-left: 12px; gap: 6px; font: 500 13px 'Geist Mono', monospace; color: var(--ink); line-height: 1.6; }
+  .nets { margin-top: 10px; }
+  .nets .nh { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .nets .nh .rule { flex: 1; border-top: 1.5px dashed var(--line); }
+  .nets .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  .nets .card { padding: 15px 16px; }
+  .nets .card h3 { font-size: 16.5px; }
+  .nets .card p { margin-top: 7px; font-size: 14.5px; }
+</style></head>
+<body>
+<div class="frame"><div class="layer">
+  <div class="head"><span class="eyebrow">A voyage</span><span class="wordmark"><i class="ic" data-i="sparrow"></i>Sparrow</span></div>
+  <h1 class="title">One agent, from hire to release.</h1>
+  <div class="stage">
+    <div class="pillst " id="s0" style="left:0px"><i class="sd plain"></i>hired</div>
+    <b class="edge-def" data-from="#s0" data-to="#s1" data-fs="r" data-ts="l" data-tone=accent></b>
+    <div class="pillst dashed" id="s1" style="left:152px"><i class="sd warn"></i>queued</div>
+    <b class="edge-def" data-from="#s1" data-to="#s2" data-fs="r" data-ts="l" data-dashed></b>
+    <div class="pillst accent" id="s2" style="left:304px"><i class="sd ok"></i>working</div>
+    <b class="edge-def" data-from="#s2" data-to="#s3" data-fs="r" data-ts="l"></b>
+    <div class="pillst " id="s3" style="left:456px"><i class="sd warn"></i>waiting</div>
+    <b class="edge-def" data-from="#s3" data-to="#s4" data-fs="r" data-ts="l"></b>
+    <div class="pillst accent" id="s4" style="left:608px"><i class="sd ok"></i>working</div>
+    <b class="edge-def" data-from="#s4" data-to="#s5" data-fs="r" data-ts="l"></b>
+    <div class="pillst " id="s5" style="left:760px"><i class="sd edge"></i>idle</div>
+    <b class="edge-def" data-from="#s5" data-to="#s6" data-fs="r" data-ts="l"></b>
+    <div class="pillst accent" id="s6" style="left:912px"><i class="sd ok"></i>working</div>
+    <b class="edge-def" data-from="#s6" data-to="#s7" data-fs="r" data-ts="l"></b>
+    <div class="pillst muted" id="s7" style="left:1064px"><i class="sd bad"></i>retired</div>
+    <div class="lab" style="left:-30px;top:0px"><div class="ln"><span class="step">1</span><span class="mono">sparrow hire builder - &lt;&lt;'EOF'</span></div></div>
+    <div class="lead" style="left:140px;top:38px;height:160px"></div>
+    <div class="lab" style="left:110.0px;top:92px"><div class="ln"><span class="step">2</span><span class="tx">a slot frees up</span></div></div>
+    <div class="lead" style="left:280.0px;top:130px;height:68px"></div>
+    <div class="lab" style="left:262.0px;top:0px"><div class="ln"><span class="step">3</span><span class="mono">sparrow ask "…"</span></div></div>
+    <div class="lead" style="left:432.0px;top:38px;height:160px"></div>
+    <div class="lab" style="left:414.0px;top:92px"><div class="ln"><span class="step">4</span><span class="mono">sparrow send @maya "…"</span></div><span class="sub">the answer</span></div>
+    <div class="lead" style="left:584.0px;top:156px;height:42px"></div>
+    <div class="lab" style="left:566.0px;top:0px"><div class="ln"><span class="step">5</span><span class="mono">sparrow done</span></div><span class="sub">Result · Evidence · Files · Next</span></div>
+    <div class="lead" style="left:736.0px;top:64px;height:134px"></div>
+    <div class="lab" style="left:718.0px;top:92px"><div class="ln"><span class="step">6</span><span class="mono">sparrow send @maya "…"</span></div><span class="sub">days later: "also handle X"</span></div>
+    <div class="lead" style="left:888.0px;top:156px;height:42px"></div>
+    <div class="lab" style="left:870.0px;top:0px"><div class="ln"><span class="step">7</span><span class="mono">sparrow release @maya</span></div><span class="sub">after more rounds of work</span></div>
+    <div class="lead" style="left:1040.0px;top:64px;height:134px"></div>
+    <div class="note" style="left:-18px">The task is stored with the agent.</div>
+    <div class="note" style="left:134px">Only if every slot is busy (default 3).</div>
+    <div class="note" style="left:286px">Window open. Quiet <span class="mono">sparrow update</span> lines go to the parent.</div>
+    <div class="note" style="left:438px">The call parks and the slot is freed.</div>
+    <div class="note" style="left:590px">Resumes in the same session.</div>
+    <div class="note" style="left:742px">Window closes after a few seconds. RAM back. Identity and session kept.</div>
+    <div class="note" style="left:894px"><span class="re">Reopens the <b>same</b> harness session:</span><span class="rc"><i class="dot claude"></i>claude --resume</span><span class="rc"><i class="dot codex"></i>codex resume</span><span class="rc"><i class="dot opencode"></i>opencode -s</span></div>
+    <div class="note" style="left:1046px">Retired for good. Never wakes again.</div>
+  </div>
+  <div class="nets">
+    <div class="nh"><span class="k">Safety nets while it works</span><span class="rule"></span></div>
+    <div class="grid">
+      <div class="card"><h3><i class="ic" data-i="life-buoy"></i>Crash</h3><p>One automatic restart on the same session, then the parent gets the last screen.</p></div>
+      <div class="card"><h3><i class="ic" data-i="flag"></i>Stopped without reporting</h3><p>Nudged twice through the harness hook, then an "unreported" notice.</p></div>
+      <div class="card"><h3><i class="ic" data-i="timer"></i>Quiet or slow</h3><p>15 quiet minutes: a reminder. Over 90 minutes: the captain is told. Never killed.</p></div>
+      <div class="card"><h3><i class="ic" data-i="server"></i>Server restart</h3><p>Live windows are adopted back.</p></div>
+    </div>
+  </div>
+  <div class="foot"><span class="caption">Agents don't get fired for being slow. Only for being done.</span><span class="wave"><svg viewBox="0 0 600 14" preserveAspectRatio="none"><path d="M0 7 q15 -8 30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span></div>
+</div></div>
+<script src="icons.js"></script><script src="diagram.js"></script>
+</body></html>
