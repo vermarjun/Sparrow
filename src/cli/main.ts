@@ -838,7 +838,8 @@ const commands: Record<string, Handler> = {
     const { values } = parse('uninstall', args, { purge: { type: 'boolean' } });
     if (inAgentWindow()) throw new Error('agents must not uninstall Sparrow; report it to your captain.');
     const { runUninstall } = await import('./setup');
-    if (values.purge && await (await import('./lifecycle')).health()) throw new Error('the server is running; run `sparrow stop` first, then `sparrow uninstall --purge`.');
+    // The running server serves its UI from the app dir that uninstall removes.
+    if (await (await import('./lifecycle')).health()) throw new Error(`the server is running; run \`sparrow stop\` first, then \`sparrow uninstall${values.purge ? ' --purge' : ''}\`.`);
     const lines = runUninstall({ purge: !!values.purge });
     return { raw: { removed: lines }, text: ['Sparrow uninstall', ...lines.map((l) => '  ' + l)].join('\n') };
   },

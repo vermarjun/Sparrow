@@ -3,6 +3,7 @@ import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, rmSync,
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { RealHarness } from '../harness/catalog';
+import { overrideProblem } from '../harness/discover';
 import { CLAUDE_JSON, CODEX_HOME } from '../harness/env';
 import { APP_VERSION, BIN, COMPILED, RESUMES_DIR, SPARROW_HOME } from '../shared/config';
 import { tmuxInstallHint } from '../shared/hints';
@@ -45,10 +46,8 @@ export function loginFound(h: RealHarness, env: NodeJS.ProcessEnv = process.env,
     if (env.ANTHROPIC_API_KEY || env.CLAUDE_CODE_OAUTH_TOKEN || env.ANTHROPIC_AUTH_TOKEN) return true;
     if (hasJson(CLAUDE_JSON(), (j) => !!j?.oauthAccount)) return true;
     if (existsSync(join(env.CLAUDE_CONFIG_DIR ?? join(home, '.claude'), '.credentials.json'))) return true;
-    if (process.platform === 'darwin') {
-      const r = Bun.spawnSync(['security', 'find-generic-password', '-s', 'Claude Code-credentials'], { stdout: 'ignore', stderr: 'ignore' });
-      return r.exitCode === 0;
-    }
+    // No Keychain query on macOS: even an attributes-only lookup can raise an unlock/permission prompt. A subscription login
+    // also leaves `oauthAccount` in ~/.claude.json (checked above); the doctor's live check is the authority.
     return false;
   }
   if (h === 'codex') return !!env.OPENAI_API_KEY || existsSync(join(env.CODEX_HOME ?? CODEX_HOME(), 'auth.json'));
@@ -72,6 +71,7 @@ export function readiness(): string[] {
   const lines: string[] = [];
   const tmux = Bun.which('tmux');
   lines.push(tmux ? `✓ tmux ${tmux}` : `✗ tmux not found: ${tmuxInstallHint()}`);
+  for (const h of ['claude', 'codex', 'opencode'] as RealHarness[]) { const w = overrideProblem(h); if (w) lines.push(`! ${w}`); }
   const have = installedHarnesses();
   for (const h of ['claude', 'codex', 'opencode'] as RealHarness[]) {
     if (!have[h]) { lines.push(`– ${h} not installed (${HARNESS_HINT[h]})`); continue; }

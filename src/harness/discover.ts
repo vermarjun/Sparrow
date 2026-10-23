@@ -89,6 +89,17 @@ function viaOverride(raw: string | undefined): string | null {
   return Bun.which(v, { PATH: harnessSearchPath() }); // a bare command name
 }
 
+/**
+ * A set SPARROW_<NAME>_BIN that does not name an executable is skipped by resolveHarnessBin (discovery carries on), which
+ * would otherwise be silent: this says so. Null when the override is unset or fine.
+ */
+export function overrideProblem(h: HarnessName): string | null {
+  const raw = process.env[ENV_VAR[h]]?.trim();
+  if (!raw || viaOverride(raw)) return null;
+  const used = lookupHarness(h, harnessSearchPath(), knownHarnessPaths(h));
+  return `${ENV_VAR[h]}=${raw} is not an executable file, so it is ignored; ${used ? `using ${used} instead` : `${h} was not found anywhere else either`}.`;
+}
+
 /** Search `searchPath`, then the `known` locations (exported for tests: the real search path includes system dirs). */
 export function lookupHarness(h: HarnessName, searchPath: string, known: string[]): string | null {
   return Bun.which(h, { PATH: searchPath }) ?? known.find(isExecutable) ?? null;

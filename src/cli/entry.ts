@@ -2,6 +2,9 @@
 // agent turn and must not load the CLI; `--version` needs nothing materialised.
 import { COMPILED } from '../shared/config';
 
+// Commands that never need the materialised app (uninstall must not recreate what it is about to delete).
+export const NO_APP = ['--version', 'version', 'help', '--help', '-h', 'uninstall'];
+
 export async function entry(argv: string[]): Promise<number> {
   const [cmd, ...rest] = argv;
   if (cmd === 'hook' && rest[0]) return (await import('./hook')).runHook(rest[0], rest.slice(1));
@@ -11,7 +14,7 @@ export async function entry(argv: string[]): Promise<number> {
     await import('../harness/fake-agent');
     return await new Promise<number>(() => {});   // runs until its window is killed (it calls process.exit itself)
   }
-  if (COMPILED && cmd !== '--version' && cmd !== 'version' && cmd !== 'help' && cmd !== '--help' && cmd !== '-h') {
+  if (COMPILED && !NO_APP.includes(cmd ?? '')) {
     await (await import('../shared/app')).ensureApp();
   }
   return (await import('./main')).main(argv);

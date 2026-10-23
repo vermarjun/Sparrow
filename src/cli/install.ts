@@ -14,7 +14,7 @@
 //   Installing into ~/.claude/skills + ~/.codex/skills gives every harness exactly one copy (no duplicates).
 import { createHash } from 'node:crypto';
 import {
-  chmodSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, symlinkSync, unlinkSync,
+  chmodSync, closeSync, cpSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, symlinkSync, unlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
@@ -109,7 +109,33 @@ async function version(cmd: string[]): Promise<string | null> {
   }
 }
 
-export async function runInstall(opts: { force?: boolean; installed?: Record<RealHarness, boolean> } = {}): Promise<InstallResult> {
+export interface InstallOpts { force?: boolean; installed?: Record<RealHarness, boolean> }
+
+/** Installs never overlap: two first runs at once (two terminals, a script) take turns, the second finds everything up to date. */
+export async function runInstall(opts: InstallOpts = {}): Promise<InstallResult> {
+  mkdirSync(SPARROW_HOME, { recursive: true });
+  const lock = join(SPARROW_HOME, 'install.lock');
+  let held = false;
+  for (let i = 0; i < 240 && !held; i++) {
+    try { const fd = openSync(lock, 'wx'); writeFileSync(fd, String(process.pid)); closeSync(fd); held = true; }
+    catch (e: any) {
+      if (e.code !== 'EEXIST') throw e;
+      try { process.kill(Number(readFileSync(lock, 'utf8')), 0); } catch { try { unlinkSync(lock); } catch {} continue; }   // holder died
+      await Bun.sleep(250);
+    }
+  }
+  if (!held) throw new Error('Another sparrow install is still running; retry shortly.');
+  try { return await installLocked(opts); } finally { try { unlinkSync(lock); } catch {} }
+}
+
+/** Point `link` at `target` atomically (temp link + rename): safe against a concurrent install doing the same. */
+export function linkAtomic(target: string, link: string) {
+  const tmp = `${link}.tmp-${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
+  symlinkSync(target, tmp);
+  try { renameSync(tmp, link); } catch (e) { try { unlinkSync(tmp); } catch {} throw e; }
+}
+
+async function installLocked(opts: InstallOpts): Promise<InstallResult> {
   const home = homedir();
   const ok: string[] = [];
   const warnings: string[] = [];
@@ -141,10 +167,10 @@ export async function runInstall(opts: { force?: boolean; installed?: Record<Rea
     if (existsSync(link) || isSymlink(link)) {
       if (isSymlink(link) && readlinkSync(link) === BIN) linkState = 'ok';
       // Without --force, only replace a symlink into another sparrow checkout (…/bin/sparrow) or an older binary, never a user's own link/file.
-      else if (opts.force || (isSymlink(link) && /(^|\/)(bin\/sparrow|sparrow[\w.-]*)$/.test(readlinkSync(link)))) { unlinkSync(link); linkState = 'replaced'; }
+      else if (opts.force || (isSymlink(link) && /(^|\/)(bin\/sparrow|sparrow[\w.-]*)$/.test(readlinkSync(link)))) linkState = 'replaced';
       else linkState = 'blocked';
     }
-    if (linkState === 'made' || linkState === 'replaced') symlinkSync(BIN, link);
+    if (linkState === 'made' || linkState === 'replaced') linkAtomic(BIN, link);
     if (linkState === 'blocked') warnings.push(`${t(link)} exists and is not our symlink; left alone (sparrow install --force replaces it)`);
     else ok.push(`${linkState === 'ok' ? 'link up to date' : linkState === 'replaced' ? 'relinked' : 'linked'} ${t(link)} → ${BIN}`);
     const onPath = (process.env.PATH ?? '').split(delimiter).some((p) => p.replace(/\/$/, '') === binDir);

@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import {
   binaryExists, binaryFor, cheapestModel, harnessVersion, loginStatus, type LoginResult, opencodeLastError, type RealHarness, run, spawnEnv,
 } from '../harness/catalog';
+import { overrideProblem } from '../harness/discover';
 import { opencodeConfigDir, pluginSource } from '../harness/drivers/opencode';
 import { BIN, COMPILED, type Settings } from '../shared/config';
 import { bunPath, hookEntry, isSandboxHome, serverUrl } from '../harness/env';
@@ -36,12 +37,13 @@ export interface HarnessOps {
 export const realOps: HarnessOps = {
   async binary(h) {
     const path = binaryFor(h as RealHarness);
+    const warn = overrideProblem(h as RealHarness);
     if (!binaryExists(path)) {
-      return { ok: false, path: null, version: null, detail: `not found at ${path}`, fix: `Install ${h}${h === 'codex' ? ' (brew install codex)' : h === 'claude' ? ' (curl -fsSL https://claude.ai/install.sh | bash)' : ' (curl -fsSL https://opencode.ai/install | bash)'} or set SPARROW_${h.toUpperCase()}_BIN to its path, then Run doctor.` };
+      return { ok: false, path: null, version: null, detail: `not found at ${path}${warn ? ` — ${warn}` : ''}`, fix: `Install ${h}${h === 'codex' ? ' (brew install codex)' : h === 'claude' ? ' (curl -fsSL https://claude.ai/install.sh | bash)' : ' (curl -fsSL https://opencode.ai/install | bash)'} or set SPARROW_${h.toUpperCase()}_BIN to its path, then Run doctor.` };
     }
     const version = await harnessVersion(h as RealHarness);
     if (!version) return { ok: false, path, version: null, detail: `${path} did not report a version`, fix: `Run '${path} --version' in a terminal to see why it fails, fix it, then Run doctor.` };
-    return { ok: true, path, version, detail: `${path} (v${version})`, fix: null };
+    return { ok: true, path, version, detail: `${path} (v${version})${warn ? ` — ${warn}` : ''}`, fix: null };
   },
   login: (h) => loginStatus(h as RealHarness),
   diagnose: (probe) => (probe.harness === 'opencode' ? opencodeLastError(probe.session_id) : null),

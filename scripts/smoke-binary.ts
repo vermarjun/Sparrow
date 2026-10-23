@@ -54,6 +54,8 @@ try {
   const st = await sp(['status']);
   check('status is up', st.code === 0 && st.out.includes('Sparrow server: up'), st.out.split('\n')[0]);
   check('first run linked ~/.local/bin/sparrow to the binary', existsSync(join(home, '.local', 'bin', 'sparrow')) && Bun.spawnSync(['readlink', join(home, '.local', 'bin', 'sparrow')]).stdout.toString().trim() === exe);
+  const [i1, i2] = await Promise.all([sp(['install', '--force']), sp(['install', '--force'])]);
+  check('two installs at once both succeed (race-safe link)', i1.code === 0 && i2.code === 0, `${i1.code}/${i2.code} ${(i1.err + i2.err).trim().slice(0, 120)}`);
   const again = await sp([]);
   check('second plain `sparrow` does not set up again', again.code === 0 && !again.out.includes('first run'));
   writeFileSync(join(sh, 'resumes', 'fake.md'), '---\nname: fake\ntitle: Fake\nharness: fake\ncan_hire: []\n---\nTest worker.\n');
