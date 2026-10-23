@@ -1,4 +1,4 @@
-// Pure logic for the captain page (docs/plans/multi-captain.md §7.3): stats, meta line, resume lines per harness,
+// Pure logic for the captain page (docs/DESIGN.md): stats, meta line, resume lines per harness,
 // which questions are still waiting, the cards of a fleet, an agent's thread, open-call timing, and the update-run spacing.
 // Unit-tested in web/test/captainPage.test.ts; components only render what these return.
 import type { Agent, CaptainInfo, CaptainSummary, Call, CallEndReason, Card, CardState, MessageView } from '@shared/types'

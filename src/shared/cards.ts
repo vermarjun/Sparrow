@@ -2,9 +2,9 @@
 import type { Card, CardLevel, CardNote, CardState } from './types';
 
 // ---------------------------------------------------------------- ticket keys
-// Card ids are global, so the key prefix is cosmetic: PLU-19 and SPA-19 can't both exist. Any prefix parses.
+// Card ids are global, so the key prefix is cosmetic: TOR-19 and SPA-19 can't both exist. Any prefix parses.
 
-/** 'plutus' → 'PLU', 'plutus-statements' → 'PLU', 'x' → 'X'; never empty. */
+/** 'tortuga' → 'TOR', 'tortuga-ledger' → 'TOR', 'x' → 'X'; never empty. */
 export function keyPrefix(projectId: string): string {
   const letters = projectId.replace(/[^a-z0-9]/gi, '').toUpperCase();
   return letters.slice(0, 3) || 'CARD';
@@ -14,7 +14,7 @@ export function cardKey(c: Pick<Card, 'id' | 'project_id'>): string {
   return `${keyPrefix(c.project_id)}-${c.id}`;
 }
 
-/** '19', '#19', 'PLU-19', 'plu-19', 'PLU 19' → 19; anything else → null. */
+/** '19', '#19', 'TOR-19', 'tor-19', 'TOR 19' → 19; anything else → null. */
 export function parseCardRef(ref: string | number | null | undefined): number | null {
   if (typeof ref === 'number') return Number.isInteger(ref) && ref > 0 ? ref : null;
   if (typeof ref !== 'string') return null;

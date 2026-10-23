@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
+import { chromeExecutable } from './browser'
 // Shell screenshots + keyboard / overflow assertions against the mock (UI served by vite, API by the mock).
-//   bun scripts/captains-shell-shots.ts [--url http://localhost:5281] [--api http://127.0.0.1:4181] [--out ../.orchestra/shots/captains] [--only home,cmdk] [--themes light,dark]
+//   bun scripts/captains-shell-shots.ts [--url http://localhost:5281] [--api http://127.0.0.1:4181] [--out ../.sandbox/shots/captains] [--only home,cmdk] [--themes light,dark]
 // Start the mock with --no-live for stable shots. Prints a JSON summary: checks, console errors, page errors.
 import { mkdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
@@ -8,13 +9,13 @@ import { parseArgs } from 'node:util'
 import puppeteer, { type Page } from 'puppeteer-core'
 
 const { values } = parseArgs({ args: Bun.argv.slice(2), options: { url: { type: 'string' }, api: { type: 'string' }, out: { type: 'string' }, only: { type: 'string' }, themes: { type: 'string' }, project: { type: 'string' } } })
-const URL_ = values.url ?? 'http://localhost:5281'
-const API = values.api ?? 'http://127.0.0.1:4181'
-const OUT = resolve(values.out ?? join(import.meta.dir, '../../.orchestra/shots/captains'))
-const PROJECT = values.project ?? 'plutus'
+const URL_ = values.url ?? process.env.SPARROW_WEB_URL ?? 'http://localhost:5281'
+const API = values.api ?? process.env.SPARROW_MOCK_URL ?? 'http://127.0.0.1:4181'
+const OUT = resolve(values.out ?? join(import.meta.dir, '../../.sandbox/shots/captains'))
+const PROJECT = values.project ?? process.env.SPARROW_DEMO_PROJECT ?? 'tortuga'
 const ONLY = values.only ? new Set(values.only.split(',')) : null
 const THEMES = (values.themes ?? 'light,dark').split(',') as ('light' | 'dark')[]
-const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+const CHROME = chromeExecutable()
 mkdirSync(OUT, { recursive: true })
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -44,7 +45,7 @@ const SKILLS = {
   ],
   unmanaged: [], external: [], conflicts: [], broken: [],
   git: { available: true, branch: 'main', dirty: ['release-notes/SKILL.md'], ahead: 1, behind: 0, remote: 'git@github.com:acme/skills.git' },
-  paths: { library: '~/.sparrow/skills', home: '/Users/me', backup: '~/.sparrow/backups', roots: { library: '~/.sparrow/skills', claude: '~/.claude/skills', codex: '~/.codex/skills', opencode: '~/.config/opencode/skills', agents: '~/.agents/skills', 'claude-synced': '~/.claude/skills', sparrow: '~/.sparrow/skills' }, sandbox: false },
+  paths: { library: '~/.sparrow/skills', home: '/home/demo', backup: '~/.sparrow/backups', roots: { library: '~/.sparrow/skills', claude: '~/.claude/skills', codex: '~/.codex/skills', opencode: '~/.config/opencode/skills', agents: '~/.agents/skills', 'claude-synced': '~/.claude/skills', sparrow: '~/.sparrow/skills' }, sandbox: false },
   warnings: [],
 }
 
@@ -224,7 +225,7 @@ if (want('keys')) {
     check('New captain: Esc inside the folder list does not close the dialog', await page.evaluate(() => !!document.querySelector('[role=dialog] #nc-title')))
     await page.keyboard.press('Enter'); await sleep(200)
     check('New captain: empty folder shows an inline error', await page.evaluate(() => !!document.querySelector('#nc-cwd-err')?.textContent))
-    await page.keyboard.type('~/Desktop/plutus'); await page.keyboard.press('Escape')
+    await page.keyboard.type('~/code/tortuga'); await page.keyboard.press('Escape')
     await page.evaluate(() => (document.querySelector('#nc-name') as HTMLInputElement).focus()); await page.keyboard.type('Bad Name!')
     expected400++
     await page.keyboard.press('Enter'); await sleep(600)

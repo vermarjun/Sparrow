@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { chromeExecutable } from './browser'
 // Interaction checks of the captain page against the mock (--no-live) served through vite.
 //   bun scripts/captain-page-e2e.ts --url http://localhost:5282
 // Exits 1 when a check fails; prints one line per check.
@@ -6,10 +7,10 @@ import { parseArgs } from 'node:util'
 import puppeteer, { type Page } from 'puppeteer-core'
 
 const { values } = parseArgs({ args: Bun.argv.slice(2), options: { url: { type: 'string' }, project: { type: 'string' } } })
-const URL_ = values.url ?? 'http://localhost:5282'
-const PROJECT = values.project ?? 'plutus'
+const URL_ = values.url ?? process.env.SPARROW_WEB_URL ?? 'http://localhost:5282'
+const PROJECT = values.project ?? process.env.SPARROW_DEMO_PROJECT ?? 'tortuga'
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
-const browser = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', args: ['--no-sandbox'], headless: true })
+const browser = await puppeteer.launch({ executablePath: chromeExecutable(), args: ['--no-sandbox'], headless: true })
 const page: Page = await browser.newPage()
 await page.setViewport({ width: 1440, height: 900 })
 await page.evaluateOnNewDocument(() => { try { localStorage.setItem('sparrow.theme', 'light') } catch { /* */ } })
@@ -108,7 +109,7 @@ check('rail: resume is one line without the cd prefix; title holds the full comm
 
 // unknown captain
 await go('captain/nobody')
-check('unknown captain: calm empty state', (await page.evaluate(() => document.body.innerText)).includes('No captain @nobody in plutus'))
+check('unknown captain: calm empty state', (await page.evaluate(() => document.body.innerText)).includes('No captain @nobody in tortuga'))
 
 // the one expected 400 is the rename the server rejects above
 const unexpected = errors.filter((e) => !/status of 400/.test(e))

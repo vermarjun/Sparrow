@@ -68,7 +68,7 @@ export function projectCaption(p: ProjectRow, captains: CaptainSummary[] | null)
 
 // ---------------------------------------------------------------- new captain
 
-/** `/Users/me/code/x` → `~/code/x`; already-tilde paths stay. */
+/** `/home/demo/code/x` → `~/code/x`; already-tilde paths stay. */
 export const folderLabel = (p: string) => tildePath(p)
 
 /** Folder options: the project root first, then recent roots, deduped, filtered by what was typed (a value that already equals an option shows them all). */

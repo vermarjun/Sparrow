@@ -62,7 +62,7 @@ with your result or another waking message, or shown in the parent's `Still work
   is a reserved handle and cannot be used as a recipient.
 - `sparrow roster` — who is on the team. `sparrow whoami` — your identity.
 - `sparrow propose "<title>" …` — suggest a board ticket; a captain decides. How to write one: "Proposing tickets" below.
-- `sparrow card show <N>` — read a ticket (`12`, `#12` or `PLU-12`). On a card assigned to you: `card note <N> "<text>"`,
+- `sparrow card show <N>` — read a ticket (`12`, `#12` or `TOR-12`). On a card assigned to you: `card note <N> "<text>"`,
   `card check <N> <i>` (tick a "Done when" item, 1-based), `card block <N> "<who/what>"` / `card unblock <N>`,
   `card move <N> review`. Your `sparrow done` (status ok) moves your in-progress card to Review by itself; never move a card to done.
 - Any text argument may be `-` to read a quoted heredoc (safe for quotes, backticks, `$`).

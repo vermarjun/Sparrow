@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
-// Independent verification of the Captains UI (spec docs/plans/multi-captain.md §7).
-//   bun scripts/verify-captains.ts [--url http://127.0.0.1:4183] [--out ../.orchestra/shots/captains/verify] [--project plutus]
+import { chromeExecutable } from './browser'
+// Independent verification of the Captains UI (spec docs/DESIGN.md).
+//   bun scripts/verify-captains.ts [--url http://127.0.0.1:4183] [--out ../.sandbox/shots/captains/verify] [--project tortuga]
 // Screenshots every route in light + dark at 1440x900 and 390x844; asserts no horizontal scroll, no console/page errors
 // (ignores only the mock's missing /api/skills 404, which we stub anyway so the Skills page renders). Then keyboard,
 // accessibility (icon-only buttons lacking aria-label, focus ring) checks. Mutations (title edit, new captain) run last.
@@ -13,10 +14,10 @@ const { values } = parseArgs({
   args: Bun.argv.slice(2),
   options: { url: { type: 'string' }, out: { type: 'string' }, project: { type: 'string' } },
 })
-const URL_ = values.url ?? 'http://127.0.0.1:4183'
-const OUT = resolve(values.out ?? join(import.meta.dir, '../../.orchestra/shots/captains/verify'))
-const PROJECT = values.project ?? 'plutus'
-const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+const URL_ = values.url ?? process.env.SPARROW_WEB_URL ?? 'http://127.0.0.1:4183'
+const OUT = resolve(values.out ?? join(import.meta.dir, '../../.sandbox/shots/captains/verify'))
+const PROJECT = values.project ?? process.env.SPARROW_DEMO_PROJECT ?? 'tortuga'
+const CHROME = chromeExecutable()
 const THEMES = ['light', 'dark'] as const
 const SIZES = [{ w: 1440, h: 900 }, { w: 390, h: 844 }] as const
 mkdirSync(OUT, { recursive: true })
@@ -40,7 +41,7 @@ const SKILLS = {
   ],
   unmanaged: [], external: [], conflicts: [], broken: [],
   git: { available: true, branch: 'main', dirty: ['release-notes/SKILL.md'], ahead: 1, behind: 0, remote: 'git@github.com:acme/skills.git' },
-  paths: { library: '~/.sparrow/skills', home: '/Users/me', backup: '~/.sparrow/backups', roots: { library: '~/.sparrow/skills', claude: '~/.claude/skills', codex: '~/.codex/skills', opencode: '~/.config/opencode/skills', agents: '~/.agents/skills', 'claude-synced': '~/.claude/skills', sparrow: '~/.sparrow/skills' }, sandbox: false },
+  paths: { library: '~/.sparrow/skills', home: '/home/demo', backup: '~/.sparrow/backups', roots: { library: '~/.sparrow/skills', claude: '~/.claude/skills', codex: '~/.codex/skills', opencode: '~/.config/opencode/skills', agents: '~/.agents/skills', 'claude-synced': '~/.claude/skills', sparrow: '~/.sparrow/skills' }, sandbox: false },
   warnings: [],
 }
 

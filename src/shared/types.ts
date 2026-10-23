@@ -29,7 +29,7 @@ export type DoneStatus = 'ok' | 'blocked' | 'failed';
 export const CARD_STATES: CardState[] = ['proposed', 'todo', 'in_progress', 'review', 'done', 'dropped'];
 
 export interface Project {
-  id: string;        // slug, e.g. 'plutus' (basename of the git root; '-2' suffix on clash)
+  id: string;        // slug, e.g. 'tortuga' (basename of the git root; '-2' suffix on clash)
   name: string;
   root: string;      // absolute path of the git root (or cwd when not a git repo)
   created_at: number;
@@ -49,7 +49,7 @@ export interface Agent {
   parent_id: string | null;      // who hired it (results/questions go here)
   depth: number;                 // human captain 0, its hires 1, their hires 2 (max_depth)
   cwd: string;                   // absolute
-  tmux_session: string;          // e.g. 'sparrow-plutus'
+  tmux_session: string;          // e.g. 'sparrow-tortuga'
   tmux_window: string;           // window NAME, e.g. 'james'
   tmux_window_id: string | null; // tmux window id like '@17' while a window is open, else null
   session_id: string | null;     // harness session id (the "SIM"); null until known
@@ -63,7 +63,7 @@ export interface Agent {
   call_started_at?: number | null; // start of the open call (API read paths only: /api/agents, CaptainDetail.agents)
   resume_hash: string | null;    // ResumeView.hash of the resume copy this agent was hired from (or last applied)
   last_run: RunInfo | null;      // what the latest call actually launched with
-  // Multi-captain (docs/plans/multi-captain.md). A fleet = one human captain + everyone hired under it.
+  // Multi-captain (docs/DESIGN.md). A fleet = one human captain + everyone hired under it.
   fleet_id: string;              // id of the human captain at the root of this agent's tree; a human captain: its own id
   captain: CaptainInfo | null;   // set on kind 'human' rows only
   created_at: number;
@@ -89,7 +89,7 @@ export interface CaptainResume {
   cwd: string;
   harness: HarnessName | 'unknown';
   session_id: string | null;
-  command: string | null;        // shell line to reopen it yourself, e.g. "cd '/x/plutus-feat1' && claude --resume 7f3a…"; null without a session id
+  command: string | null;        // shell line to reopen it yourself, e.g. "cd '/x/tortuga-feat1' && claude --resume 7f3a…"; null without a session id
   attach: string | null;         // tmux attach line while its Sparrow-launched window is open, else null
 }
 

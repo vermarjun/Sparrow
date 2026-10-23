@@ -1,8 +1,9 @@
 #!/usr/bin/env bun
+import { chromeExecutable } from './browser'
 // Screenshots + drag proof against a running server that serves web/dist (the mock by default).
-//   bun scripts/shots.ts [--url http://127.0.0.1:4140] [--log <mock url, when --url is vite>] [--out ../.orchestra/shots/T4] [--project plutus] [--u1 | --u1-only]
+//   bun scripts/shots.ts [--url http://127.0.0.1:4140] [--log <mock url, when --url is vite>] [--out ../.sandbox/shots/T4] [--project tortuga] [--u1 | --u1-only]
 // --v2 runs only the Board v2 pass (board, Later, list, Filter popover, title-line toggles, ? sheet, Triage, sheets, new-ticket dialog + interaction checks);
-//   shots land in --out (use ../.orchestra/shots/board-v2 with --size 1440x900 / 1280x800 and --prefix).
+//   shots land in --out (use ../.sandbox/shots/board-v2 with --size 1440x900 / 1280x800 and --prefix).
 // --u1 adds the U1 pages (Doctor empty → running → results, Resumes, editor, test, Start captain); the mock must
 // start with no doctor run (no --doctor-done). --u1-only skips the board/chat/agents shots.
 // Prints a JSON summary: console errors, page errors, and the requests a drag produced.
@@ -18,10 +19,10 @@ const { values } = parseArgs({
     card: { type: 'string' }, log: { type: 'string' }, v2: { type: 'boolean' }, u1: { type: 'boolean' }, 'u1-only': { type: 'boolean' }, dm: { type: 'string' }, dm2: { type: 'string' }, agent: { type: 'string' }, agent2: { type: 'string' }, dm3: { type: 'string' }, size: { type: 'string' },
   },
 })
-const URL_ = values.url ?? 'http://127.0.0.1:4140'
+const URL_ = values.url ?? process.env.SPARROW_WEB_URL ?? 'http://127.0.0.1:4140'
 const LOG = values.log ?? URL_ // where the mock's /__log lives (--log when --url is a vite dev server)
-const OUT = resolve(values.out ?? join(import.meta.dir, '../../.orchestra/shots/T4'))
-const PROJECT = values.project ?? 'plutus'
+const OUT = resolve(values.out ?? join(import.meta.dir, '../../.sandbox/shots/T4'))
+const PROJECT = values.project ?? process.env.SPARROW_DEMO_PROJECT ?? 'tortuga'
 const PREFIX = values.prefix ?? ''
 const CARD = values.card ?? '3'
 const DM = values.dm ?? '@captain ↔ @omar'
@@ -30,7 +31,7 @@ const AGENT = values.agent ?? 'james'
 const AGENT2 = values.agent2 ?? 'iris'
 const DM3 = values.dm3 ?? '@maya ↔ @iris'
 const [W, H] = (values.size ?? '1440x900').split('x').map(Number)
-const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+const CHROME = chromeExecutable()
 mkdirSync(OUT, { recursive: true })
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))

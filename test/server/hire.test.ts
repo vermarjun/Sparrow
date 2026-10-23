@@ -18,11 +18,11 @@ describe('register captain', () => {
     expect(again.body.inbox).toEqual([]);
     const a = mkdtempSync(join(tmpdir(), 'sp-a-'));
     const b = mkdtempSync(join(tmpdir(), 'sp-b-'));
-    mkdirSync(join(a, 'plutus')); mkdirSync(join(b, 'plutus'));
-    const p1 = await ctx.req('POST', '/api/captains/register', { cwd: join(a, 'plutus') });
-    const p2 = await ctx.req('POST', '/api/captains/register', { cwd: join(b, 'plutus') });
-    expect(p1.body.project.id).toBe('plutus');
-    expect(p2.body.project.id).toBe('plutus-2');
+    mkdirSync(join(a, 'tortuga')); mkdirSync(join(b, 'tortuga'));
+    const p1 = await ctx.req('POST', '/api/captains/register', { cwd: join(a, 'tortuga') });
+    const p2 = await ctx.req('POST', '/api/captains/register', { cwd: join(b, 'tortuga') });
+    expect(p1.body.project.id).toBe('tortuga');
+    expect(p2.body.project.id).toBe('tortuga-2');
     expect(p1.body.agent.id).not.toBe(p2.body.agent.id);
   });
 

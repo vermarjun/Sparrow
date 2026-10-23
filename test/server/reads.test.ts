@@ -148,10 +148,10 @@ describe('static web/dist', () => {
 
 describe('prompts + resumes', () => {
   const agent = {
-    id: 'ag_1', project_id: 'plutus', handle: 'james', title: 'Builder', harness: 'claude', cwd: '/tmp/x',
-    tmux_session: 'sparrow-plutus', tmux_window: 'james', can_hire: [], parent_id: 'ag_0',
+    id: 'ag_1', project_id: 'tortuga', handle: 'james', title: 'Builder', harness: 'claude', cwd: '/tmp/x',
+    tmux_session: 'sparrow-tortuga', tmux_window: 'james', can_hire: [], parent_id: 'ag_0',
   } as unknown as Agent;
-  const project: Project = { id: 'plutus', name: 'plutus', root: '/tmp/x', created_at: 0 };
+  const project: Project = { id: 'tortuga', name: 'tortuga', root: '/tmp/x', created_at: 0 };
   const res: Resume = parseResume(resume('builder', 'claude', 'model: opus\ncan_hire: []  # none\n'), '/r/builder.md', DEFAULT_SETTINGS);
 
   test('renderSystemPrompt fills every template var from protocol.md, appends the role', () => {
@@ -159,7 +159,7 @@ describe('prompts + resumes', () => {
     const p = join(dir, 'protocol.md');
     writeFileSync(p, '{{handle}}|{{title}}|{{project}}|{{parent}}|{{cwd}}|{{harness}}|{{agent_id}}|{{can_hire}}|{{tmux}}|{{unknown}}');
     const out = renderSystemPrompt(agent, res, { handle: 'captain' } as Agent, project, p);
-    expect(out).toBe('james|Builder|plutus|captain|/tmp/x|claude|ag_1|You may NOT hire anyone; never run `sparrow hire`.|sparrow-plutus:james|{{unknown}}\n\n# Your role\n\nYou are the builder.\n');
+    expect(out).toBe('james|Builder|tortuga|captain|/tmp/x|claude|ag_1|You may NOT hire anyone; never run `sparrow hire`.|sparrow-tortuga:james|{{unknown}}\n\n# Your role\n\nYou are the builder.\n');
   });
 
   test('A2: can_hire sentence', () => {
@@ -170,20 +170,20 @@ describe('prompts + resumes', () => {
 
   test('renderSystemPrompt falls back to the built-in protocol', () => {
     const out = renderSystemPrompt(agent, res, null, project, '/nonexistent.md');
-    expect(out).toContain('You are @james (Builder), an agent in project plutus');
+    expect(out).toContain('You are @james (Builder), an agent in project tortuga');
     expect(out).toContain('# Your role');
   });
 
   test('envelope format', () => {
     const t = new Date('2026-10-13T14:02:00').getTime();
-    const m: Message = { seq: 1, id: 'm1', project_id: 'plutus', thread: 'dm:a:b', from_id: 'ag_0', kind: 'task', text: 'Build it', mentions: ['ag_1'], card_id: 3, meta: {}, created_at: t };
+    const m: Message = { seq: 1, id: 'm1', project_id: 'tortuga', thread: 'dm:a:b', from_id: 'ag_0', kind: 'task', text: 'Build it', mentions: ['ag_1'], card_id: 3, meta: {}, created_at: t };
     const env = renderEnvelope(agent, [m], () => 'captain');
-    expect(env).toBe('[sparrow] 1 new message for @james (project plutus):\n\n── task from @captain · 14:02 · card #3 ──\nBuild it\n\nReport with the sparrow CLI: `sparrow update` as you go, then `sparrow done` (or `sparrow ask` if blocked).\n');
+    expect(env).toBe('[sparrow] 1 new message for @james (project tortuga):\n\n── task from @captain · 14:02 · card #3 ──\nBuild it\n\nReport with the sparrow CLI: `sparrow update` as you go, then `sparrow done` (or `sparrow ask` if blocked).\n');
   });
 
   test('envelope groups by agent: a child\'s updates (timed lines) then its result; notices go under meta.about', () => {
     const t = new Date('2026-10-13T14:02:00').getTime();
-    const base = { project_id: 'plutus', thread: 'dm:a:b', mentions: [], card_id: null, meta: {} };
+    const base = { project_id: 'tortuga', thread: 'dm:a:b', mentions: [], card_id: null, meta: {} };
     const ms: Message[] = [
       { ...base, seq: 7, id: 'r', from_id: 'ag_b', kind: 'result', text: '## Result\nok', meta: { status: 'ok', call_ms: 61_000 }, mentions: ['ag_1'], created_at: t + 120_000 },
       { ...base, seq: 2, id: 'u1', from_id: 'ag_b', kind: 'update', text: 'one\ntwo', card_id: 4, created_at: t + 5_000 },
@@ -194,7 +194,7 @@ describe('prompts + resumes', () => {
     const handles: Record<string, string> = { ag_b: 'bob', ag_c: 'cat' };
     const env = renderEnvelope({ ...agent, can_hire: ['builder'] }, ms, (id) => handles[id] ?? id);
     expect(env).toBe([
-      '[sparrow] 5 new messages for @james (project plutus):',
+      '[sparrow] 5 new messages for @james (project tortuga):',
       '',
       '── updates from @bob ──',
       '14:02:05  one',
