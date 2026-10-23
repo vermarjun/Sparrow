@@ -1,6 +1,6 @@
 # Sparrow — design
 
-Sparrow is a personal, harness-agnostic agent factory that runs on one Mac. Your own Claude Code session is a captain (one per feature or fix, many at once). It hires named agents from resumes; a local server opens each one in its own tmux window as a real interactive Claude Code, Codex or OpenCode session; agents report through the `sparrow` CLI; finished agents are closed to free RAM and resumed on the same session when messaged again.
+Sparrow is a harness-agnostic agent factory that runs on macOS and Linux. Your own Claude Code session is a captain (one per feature or fix, many at once). It hires named agents from resumes; a local server opens each one in its own tmux window as a real interactive Claude Code, Codex or OpenCode session; agents report through the `sparrow` CLI; finished agents are closed to free RAM and resumed on the same session when messaged again.
 
 Code layout: `src/shared` (types, config), `src/server` (state, API, lifecycle), `src/harness` (tmux + one driver per harness), `src/cli` (the `sparrow` command and hooks), `assets` (protocol, skills, resumes, OpenCode plugin), `web` (observer UI).
 

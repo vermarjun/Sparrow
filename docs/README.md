@@ -8,6 +8,7 @@
 | [Configuration](configuration.md) | Settings, environment variables, where state lives, resume files, skills library. |
 | [Troubleshooting](troubleshooting.md) | Server, tmux and login problems, quiet or stuck agents, missed messages, logs, safe reset. |
 | [Design spec](DESIGN.md) | Lifecycle rules, API contracts, launch protocols. For contributors. |
+| [Releasing](RELEASING.md) | How binaries, npm packages, the Homebrew formula and the install script are built and published. For maintainers. |
 
 Elsewhere in the repo:
 

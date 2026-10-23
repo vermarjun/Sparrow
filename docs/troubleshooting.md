@@ -52,7 +52,7 @@ brew install tmux          # macOS
 sudo apt install tmux      # Debian, Ubuntu
 ```
 
-Sparrow only checks that `tmux -V` runs. If your own tmux config misbehaves, isolate Sparrow with
+On Linux the first-run readiness check names the command for your distro. Sparrow only checks that `tmux -V` runs. If your own tmux config misbehaves, isolate Sparrow with
 `SPARROW_TMUX_SOCKET=sparrow` so it uses its own tmux server.
 
 ## A harness is not logged in
@@ -65,10 +65,13 @@ codex login status
 opencode auth list
 ```
 
-Log in with the harness itself, then run the doctor again. If a harness is installed somewhere unusual, set
-`SPARROW_CLAUDE_BIN`, `SPARROW_CODEX_BIN` or `SPARROW_OPENCODE_BIN` (see
-[Configuration](configuration.md#environment-variables)). Codex looks in `/opt/homebrew/bin/codex` and OpenCode in
-`~/.opencode/bin/opencode` unless told otherwise.
+Log in with the harness itself, then run the doctor again. The first-run readiness check (`✓ claude installed, login
+found`) is only a hint: it looks for credentials on disk or in the environment and does not test them. The doctor does.
+
+If Sparrow cannot find a harness you have installed, point it there with `SPARROW_CLAUDE_BIN`, `SPARROW_CODEX_BIN` or
+`SPARROW_OPENCODE_BIN`. Sparrow already searches your `PATH` plus the usual npm, Homebrew, nvm, Volta and similar
+folders (see [Harness discovery](configuration.md#harness-discovery)). If a variable you set does not name an
+executable, Sparrow ignores it and warns you.
 
 ## A resume is UNUSABLE
 
@@ -124,16 +127,15 @@ A resumed call that dies within 20 seconds restarts with a fresh session plus a 
 the server itself restarted while an agent was working and its window is gone, the agent becomes `crashed` with reason
 `server_restart` and you are told.
 
-## "Not sent: new messages arrived"
+## "Not sent: unread messages"
 
-<!-- messaging: verify against oss/protocol -->
-`done`, `ask` and `wait` refuse while waking messages are unread. Your report was not delivered. Run
-`sparrow inbox`, act on what it shows, then run the command again with your complete report, not just the changes.
-<!-- /messaging -->
+`done`, `ask` and `wait` refuse while waking messages are unread. They print
+`Not sent: unread messages from @x; run sparrow inbox, then report again (done).` Your report was not delivered, and
+nothing was consumed. Run `sparrow inbox`, act on what it shows, then run the command again with your complete report,
+not just the changes.
 
 ## Read a message you missed
 
-<!-- messaging: verify against oss/protocol -->
 Messages are stored whether or not anyone read them. To read them again:
 
 ```sh
@@ -144,13 +146,15 @@ sparrow log @maya -n 30        # one agent's thread
 
 When you have unread mail, every command ends with `📨 N unread for @you: ... Read: sparrow inbox`. If you see it,
 run `sparrow inbox`. Released agents drop their pending mail by design, but their history stays in `sparrow log`.
-<!-- /messaging -->
 
 ## Other messages you may see
 
 | Message | Meaning and fix |
 |---|---|
-| `UI not built, run sparrow install` | The server runs but has no UI. Run `sparrow install`. |
+| `UI not built` | A source checkout whose UI was never built. Run `sparrow install`, or `bun run web:build`. A binary install carries its UI. |
+| No browser opens (Linux, SSH, container) | Sparrow only opens a browser when a desktop session exists. It prints the URL: open `http://127.0.0.1:4040` yourself, or, on a remote machine, tunnel it with `ssh -L 4040:127.0.0.1:4040`. |
+| `the running server is vX, this sparrow is vY` | You upgraded the binary but the old server is still up. `sparrow stop`, then `sparrow`. |
+| `sparrow uninstall` says the server is running | `sparrow stop` first. |
 | `403` on a message, release or card | You tried to act on another captain's agent. Crews are private. |
 | `409 N captains in <project>` | Several captains share this project and Sparrow cannot tell which one this shell is. Run from the captain's own session or set `SPARROW_CAPTAIN_ID`. |
 | `may not hire` | The caller's resume does not list that role in `can_hire`. |

@@ -7,13 +7,16 @@ first agent spends working.
 
 | You need | Why | How to check |
 |---|---|---|
-| macOS or Linux | Sparrow runs agents in tmux windows. Windows works only through WSL2, untested. | `uname -s` |
+| macOS or Linux (arm64 or x64) | Sparrow runs agents in tmux windows. On Windows, use WSL2 and install inside it. | `uname -sm` |
 | tmux | Every agent gets its own tmux window. | `tmux -V` |
 | One logged-in harness | Agents are the real Claude Code, Codex or OpenCode. Sparrow adds no model access of its own. | see below |
 
+You do not need Bun, Node or a clone of the repo: the install routes below give you one self-contained binary. Bun is
+only for running from source.
+
 Sparrow checks that `tmux -V` runs. It enforces no minimum tmux version, and none has been verified, so use a recent
-one. Most testing so far was on macOS. Linux is supported, with less mileage behind it; file an issue if something
-breaks.
+one. macOS is the most used platform. Linux was verified end to end in a Debian container on arm64; file an issue if
+your distro misbehaves.
 
 You need at least one of these, logged in. Check each one you plan to use:
 
@@ -28,7 +31,6 @@ has, so your plan's usage limits still apply.
 
 ## Install
 
-<!-- install: finalize after oss/dist merge -->
 ```sh
 # 1. install script
 curl -fsSL https://raw.githubusercontent.com/vermarjun/Sparrow/main/install.sh | sh
@@ -46,6 +48,12 @@ All three give you the same `sparrow` command. Check it:
 sparrow --version
 ```
 
+The install script downloads the binary for your OS and CPU from the GitHub Release, verifies its SHA-256 checksum,
+and puts it in `~/.local/bin/sparrow`. It tells you if that directory is not on your `PATH` and which command
+installs tmux if you lack it. Two variables tune it: `SPARROW_VERSION=0.2.0` pins a version (the default is the latest
+release) and `SPARROW_INSTALL_DIR=<dir>` changes the target folder. The npm package is a small launcher plus one
+platform package, so keep optional dependencies enabled. The Homebrew formula comes from the `vermarjun/tap` tap.
+
 ### From source
 
 Do this if you want to hack on Sparrow. You need [Bun](https://bun.sh) and tmux.
@@ -58,11 +66,12 @@ bun install
 bun bin/sparrow install
 ```
 
-`sparrow install` is idempotent. It creates `~/.sparrow`, seeds the default resumes (it never overwrites ones you
-edited, and never brings back ones you deleted), links `~/.local/bin/sparrow` to your checkout, copies the
-`sparrow-captain` and `sparrow-worker` skills into `~/.claude/skills` and `~/.codex/skills`, installs the harness
-plugins, builds the UI, and reports which binaries it found. Make sure `~/.local/bin` is on your `PATH`. See
-[CONTRIBUTING.md](../CONTRIBUTING.md) for the rest of the developer setup.
+From source, setup does not run by itself: run `bun bin/sparrow install` once. It is idempotent. It creates
+`~/.sparrow`, seeds the default resumes (it never overwrites ones you edited, and never brings back ones you deleted),
+links `~/.local/bin/sparrow` to your checkout, copies the `sparrow-captain` and `sparrow-worker` skills into
+`~/.claude/skills` and `~/.codex/skills`, installs the harness plugins, builds the UI, and reports which binaries it
+found. Make sure `~/.local/bin` is on your `PATH`. See [CONTRIBUTING.md](../CONTRIBUTING.md) for the rest of the
+developer setup, and [Configuration](configuration.md#what-install-writes) for everything setup writes.
 
 ## First run
 
@@ -73,12 +82,47 @@ sparrow
 With no arguments, `sparrow` starts the server detached if it is not running, waits for the UI, opens it in your
 browser and returns. The server listens on `http://127.0.0.1:4040`. Run it again any time: it just reopens the UI.
 
+**The first run sets itself up.** The installed binary notices it has not been set up yet (and again after an
+upgrade), creates `~/.sparrow`, seeds the resumes, links itself into `~/.local/bin` when no other `sparrow` is on your
+`PATH`, installs the skills and plugins, and unpacks its UI into `~/.sparrow/app/<version>/`. Then it prints a short
+readiness check:
+
+```text
+✓ tmux /usr/bin/tmux
+✓ claude installed, login found
+- codex not installed (npm i -g @openai/codex   (or: brew install codex))
+! opencode installed, no login found (opencode auth login)
+Hireable now: advisor, builder-codex, builder, deckhand, sub-captain, verifier
+Needs another harness/login: presenter (opencode), researcher (opencode)
+Seeded on a fallback harness: builder-codex, verifier. They stay there if you install the missing harness later; ...
+Next: open the UI, Run doctor (live check), then Start captain.
+```
+
+`✓` is good, `!` needs a login or a fix, a dash is a harness that is not installed, `✗` is missing tmux (with the command that installs it).
+The login line is a static hint: it looks for credentials on disk or in the environment, it does not test them. The
+doctor does the live test.
+
+**A missing harness is not a dead end.** When setup seeds the default resumes, any role whose harness you do not have
+is rewritten onto one you do. Only the frontmatter changes. The order is Claude Code, then Codex, then OpenCode. A
+Claude target keeps the role's own `opus`, `sonnet` or `haiku` alias, or uses `sonnet`; Codex and OpenCode targets use
+the harness default model. Setup prints a line per rewrite, for example
+`verifier: codex not installed -> seeded on claude · sonnet`. Those resumes stay where they were seeded even if you
+install the missing harness later. To reseed one, delete `~/.sparrow/resumes/<name>.md` and run `sparrow install`.
+With no harness installed at all, resumes are left as shipped. With none installed and logged in, the readiness check says
+`Hireable now: none`.
+
 ```sh
 sparrow status     # server health, working agents, tmux attach lines
 sparrow stop       # stop the server (live agent windows are adopted back on the next start)
 ```
 
-If the browser does not open, open `http://127.0.0.1:4040` yourself. The server log is `~/.sparrow/server.log`.
+On Linux, Sparrow tries `xdg-open`, `gio` or `sensible-browser`, but only when a desktop session is present
+(`DISPLAY` or `WAYLAND_DISPLAY`). On a headless box, in a container or over SSH it prints `Open http://127.0.0.1:4040 in
+your browser.` instead. Set `SPARROW_NO_OPEN=1` to never open a browser. If the browser does not open, open the URL
+yourself. The server log is `~/.sparrow/server.log`.
+
+If the running server is an older version than the binary you just upgraded to, `sparrow` says so. Run `sparrow stop`,
+then `sparrow`, to move to the new one.
 
 ## Run the doctor
 
@@ -142,8 +186,8 @@ sparrow resumes         # slug, harness, model, effort, status, who it may hire
 ```sh
 sparrow hire builder - --name maya <<'EOF'
 Goal: rate-limit POST /login, 5 tries per 15 minutes per IP.
-Context: the server is src/server/api.ts; tests live in test/server/.
-Acceptance: `bun test test/server/` is green, including a test that the 6th attempt gets a 429.
+Context: the routes are in src/api/; tests live in test/api/.
+Acceptance: `bun test` is green, including a test that the 6th attempt gets a 429.
 Constraints: no new dependencies; do not touch src/shared/.
 Report: sparrow update at milestones; sparrow done with Result, Evidence, Files, Next.
 EOF
@@ -158,7 +202,6 @@ taken (default 3), the agent shows `queued` and starts when one frees up.
 
 ## Wait for results
 
-<!-- messaging: verify against oss/protocol -->
 Results land in your inbox. Read it, or wait for it:
 
 ```sh
@@ -174,15 +217,14 @@ check `sparrow inbox` between other work.
 A message is only marked read when you read it with `sparrow inbox`, with `sparrow inbox --wait`, or in the envelope
 Sparrow hands you at the start of a call. Every other command prints a one-line notice on stderr, last, when you have
 unread mail: `📨 2 unread for @captain: @maya result(ok), @leo question. Read: sparrow inbox`.
-<!-- /messaging -->
 
 A result looks like this:
 
 ```text
 ── @maya · builder · done ok · call 6m12s ──
-## Result    Sliding-window limiter on POST /login, keyed by IP (src/auth/limit.ts).
-## Evidence  bun test test/server/ → 48 pass, 0 fail, including "6th attempt returns 429"
-## Files     src/auth/limit.ts, src/routes/login.ts, test/auth/limit.test.ts
+## Result    Sliding-window limiter on POST /login, keyed by IP (src/api/limit.ts).
+## Evidence  bun test → 41 pass, 0 fail, including "6th attempt returns 429"
+## Files     src/api/limit.ts, src/api/login.ts, test/api/limit.test.ts
 ## Next      Counts live in memory. Move them to Redis before you run two instances.
 ```
 
@@ -214,7 +256,7 @@ acceptance checks.
 
 ```sh
 sparrow hire verifier - <<'EOF'
-Verify @maya's rate limiter. Run `bun test test/server/` and hit POST /login seven times.
+Verify @maya's rate limiter. Run `bun test` and hit POST /login seven times.
 Report a PASS/FAIL table, one row per acceptance check, with the command and real output.
 Acceptance: 5 attempts succeed, the 6th returns 429, a different IP is not limited.
 EOF
@@ -244,6 +286,22 @@ Two ways to see what the crew is doing:
   `sparrow status` prints the exact lines. If you set `SPARROW_TMUX_SOCKET`, add `-L <socket>`.
 - **The UI.** Captains, each captain's activity feed and team tree (with a live peek at every agent's screen), the
   board, the resume editor, skills, settings and the doctor.
+
+## Uninstall
+
+Stop the server first, then uninstall:
+
+```sh
+sparrow stop
+sparrow uninstall            # removes what install wrote: the link, skills, plugins, the app dir
+sparrow uninstall --purge    # the same, and deletes ALL of ~/.sparrow: database, resumes, agents
+```
+
+`sparrow uninstall` refuses while a server is running and tells you to stop it. Without `--purge` your data stays:
+the database, your resumes and your agents' folders. It removes the `~/.local/bin/sparrow` link only when it points
+at a sparrow, and keeps it otherwise. It does not remove a binary you installed with npm or Homebrew: use
+`npm rm -g sparrow-agents` or `brew uninstall sparrow` for that, and `rm ~/.local/bin/sparrow` for the install script.
+It does not touch your harnesses or their logins.
 
 ## Next
 

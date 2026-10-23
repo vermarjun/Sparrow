@@ -1,15 +1,21 @@
-# Install Sparrow with Claude Code
+# Install Sparrow with your coding agent
 
-Paste the following prompt into a fresh Claude Code session:
+Paste the following prompt into a fresh Claude Code, Codex or OpenCode session:
 
 ```text
-Install Sparrow on this Mac and get its UI running. Work idempotently: keep existing state, edited resumes, deleted-resume tombstones, harness authentication, and unrelated configuration.
+Install Sparrow on this machine and get it running. Work idempotently and keep my existing state, edited resumes and harness logins. Do not change my harness settings.
 
-1. Check prerequisites: Bun, tmux, and at least one of Claude Code, Codex, or OpenCode. Check that the chosen harness is logged in (claude auth status, codex login status, or opencode auth list). Explain any missing prerequisite and ask me to install/log in before continuing. Do not change my global harness settings.
-2. Locate my existing Sparrow checkout (start with the current directory). If none exists, ask for the repository URL and clone it into a folder I choose; do not invent a repository URL.
-3. In the checkout run bun install, then bun bin/sparrow install. This builds the UI, seeds missing resumes without overwriting edits or resurrecting deletions, installs Sparrow skills and harness plugins, and links ~/.local/bin/sparrow. Repeat safely if interrupted.
-4. Ensure ~/.local/bin is on PATH. If needed, add a single export PATH="$HOME/.local/bin:$PATH" line to my shell startup file, preserving the rest. Use the absolute linked executable for this session if the new PATH is not loaded yet.
-5. Run sparrow with no arguments. It starts the server detached, opens the browser, prints its URL, and returns. Repeating it opens the existing server. If the browser did not open, open the printed URL.
-6. Tell me to click Run doctor in the UI and inspect any failed harness checks. The doctor is explicitly user-triggered; do not run it or attempt harness repairs automatically. Once ready, I can use Start captain in the UI or sparrow captain --cwd <project-folder>.
-7. Report the real command results and the URL. Explain sparrow status and sparrow stop. Do not claim a harness works until its doctor checks pass.
+1. Install it with one of these. Use the install script unless npm is already how I install tools.
+   curl -fsSL https://raw.githubusercontent.com/vermarjun/Sparrow/main/install.sh | sh
+   npm i -g sparrow-agents
+   If ~/.local/bin is not on my PATH, tell me the one line to add; use the absolute path for this session.
+2. Run `sparrow --version`, then run `sparrow` with no arguments. The first run sets itself up, starts a local server on http://127.0.0.1:4040 and tries to open the UI. If no browser opens, tell me the URL.
+3. Read the readiness check that `sparrow` printed. Report it to me line by line: tmux, which harnesses are installed and logged in, which roles are hireable now, and which fell back to another harness. If tmux is missing or no harness is logged in, give me the exact command from the output and wait for me.
+4. Tell me to open the UI, go to Doctor and press Run doctor. Do not run the doctor yourself and do not try to repair harnesses: it hires a real agent on each harness and can spend a little usage.
+5. When I say the doctor is green, start a captain: `sparrow captain --cwd <my project folder>` (Claude Code), or continue in this session and let it register as the captain.
+6. Report the real command output and the URL. Explain `sparrow status`, `sparrow stop`, and `sparrow uninstall` (stop first). Do not claim a harness works until its doctor checks pass.
 ```
+
+More detail: [Getting started](docs/getting-started.md). Prefer to see what the script does first? Read
+[install.sh](install.sh). To remove Sparrow later: `sparrow stop && sparrow uninstall` (add `--purge` to delete your
+data).

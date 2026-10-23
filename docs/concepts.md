@@ -24,15 +24,17 @@ and the system prompt. You hire from resumes (`sparrow hire builder ...`). Eight
 | Slug | Harness | Model | What it is for |
 |---|---|---|---|
 | `builder` | Claude Code | opus | Implement one task end to end and prove it works. |
-| `builder-codex` | Codex | gpt-6.1-sol | The same role on Codex. |
-| `verifier` | Codex | gpt-6.1-sol | Read-only, adversarial acceptance checks. |
-| `researcher` | OpenCode | opencode-go/kimi-k3 | Web and code research with cited findings. |
-| `presenter` | OpenCode | opencode-go/glm-5.3 | A single-file HTML explainer or deck. |
+| `builder-codex` | Codex | harness default | The same role on Codex. |
+| `verifier` | Codex | harness default | Read-only, adversarial acceptance checks. |
+| `researcher` | OpenCode | harness default | Web and code research with cited findings. |
+| `presenter` | OpenCode | harness default | A single-file HTML explainer or deck. |
 | `sub-captain` | Claude Code | opus | Own a slice of work and hire its own builders. |
 | `deckhand` | Claude Code | haiku | Cheap, mechanical, one-shot chores. |
 | `advisor` | Claude Code | opus | A read-only second opinion on one question. |
 
-Model names are defaults, not a promise that your account offers them. Edit them in the UI (**Resumes**) or in the
+The Claude Code roles name the aliases `opus`, `sonnet` or `haiku`. The Codex and OpenCode roles name no model, so
+whatever your login defaults to applies, and a role whose harness you lack is seeded onto one you have (see
+[Getting started](getting-started.md#first-run)). Edit them in the UI (**Resumes**) or in the
 files under `~/.sparrow/resumes/`. See [Configuration](configuration.md#resume-files) for the file format.
 
 ## Calls
@@ -45,7 +47,6 @@ agent remembers the earlier work. `done`, `ask` and `wait` all end the current c
 
 ## Messages
 
-<!-- messaging: verify against oss/protocol -->
 Every message is stored in SQLite, with one delivery row per recipient. Messages come in two strengths:
 
 | Kind | Examples | Effect |
@@ -65,9 +66,8 @@ message:
 ```
 
 `--json` objects carry an `unread` list. `done`, `ask` and `wait` refuse while waking messages are unread. They name
-the senders and tell you to run `sparrow inbox`. That is the "Not sent: new messages arrived" you may see in an agent
+the senders and tell you to run `sparrow inbox`. That is the `Not sent: unread messages from @x; run sparrow inbox, then report again` you may see in an agent
 window.
-<!-- /messaging -->
 
 Sparrow persists every message. It does not promise that a model reads every message, only that you can always
 re-read history (`sparrow inbox --last`, `sparrow log`).

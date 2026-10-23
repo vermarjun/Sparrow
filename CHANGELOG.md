@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.0 (unreleased): first public release
+
+- **Standalone binary and install routes.** Sparrow ships as one self-contained binary for macOS and Linux (arm64 and x64). Install with `curl ... install.sh | sh` (checksum-verified), `npm i -g sparrow-agents` or `brew install vermarjun/tap/sparrow`. No Bun, clone or build step. The first plain `sparrow` sets itself up, unpacks its UI into `~/.sparrow/app/<version>/`, and prints a readiness check (tmux, each harness installed and logged in, which roles are hireable). Releases are built and published by CI.
+- **Explicit-read delivery.** Every message is stored with one delivery row per recipient and is consumed only by an explicit read: `sparrow inbox`, `inbox --wait`, the envelope at the start of a call, or the turn-end handoff. Other commands print an `📨 N unread` notice on stderr, so piping or discarding output can no longer swallow a message. `done`, `ask` and `wait` refuse while waking messages are unread. `--json` objects carry an `unread` list.
+- **Nested worktree project fix.** A linked worktree now resolves to its own repository's project even when a registered project sits above it (for example a dotfiles repo in `$HOME`).
+- **Portable resumes and harness fallback.** Shipped resumes name no provider-specific model (Claude roles use the `opus`, `sonnet` and `haiku` aliases; Codex and OpenCode roles use the harness default). When first-run seeding finds a role's harness missing, it rewrites that role onto an installed one and says so. Resumes you edited are never overwritten.
+- **Portable harness discovery.** `claude`, `codex` and `opencode` are found through `SPARROW_*_BIN`, a widened `PATH` and well-known install folders, instead of fixed Homebrew paths. A bad override is reported, not silently used.
+- **Linux.** Browser opening uses `xdg-open`, `gio` or `sensible-browser` when a desktop session exists and prints the URL otherwise (set `SPARROW_NO_OPEN=1` to never open one). Process and port handling no longer assume macOS. Verified end to end in a Debian container on arm64.
+- **Uninstall.** `sparrow uninstall` removes the link, skills, plugins and app folder; `--purge` also deletes `$SPARROW_HOME`. It refuses while the server runs.
+- **Docs and community files.** Getting started, concepts, CLI reference, configuration, troubleshooting and releasing guides; SECURITY, CONTRIBUTING, CODE_OF_CONDUCT and LICENSE (MIT); issue and pull request templates; `AGENTS.md` for coding agents.
+
 ## Unreleased
 
 - Two helper resumes. `deckhand` (Haiku 5.5, medium effort) does mechanical work cheaply and fast and is **one-shot**: the server retires it the moment it reports, so its context never grows. `advisor` (Opus 5.5, medium effort) is a read-only senior who answers one question per consult and stays available for follow-ups. Builders, the Codex builder, verifiers and sub-captains may hire both; researchers may hire the deckhand.

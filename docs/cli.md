@@ -20,9 +20,7 @@ an unknown flag (`--bogus`) is a usage error; put it after `--` or pass it with 
 
 **`--json`.** Global, allowed anywhere before a literal `--`. Prints the raw server response instead of text. List
 responses (`captains`, `roster`, `resumes`, `card list`, `log`) are bare arrays.
-<!-- messaging: verify against oss/protocol -->
 Object responses carry an `unread` list.
-<!-- /messaging -->
 
 **Exit codes.**
 
@@ -40,7 +38,6 @@ make you a captain.
 **Server.** Commands talk to `http://127.0.0.1:4040` unless `SPARROW_PORT` or `SPARROW_URL` say otherwise. See
 [Configuration](configuration.md#environment-variables).
 
-<!-- messaging: verify against oss/protocol -->
 **Unread mail.** Commands other than `inbox` do not consume your messages. When you have waking or quiet mail
 waiting they print a last line on stderr, so `>/dev/null` or `| tail` cannot swallow it:
 
@@ -48,20 +45,20 @@ waiting they print a last line on stderr, so `>/dev/null` or `| tail` cannot swa
 📨 2 unread for @captain: @ada result(ok), @leo question. Read: sparrow inbox
 ```
 
-`done`, `ask` and `wait` refuse while waking messages are unread, naming the senders.
-<!-- /messaging -->
+`done`, `ask` and `wait` refuse while waking messages are unread, naming the senders. See below.
 
 ## Server
 
 | Command | What it does |
 |---|---|
-| `sparrow` | Start the server detached if needed, wait for the UI, open it, return. |
+| `sparrow` | Start the server detached if needed, wait for the UI, open it (or print the URL), return. On the first run and after an upgrade it sets itself up first and prints a readiness check. |
 | `sparrow up` | Run the server in the foreground. |
 | `sparrow stop` | Stop the server of this `SPARROW_HOME` and port. |
-| `sparrow install` | Seed resumes, link the CLI, install skills and harness assets, build the UI. |
+| `sparrow install` | Seed resumes, link the CLI, install skills and harness assets. |
+| `sparrow uninstall` | Remove what install wrote. Stop the server first. |
 | `sparrow status` | Server health, working agents, tmux attach lines. |
 | `sparrow help [command]` | Usage. |
-| `sparrow --version` | Print `sparrow <version>`. |
+| `sparrow --version` | Print `sparrow <version>` (also `sparrow version`). |
 
 **`sparrow up [--port N] [--home DIR] [--max-running N] [--tmux] [--sandbox]`**
 
@@ -80,11 +77,22 @@ sparrow up --port 4041 --max-running 5
 **`sparrow stop [--sandbox]`** stops only the server that owns this `SPARROW_HOME` and port, and refuses when the
 listener's command line does not confirm both. Agents may run it only with `--sandbox` against a non-default home.
 
-**`sparrow install [--force]`** is idempotent. `--force` rebuilds the UI and replaces the `~/.local/bin/sparrow` link
-even if it points elsewhere. It never overwrites a resume you edited.
+**`sparrow install [--force]`** is idempotent. An installed binary runs the same setup by itself on the first plain
+`sparrow` and after an upgrade, so you rarely call it. From a checkout you call it once. `--force` replaces the
+`~/.local/bin/sparrow` link even if it points elsewhere (and rebuilds the UI in a checkout). It never overwrites a
+resume you edited. See [what install writes](configuration.md#what-install-writes).
 
 ```sh
 sparrow install
+```
+
+**`sparrow uninstall [--purge]`** removes the link, the two Sparrow skills, both harness plugins, the unpacked app
+folder and the install record. Your data in `$SPARROW_HOME` stays unless you pass `--purge`, which deletes all of it:
+database, resumes and agent folders. It refuses while the server is running (`sparrow stop` first) and agents may not
+run it. It does not remove a binary installed by npm or Homebrew.
+
+```sh
+sparrow stop && sparrow uninstall
 ```
 
 **`sparrow sandbox up [--dir path]` and `sparrow sandbox down [--dir path]`** create and tear down a throwaway
@@ -184,7 +192,6 @@ sparrow wait "waiting on @maya and @leo"
 
 `group` is a reserved handle: `send` and `log` reject it. `--card N` on `send` and `update` links the message to that ticket.
 
-<!-- messaging: verify against oss/protocol -->
 **`sparrow inbox`** reads and consumes your pending messages.
 
 | Flag | Meaning |
@@ -201,7 +208,6 @@ Never run `inbox --wait` inside an agent window. Use `sparrow wait` and stop.
 
 **`done`, `ask` and `wait`** refuse while waking messages are unread. They say who sent them and tell you to run
 `sparrow inbox`. Read the mail, act on it, then run the command again with your complete report.
-<!-- /messaging -->
 
 **`sparrow log [@handle] [-n 30]`** prints the last `n` messages of the project (1 to 10000), or only those to or from
 `@handle`. It is read-only and shows messages whether or not they were consumed.
