@@ -2,7 +2,7 @@
 <html lang="en"><head><meta charset="utf-8"><title>Sparrow: build, verify, ship</title>
 <link rel="stylesheet" href="diagram.css">
 <style>
-  .stage { position: relative; height: 650px; margin-top: 14px; }
+  .stage { position: relative; height: 666px; margin-top: 14px; }
   .lane { position: absolute; left: 0; right: 0; background: var(--surface-2); border-radius: 14px; border: 1px solid var(--line); }
   .ll { position: absolute; left: 12px; width: 126px; display: flex; flex-direction: column; justify-content: center; gap: 4px; }
   .ll .who { font: 650 17px 'Geist'; }
@@ -32,25 +32,25 @@
   <div class="head"><span class="eyebrow">Build, verify, ship</span><span class="wordmark"><i class="ic" data-i="sparrow"></i>Sparrow</span></div>
   <h1 class="title">Rate limiting for login, end to end.</h1>
   <div class="stage">
-    <div class="lane" style="top:48px;height:116px"></div><div class="ll" style="top:48px;height:116px"><span class="who">@captain</span><span class="sl"><i class="dot claude"></i>Claude Code</span></div>
-    <div class="lane" style="top:180px;height:108px"></div><div class="ll" style="top:180px;height:108px"><span class="who">@maya</span><span class="sl"><i class="dot claude"></i>builder · Claude Code</span></div>
-    <div class="lane" style="top:324px;height:108px"></div><div class="ll" style="top:324px;height:108px"><span class="who">@leo</span><span class="sl"><i class="dot codex"></i>builder-codex · Codex</span></div>
-    <div class="lane" style="top:454px;height:172px"></div><div class="ll" style="top:454px;height:172px"><span class="who">@vera</span><span class="sl"><i class="dot codex"></i>verifier · Codex, read-only</span></div>
+    <div class="lane" style="top:48px;height:132px"></div><div class="ll" style="top:48px;height:132px"><span class="who">@captain</span><span class="sl"><i class="dot claude"></i>Claude Code</span></div>
+    <div class="lane" style="top:196px;height:108px"></div><div class="ll" style="top:196px;height:108px"><span class="who">@maya</span><span class="sl"><i class="dot claude"></i>builder · Claude Code</span></div>
+    <div class="lane" style="top:340px;height:108px"></div><div class="ll" style="top:340px;height:108px"><span class="who">@leo</span><span class="sl"><i class="dot codex"></i>builder-codex · Codex</span></div>
+    <div class="lane" style="top:470px;height:172px"></div><div class="ll" style="top:470px;height:172px"><span class="who">@vera</span><span class="sl"><i class="dot codex"></i>verifier · Codex, read-only</span></div>
     <div class="sh" style="left:156px;width:168px"><span class="step">1</span>Split</div>
     <div class="sh" style="left:324px;width:168px"><span class="step">2</span>Build in parallel</div>
     <div class="sh" style="left:492px;width:168px"><span class="step">3</span>Verify</div>
     <div class="sh" style="left:660px;width:168px"><span class="step">4</span>Fix</div>
     <div class="sh" style="left:828px;width:168px"><span class="step">5</span>Re-verify</div>
     <div class="sh" style="left:996px;width:168px"><span class="step">6</span>Ship</div>
-    <div class="card it " id="a1" style="left:164px;top:52px;width:152px;height:108px"><b>Splits the work into two cards</b><span>Two cards: the API, then tests and docs</span></div>
-    <div class="card it b" id="b2" style="left:332px;top:184px;width:152px;height:100px"><b>Builds the API</b><span class="mono sm">TOR-21</span><span class="tag ok">result ok</span></div>
-    <div class="card it b" id="c2" style="left:332px;top:328px;width:152px;height:100px"><b>Writes tests and docs</b><span class="mono sm">TOR-22</span><span class="tag ok">result ok</span></div>
-    <div class="card it cmdc" id="a3" style="left:500px;top:52px;width:152px;height:108px"><span class="mono cmd">sparrow hire verifier</span><span>with the acceptance checks</span></div>
-    <div class="card it v" id="d3" style="left:500px;top:458px;width:152px;height:164px"><b>Acceptance checks</b><div class="chk"><span class="p">1</span><span class="p">2</span><span class="f">3</span><span class="p">4</span><span class="p">5</span></div><span class="fail"><b>4 PASS, 1 FAIL</b><br>6th attempt returns 500, not 429</span></div>
-    <div class="card it cmdc" id="a4" style="left:668px;top:52px;width:152px;height:108px"><span class="mono cmd">sparrow send @maya "check 3 fails: …"</span></div>
-    <div class="card it b" id="b4" style="left:668px;top:184px;width:152px;height:100px"><b>Resumes in the same session</b><span>and fixes check 3</span></div>
-    <div class="card it v" id="d5" style="left:836px;top:458px;width:152px;height:164px"><b>Re-runs the checks</b><div class="chk"><span class="p">1</span><span class="p">2</span><span class="p">3</span><span class="p">4</span><span class="p">5</span></div><span class="okt"><b>5 of 5 PASS</b></span></div>
-    <div class="card it cmdc" id="a6" style="left:1004px;top:52px;width:152px;height:108px"><b>Merges. Cards move to Review.</b><span class="mono sm">sparrow release</span><span class="sm">@maya, @leo, @vera</span></div>
+    <div class="card it " id="a1" style="left:164px;top:52px;width:152px;height:124px"><b>Splits the work into two cards</b><span>Two cards: the API, then tests and docs</span></div>
+    <div class="card it b" id="b2" style="left:332px;top:200px;width:152px;height:100px"><b>Builds the API</b><span class="mono sm">TOR-21</span><span class="tag ok">result ok</span></div>
+    <div class="card it b" id="c2" style="left:332px;top:344px;width:152px;height:100px"><b>Writes tests and docs</b><span class="mono sm">TOR-22</span><span class="tag ok">result ok</span></div>
+    <div class="card it cmdc" id="a3" style="left:500px;top:52px;width:152px;height:124px"><span class="mono cmd">sparrow hire verifier</span><span>with the acceptance checks</span></div>
+    <div class="card it v" id="d3" style="left:500px;top:474px;width:152px;height:164px"><b>Acceptance checks</b><div class="chk"><span class="p">1</span><span class="p">2</span><span class="f">3</span><span class="p">4</span><span class="p">5</span></div><span class="fail"><b>4 PASS, 1 FAIL</b><br>6th attempt returns 500, not 429</span></div>
+    <div class="card it cmdc" id="a4" style="left:668px;top:52px;width:152px;height:124px"><span class="mono cmd">sparrow send @maya "check 3 fails: …"</span></div>
+    <div class="card it b" id="b4" style="left:668px;top:200px;width:152px;height:100px"><b>Resumes in the same session</b><span>and fixes check 3</span></div>
+    <div class="card it v" id="d5" style="left:836px;top:474px;width:152px;height:164px"><b>Re-runs the checks</b><div class="chk"><span class="p">1</span><span class="p">2</span><span class="p">3</span><span class="p">4</span><span class="p">5</span></div><span class="okt"><b>5 of 5 PASS</b></span></div>
+    <div class="card it cmdc" id="a6" style="left:1004px;top:52px;width:152px;height:124px"><b>Merges. Cards move to Review.</b><span class="mono sm">sparrow release @maya</span><span class="sm">then @leo, @vera</span></div>
   </div>
   <div class="foot"><span class="caption">Claude writes, Codex checks. Different model families, different blind spots.</span><span class="wave"><svg viewBox="0 0 600 14" preserveAspectRatio="none"><path d="M0 7 q15 -8 30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span></div>
 </div>
