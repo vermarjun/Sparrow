@@ -62,9 +62,9 @@ describe('gitActions', () => {
 
 describe('lists', () => {
   test('filterSkills matches name and description, case-insensitively', () => {
-    const list = [skill('react-best-practices', 'Vercel React rules'), skill('jops', 'Job orchestrator')]
+    const list = [skill('react-best-practices', 'Vercel React rules'), skill('release-notes', 'Release orchestrator')]
     expect(filterSkills(list, 'REACT').map((s) => s.name)).toEqual(['react-best-practices'])
-    expect(filterSkills(list, 'orchestr').map((s) => s.name)).toEqual(['jops'])
+    expect(filterSkills(list, 'orchestr').map((s) => s.name)).toEqual(['release-notes'])
     expect(filterSkills(list, '  ')).toBe(list)
   })
   test('viewCounts folds broken links into Conflicts and tolerates no state', () => {
