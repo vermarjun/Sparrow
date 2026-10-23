@@ -1,0 +1,52 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: oven-sh/setup-bun@v2.0.2
+        with:
+          bun-version: '1.3.9'
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version: '22'
+          registry-url: https://registry.npmjs.org
+      - name: Verify version matches tag
+        run: |
+          version=$(bun -p 'require("./package.json").version')
+          test "$GITHUB_REF_NAME" = "v$version"
+      - name: Install tmux (smoke test needs it)
+        run: command -v tmux || brew install tmux
+      - name: Build all release artifacts
+        run: sh scripts/release-local.sh
+      - name: Smoke-test the darwin-arm64 binary before publishing
+        env:
+          SPARROW_NO_OPEN: '1'
+        run: bun scripts/smoke-binary.ts dist/bin/sparrow-darwin-arm64
+      - name: Print Homebrew formula
+        run: cat dist/brew/Formula/sparrow.rb
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes \
+            dist/bin/sparrow-darwin-arm64 dist/bin/sparrow-darwin-x64 \
+            dist/bin/sparrow-linux-x64 dist/bin/sparrow-linux-arm64 \
+            dist/checksums.txt dist/brew/Formula/sparrow.rb
+      # npm comes last: versions are immutable, and the installers (install.sh, brew) read the Release assets.
+      - name: Publish platform packages, then launcher
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          for platform in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do
+            npm publish "./dist/npm/sparrow-agents-$platform" --access public
+          done
+          npm publish ./dist/npm/sparrow-agents --access public

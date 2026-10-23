@@ -9,15 +9,17 @@ docs/*.html
 
 # sandbox HOMEs, fixture libraries, probe scratch for tests/demos (never committed)
 .sandbox/
-# skills evidence lives on branch evidence/skills (worktree ../sparrow-skills-evidence)
 docs/skills-evidence/
 
 # Local agent settings and contributor scratch
 .claude/settings.local.json
 research/
 present/
-dist/
 coverage/
 Thumbs.db
 Desktop.ini
 ._*
+
+# release builds (scripts/build-binary.ts, scripts/release-local.sh)
+dist/
+*.bun-build

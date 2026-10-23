@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import type { RealHarness } from '../harness/catalog';
 import type { Spawner } from '../harness/index';
 import { isSandboxHome } from '../harness/env';
-import { ASSETS, CONFIG_FILE, DB_PATH, loadSettings, PID_FILE, PORT, REPO_ROOT, RESUMES_DIR, type Settings, TMUX_PREFIX } from '../shared/config';
+import { APP_VERSION, ASSETS, CONFIG_FILE, DB_PATH, loadSettings, PID_FILE, PORT, RESUMES_DIR, type Settings, TMUX_PREFIX, WEB_DIST } from '../shared/config';
 import type { HarnessName } from '../shared/types';
 import { createApi } from './api';
 import { CatalogService, type Fetcher } from './catalog';
@@ -16,9 +16,7 @@ import { PROTOCOL_PATH } from './prompts';
 import { Resumes } from './resumes';
 import { SettingsService } from './settings';
 
-export const VERSION: string = (() => {
-  try { return JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8')).version ?? '0.0.0'; } catch { return '0.0.0'; }
-})();
+export const VERSION: string = APP_VERSION;
 
 export function shouldRefreshCatalogsAtStartup(): boolean {
   return process.env.SPARROW_NO_CATALOG_REFRESH !== '1' && !isSandboxHome();
@@ -106,13 +104,12 @@ export interface StartOpts {
 export async function startServer(opts: StartOpts = {}): Promise<{ port: number; stop(): Promise<void> }> {
   let spawner = opts.spawner;
   if (!spawner) {
-    const path = '../harness/spawner';
-    const mod = await import(path);
+    const mod = await import('../harness/spawner');   // literal path: `bun build --compile` must see it
     spawner = mod.createSpawner() as Spawner;
   }
   const log = opts.log ?? ((l: string) => console.log(l));
   const { app, core, store, settings, settingsSvc, catalogs } = createApp({
-    spawner, dbPath: DB_PATH, settings: opts.settings, log, webDist: opts.webDist ?? join(REPO_ROOT, 'web', 'dist'),
+    spawner, dbPath: DB_PATH, settings: opts.settings, log, webDist: opts.webDist ?? WEB_DIST,
   });
   const port = opts.port ?? PORT;
   let server: ReturnType<typeof Bun.serve>;

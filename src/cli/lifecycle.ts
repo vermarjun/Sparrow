@@ -2,10 +2,11 @@
 import { spawn } from 'node:child_process';
 import { closeSync, mkdirSync, openSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { BIN, LOG_FILE, PID_FILE, PORT, SERVER_URL, SPARROW_HOME } from '../shared/config';
+import { BIN, COMPILED, LOG_FILE, PID_FILE, PORT, SELF_ARGV, SERVER_URL, SPARROW_HOME } from '../shared/config';
 import { AGENT_ENV_VARS } from './guard';
 import { isSandboxHome } from '../harness/env';
 import { ensureWebBuilt } from './install';
+import { listenerPids, openUrl, processCommand } from './platform';
 
 // Lifecycle commands manage the server that owns THIS SPARROW_HOME / SPARROW_PORT. Agent windows export SPARROW_URL
 // (the server that spawned them); it must never redirect `SPARROW_HOME=… SPARROW_PORT=… sparrow stop` to that server.
@@ -30,12 +31,14 @@ function readPid(): { pid: number; port: number } | null {
   } catch { return null; }
 }
 function removePid() { try { unlinkSync(PID_FILE); } catch {} }
-function command(pid: number): string {
-  return Bun.spawnSync(['ps', '-p', String(pid), '-o', 'command='], { stdout: 'pipe', stderr: 'ignore' }).stdout.toString().trim();
+const command = processCommand;
+/** Is this `ps` command line a `sparrow up`? Source: bun + our bin/sparrow. Compiled: any sparrow binary (an upgrade may have moved it). */
+export function isServerCommand(cmd: string, bin = BIN, compiled = COMPILED): boolean {
+  if (!/\bup\b/.test(cmd)) return false;
+  return compiled ? /(^|[/\s])sparrow[\w.-]*\s+up(\s|$)/.test(cmd) : cmd.includes(bin);
 }
 function isServer(pid: number) {
-  const cmd = command(pid);
-  return cmd.includes(BIN) && /\bup\b/.test(cmd);
+  return isServerCommand(command(pid));
 }
 function argvValue(cmd: string, name: 'home' | 'port'): string | null {
   const m = cmd.match(new RegExp(`(?:^|\\s)--${name}(?:=|\\s+)(.*?)(?=\\s+--[\\w-]+(?:=|\\s)|$)`));
@@ -50,10 +53,7 @@ function argvPort(cmd: string): number | null {
   const value = argvValue(cmd, 'port');
   return value && /^\d+$/.test(value) ? Number(value) : null;
 }
-function listeningPids(port = PORT): number[] {
-  const r = Bun.spawnSync(['lsof', '-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-Fp'], { stdout: 'pipe', stderr: 'ignore' });
-  return [...new Set([...r.stdout.toString().matchAll(/^p(\d+)$/gm)].map(m => Number(m[1])))];
-}
+const listeningPids = (port = PORT): number[] => listenerPids(port);
 function confirmsHomeAndPort(pid: number): boolean {
   if (!isServer(pid)) return false;
   const cmd = command(pid);
@@ -79,7 +79,7 @@ export function foreignServer(pid: number, where = LIFECYCLE_URL): string | null
   const whose = home !== null ? `home ${home}` : 'unknown home (no --home in its command line, not this home\'s pidfile)';
   const portInfo = port === null ? 'no --port in its command line' : `port ${port}`;
   const recovery = !saved || !alive(saved.pid)
-    ? ` No usable ${PID_FILE} proves ownership; to stop safely, inspect lsof -nP -iTCP:${targetPort} -sTCP:LISTEN and ps -p ${pid} -o command=, then confirm both --home and --port.`
+    ? ` No usable ${PID_FILE} proves ownership; to stop safely, find the process listening on port ${targetPort} (pid ${pid}: ${command(pid) || 'unknown command'}) and confirm both --home and --port.`
     : '';
   return `The server answering at ${where} (pid ${pid}, ${whose}, ${portInfo}) does not belong to SPARROW_HOME ${SPARROW_HOME} on port ${targetPort} based on its saved or command-line identity; refusing to touch it.${recovery}`;
 }
@@ -125,7 +125,7 @@ export async function startDetached(): Promise<Health> {
       const env = { ...process.env };
       for (const k of AGENT_ENV_VARS) delete env[k];
       // --home puts this server's home in its command line (`ps`), so a pattern can't confuse it with a sandbox's.
-      child = spawn(process.execPath, [BIN, 'up', '--home', SPARROW_HOME, '--port', String(PORT)], {
+      child = spawn(SELF_ARGV[0], [...SELF_ARGV.slice(1), 'up', '--home', SPARROW_HOME, '--port', String(PORT)], {
         detached: true, stdio: ['ignore', log, log], env,
       });
       await new Promise<void>((resolve, reject) => { child!.once('spawn', resolve); child!.once('error', reject); });
@@ -171,9 +171,8 @@ export function startupCatalogWaitMs(): number {
 export async function openUi(opts: { say?: (line: string) => void } = {}) {
   const h = await startDetached();
   await waitForCatalogs({ say: opts.say });
-  const p = Bun.spawn(['open', LIFECYCLE_URL], { stdout: 'ignore', stderr: 'pipe' });
-  const err = await new Response(p.stderr).text();
-  if (await p.exited) console.error(`Could not open the browser: ${err.trim()}`);
+  // openUrl never spawns with SPARROW_NO_OPEN=1; when nothing could open a browser the URL is printed instead.
+  if (!(await openUrl(LIFECYCLE_URL)) && process.env.SPARROW_NO_OPEN !== '1') opts.say?.(`Open ${LIFECYCLE_URL} in your browser.`);
   return { health: h, url: LIFECYCLE_URL, log: LOG_FILE };
 }
 
@@ -191,7 +190,7 @@ export async function stopServer(): Promise<string> {
     } else if (listeners.length) {
       const details = listeners.map(p => `pid ${p} (${command(p) || 'unknown command'})`).join(', ');
       const reason = owned.length ? 'The port has multiple listeners, so ownership is ambiguous' : `None confirms both --home ${SPARROW_HOME} and --port ${PORT}`;
-      throw new Error(`No healthy Sparrow server answered at ${LIFECYCLE_URL} and no usable ${PID_FILE} was found. Port ${PORT} has listener(s): ${details}. ${reason}, so no process was signalled. Inspect with lsof and ps before stopping anything.`);
+      throw new Error(`No healthy Sparrow server answered at ${LIFECYCLE_URL} and no usable ${PID_FILE} was found. Port ${PORT} has listener(s): ${details}. ${reason}, so no process was signalled. Check what owns that port (its command line) before stopping anything.`);
     } else {
       removePid();
       return 'Sparrow server: not running.';
@@ -209,7 +208,7 @@ export async function stopServer(): Promise<string> {
   if (!h && !isServer(pid)) { removePid(); return `Sparrow server: not running (removed stale pidfile for pid ${pid}).`; }
   if (!h && saved && saved.port !== PORT) throw new Error(`Pidfile belongs to port ${saved.port}; set SPARROW_PORT to that port before stopping.`);
   if (!h && saved?.pid === pid && !confirmsHomeAndPort(pid)) {
-    throw new Error(`Pidfile ${PID_FILE} names pid ${pid}, but its command line does not confirm --home ${SPARROW_HOME} and --port ${PORT}; no process was signalled. Inspect the listener with lsof and ps before stopping anything.`);
+    throw new Error(`Pidfile ${PID_FILE} names pid ${pid}, but its command line does not confirm --home ${SPARROW_HOME} and --port ${PORT}; no process was signalled. Check the listener's command line before stopping anything.`);
   }
   if (foundByArgs && !confirmsHomeAndPort(pid)) throw new Error(`pid ${pid} no longer confirms --home ${SPARROW_HOME} and --port ${PORT}; refusing to stop it.`);
   process.kill(pid, 'SIGTERM');

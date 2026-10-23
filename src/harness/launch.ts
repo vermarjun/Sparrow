@@ -5,7 +5,7 @@
 import { mkdirSync, writeFileSync, chmodSync, renameSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { Agent } from '../shared/types';
-import { agentDir, binDir, bunPath, callsDir, hookEntry, serverUrl, sparrowHome } from './env';
+import { agentDir, agentPathDirs, callsDir, hookArgv, serverUrl, sparrowHome } from './env';
 
 // An argv element: a literal string, or the contents of a file (emitted as "$(cat '<file>')").
 export type Arg = string | { file: string };
@@ -70,7 +70,7 @@ export const UNSET_PREFIX_RE = '^(CODEX_|OPENCODE_)';
 export const KEEP_RE = '^(CODEX_HOME|OPENCODE_CONFIG|OPENCODE_CONFIG_DIR|OPENCODE_CONFIG_CONTENT)$';
 
 export function hookCommand(kind: string, extra = ''): string {
-  return `${sq(bunPath())} ${sq(hookEntry())} ${kind}${extra ? ' ' + extra : ''}`;
+  return `${hookArgv().map(sq).join(' ')} ${kind}${extra ? ' ' + extra : ''}`;
 }
 
 export function buildScript(agent: Agent, callId: string, cmd: LaunchCommand): string {
@@ -92,7 +92,7 @@ export function buildScript(agent: Agent, callId: string, cmd: LaunchCommand): s
     `unset ${UNSET_VARS.join(' ')}`,
     `for __v in $(compgen -e); do if [[ $__v =~ ${UNSET_PREFIX_RE} && ! $__v =~ ${KEEP_RE} ]]; then unset "$__v"; fi; done; unset __v`,
     ...Object.entries(ident).map(([k, v]) => `export ${k}=${sq(v)}`),
-    `export PATH=${sq(binDir())}:${sq(dirname(bunPath()))}:"$PATH"`,
+    `export PATH=${agentPathDirs().map(sq).join(':')}:"$PATH"`,
     ...Object.entries(cmd.env ?? {}).map(([k, v]) => `export ${k}=${sq(v)}`),
     ...(cmd.preamble ?? []),
     cmd.argv.map(renderArg).join(' '),

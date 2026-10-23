@@ -4,10 +4,9 @@
 //   codex:    `codex debug models` (JSON).
 //   opencode: `opencode models --verbose` with OPENCODE_CONFIG_DIR = <SPARROW_HOME>/opencode (the user's global config may be broken).
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
-import { dirname } from 'node:path';
 import type { Settings } from '../shared/config';
 import type { CatalogModel, HarnessCatalog, HarnessName } from '../shared/types';
-import { CLAUDE_BIN, CLAUDE_JSON, CODEX_BIN, OPENCODE_BIN, binDir, bunPath, sparrowHome } from './env';
+import { CLAUDE_BIN, CLAUDE_JSON, CODEX_BIN, OPENCODE_BIN, agentPathDirs, sparrowHome } from './env';
 import { KEEP_RE, UNSET_PREFIX_RE, UNSET_VARS } from './launch';
 import { Database } from 'bun:sqlite';
 import { ensurePlugin, opencodeConfigDir, opencodeDbPath } from './drivers/opencode';
@@ -31,7 +30,7 @@ export function spawnEnv(h: HarnessName, base: Record<string, string | undefined
     if (pre.test(k) && !keep.test(k)) continue;
     env[k] = v;
   }
-  env.PATH = [binDir(), dirname(bunPath()), env.PATH ?? ''].filter(Boolean).join(':');
+  env.PATH = [...agentPathDirs(), env.PATH ?? ''].filter(Boolean).join(':');
   env.SPARROW_HOME = sparrowHome();
   if (h === 'opencode') env.OPENCODE_CONFIG_DIR = opencodeConfigDir();
   return env;

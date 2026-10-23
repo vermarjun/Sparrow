@@ -3,7 +3,6 @@ name: builder-codex
 title: Builder (Codex)
 description: Implements one task end to end ({{runtime}}). Same job as builder; good second opinion or parallel capacity.
 harness: codex
-model: gpt-6.1-sol
 effort: high
 can_hire: [deckhand, advisor]
 limits: { quiet_minutes: 15, max_call_minutes: 90 }

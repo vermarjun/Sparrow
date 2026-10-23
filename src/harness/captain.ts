@@ -1,9 +1,9 @@
 // The user's normal Claude session, in <prefix>captains (one window per launch or resume).
 import { existsSync, statSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import type { CaptainStartReq, CaptainStartRes } from '../shared/types';
 import { ASSETS, TMUX_PREFIX } from '../shared/config';
-import { CLAUDE_BIN, binDir, bunPath, serverUrl, sparrowHome, tmuxSocket } from './env';
+import { CLAUDE_BIN, agentPathDirs, serverUrl, sparrowHome, tmuxSocket } from './env';
 import { preAcceptTrust } from './drivers/claude';
 import { sq, UNSET_VARS, writeAtomic } from './launch';
 import { newWindow, tagWindow, windowInfo } from './tmux';
@@ -55,7 +55,7 @@ export async function launchCaptain(req: CaptainLaunchReq): Promise<CaptainStart
     `unset SPARROW_AGENT_ID SPARROW_CALL_ID SPARROW_WINDOW SPARROW_HARNESS SPARROW_TMUX_SOCKET SPARROW_CAPTAIN_ID ${UNSET_VARS.join(' ')}`,
     'for __v in $(compgen -e); do if [[ $__v =~ ^CODEX_ && $__v != CODEX_HOME ]]; then unset "$__v"; fi; done; unset __v',
     ...Object.entries(env).map(([k, v]) => `export ${k}=${sq(v)}`),
-    `export PATH=${sq(binDir())}:${sq(dirname(bunPath()))}:"$PATH"`,
+    `export PATH=${agentPathDirs().map(sq).join(':')}:"$PATH"`,
     `exec ${argv.map(sq).join(' ')}`, '',
   ].join('\n'), 0o700);
   const window_id = await newWindow({ session, name: window, cwd, command: `bash ${sq(script)}` });

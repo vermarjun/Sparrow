@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { loadSettings } from '../shared/config';
+import { ASSETS, loadSettings } from '../shared/config';
 import type { Harness, SkillPaths, SkillRoot } from './types';
 
 export const HARNESS_READS = {
@@ -65,7 +65,7 @@ export function skillPaths(env: NodeJS.ProcessEnv = process.env): SkillPaths {
     opencode: join(xdgBase, 'opencode', 'skills'),
     agents: join(home, '.agents', 'skills'),
     'claude-synced': join(claudeBase, 'skills', 'synced'),
-    sparrow: join(import.meta.dir, '../../assets/skills'),
+    sparrow: join(ASSETS, 'skills'),
   };
   // Sandbox: everything Sparrow writes stays under SPARROW_SKILLS_HOME (see assertWritable). A `sparrow sandbox` server
   // keeps SPARROW_HOME elsewhere, so its staging and backups live in <home>/.sparrow instead of outside the fence.

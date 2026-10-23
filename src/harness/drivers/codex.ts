@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Agent } from '../../shared/types';
 import type { StartSpec } from '../index';
-import { CODEX_BIN, CODEX_HOME, agentDir, bunPath, hookEntry } from '../env';
+import { CODEX_BIN, CODEX_HOME, agentDir, hookArgv } from '../env';
 import { agentsSkillsRoots, launchGrants, materializeLinks, withSparrow } from '../../skills/grant';
 import { writeAtomic, type Arg, type CallFiles } from '../launch';
 import * as tmux from '../tmux';
@@ -122,7 +122,7 @@ export const codexDriver: Driver = {
     if (a.model) opts.push('-m', a.model);
     if (a.effort) opts.push('-c', `model_reasoning_effort=${tomlString(a.effort)}`);
     opts.push('-c', { file: devFile });
-    opts.push('-c', `notify=${JSON.stringify([bunPath(), hookEntry(), 'codex-notify'])}`);
+    opts.push('-c', `notify=${JSON.stringify([...hookArgv(), 'codex-notify'])}`);
     opts.push('-c', trustValue(a.cwd));
     const home = prepareCodexHome(a.id, spec.skills);
     const disabled = skillsConfigValue(agentsSkillPaths());

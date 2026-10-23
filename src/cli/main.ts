@@ -5,7 +5,7 @@ import { existsSync, realpathSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { api, ApiError, type ApiOpts } from './client';
 import { AGENT_ENV_VARS, inAgentWindow, lifecycleRefusal, lostIdentityRefusal } from './guard';
-import { BIN, LOG_FILE, PORT, REPO_ROOT, SERVER_URL, SPARROW_HOME, TMUX_SOCKET } from '../shared/config';
+import { APP_VERSION, LOG_FILE, PORT, REPO_ROOT, SELF_ARGV, SERVER_URL, SPARROW_HOME, TMUX_SOCKET } from '../shared/config';
 import { CARD_STATES } from '../shared/types';
 import { CARD_SORTS, cardKey, parseCardRef, sortCardsBy } from '../shared/cards';
 import type {
@@ -26,6 +26,7 @@ const USAGE: Record<string, string> = {
   up: 'sparrow up [--port N] [--home DIR] [--max-running N] [--tmux] [--sandbox]   start the server (foreground; --tmux: in tmux session \'sparrow\', window \'server\'; --home must equal SPARROW_HOME and shows in ps; agents may only use --sandbox with a non-default SPARROW_HOME)',
   sandbox: 'sparrow sandbox up [--dir path] | down [--dir path]   a throwaway server: own home, free port (never 4040), tmux socket; allowed for agents',
   install: 'sparrow install [--force]   seed resumes, link ~/.local/bin/sparrow, install skills + harness assets',
+  uninstall: 'sparrow uninstall [--purge]   remove what install wrote (link, skills, plugins, app dir); --purge also deletes $SPARROW_HOME (db, resumes, agents)',
   stop: 'sparrow stop [--sandbox]   stop the server of this SPARROW_HOME/SPARROW_PORT (agents: --sandbox, with SPARROW_HOME set to a non-default dir)',
   captain: 'sparrow captain [--cwd dir] [--name n] [--title "<what it works on>"] [--model m] [--effort e] | resume <@handle|id> | adopt <@handle>   launch a new Claude Code captain in tmux; reopen one on its session; or bind THIS session to an existing captain (after /clear)',
   captains: 'sparrow captains [--all]   this project\'s captains: handle, title, status, team (working/total), last activity, resume line; --all adds archived',
@@ -801,8 +802,8 @@ const commands: Record<string, Handler> = {
       console.error(`sparrow up: cannot load the server (src/server/main.ts): ${(e as Error).message}`);
       return 1;
     }
-    const { webDir, webBuilt } = await import('./install');
-    const webDist = join(webDir(), 'dist');
+    const { webDist: webDistDir, webBuilt } = await import('./install');
+    const webDist = webDistDir();
     if (!webBuilt()) console.log('UI not built — run `sparrow install` (or `cd web && bun run build`)');
     const srv = await mod.startServer({ port, ...(existsSync(webDist) ? { webDist } : {}) });
     console.log(`Sparrow server on http://127.0.0.1:${srv.port} · home ${SPARROW_HOME} · pid ${process.pid}${maxRunning ? ` · max_running ${maxRunning}` : ''}. Ctrl-C to stop.`);
@@ -827,6 +828,16 @@ const commands: Record<string, Handler> = {
     }
     const text = await sb.sandboxDown(values.dir as string | undefined);
     return { raw: { ok: true, message: text }, text };
+  },
+
+  async uninstall(ctx, args) {
+    const { values } = parse('uninstall', args, { purge: { type: 'boolean' } });
+    if (inAgentWindow()) throw new Error('agents must not uninstall Sparrow; report it to your captain.');
+    const { runUninstall } = await import('./setup');
+    // The running server serves its UI from the app dir that uninstall removes.
+    if (await (await import('./lifecycle')).health()) throw new Error(`the server is running; run \`sparrow stop\` first, then \`sparrow uninstall${values.purge ? ' --purge' : ''}\`.`);
+    const lines = runUninstall({ purge: !!values.purge });
+    return { raw: { removed: lines }, text: ['Sparrow uninstall', ...lines.map((l) => '  ' + l)].join('\n') };
   },
 
   async install(ctx, args) {
@@ -904,7 +915,7 @@ async function upInTmux(port: number): Promise<number> {
     const v = process.env[k];
     if (v !== undefined) env.push('-e', `${k}=${v}`);
   }
-  const cmd = `${shq(process.execPath)} ${shq(BIN)} up --home ${shq(SPARROW_HOME)} --port ${port}; echo; echo "[sparrow] server exited ($?). Restart: sparrow up --tmux"; read -r _`;
+  const cmd = `${SELF_ARGV.map(shq).join(' ')} up --home ${shq(SPARROW_HOME)} --port ${port}; echo; echo "[sparrow] server exited ($?). Restart: sparrow up --tmux"; read -r _`;
   let r;
   if (!hasSession) r = tmuxCmd('new-session', '-d', '-s', SESSION, '-n', WINDOW, '-c', REPO_ROOT, ...env, cmd);
   else if (hasWindow) {
@@ -952,9 +963,15 @@ export async function main(argv: string[]): Promise<number> {
     const refusal = lifecycleRefusal('up', false);
     if (refusal) { console.error(`sparrow: ${refusal}`); return 1; }
     try {
+      const say = json ? undefined : (l: string) => console.log(l);
+      const setup = await import('./setup');
+      const first = setup.firstRunNeeded();
+      if (first) await setup.firstRun(say ?? (() => {}));
       const { openUi } = await import('./lifecycle');
-      const r = await openUi({ say: json ? undefined : (l) => console.log(l) });
+      const r = await openUi({ say });
       console.log(json ? JSON.stringify(r, null, 2) : `Sparrow: ${r.url} (pid ${r.health.pid})\nLog: ${r.log}`);
+      if (say && r.health.version !== APP_VERSION) say(`Note: the running server is v${r.health.version}, this sparrow is v${APP_VERSION}; \`sparrow stop\` then \`sparrow\` to move it to the new version.`);
+      if (first && say) for (const l of setup.readiness()) say(l);
       return 0;
     } catch (e) { console.error(`sparrow: ${(e as Error).message}`); return 1; }
   }
@@ -964,7 +981,7 @@ export async function main(argv: string[]): Promise<number> {
     return cmd ? 0 : 2;
   }
   if (cmd === '--version' || cmd === 'version') {
-    console.log('sparrow 0.1.0');
+    console.log(`sparrow ${APP_VERSION}`);
     return 0;
   }
 

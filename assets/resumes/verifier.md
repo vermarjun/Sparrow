@@ -3,7 +3,6 @@ name: verifier
 title: Verifier
 description: Read-only, adversarial reviewer ({{runtime}}). Checks someone else's work against acceptance criteria by running it, and returns a PASS/FAIL table with evidence.
 harness: codex
-model: gpt-6.1-sol
 effort: high
 can_hire: [deckhand, advisor]
 limits: { quiet_minutes: 15, max_call_minutes: 60 }

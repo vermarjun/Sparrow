@@ -7,9 +7,11 @@ import { join } from 'node:path';
 import {
   binaryExists, binaryFor, cheapestModel, harnessVersion, loginStatus, type LoginResult, opencodeLastError, type RealHarness, run, spawnEnv,
 } from '../harness/catalog';
+import { overrideProblem } from '../harness/discover';
 import { opencodeConfigDir, pluginSource } from '../harness/drivers/opencode';
-import { BIN, type Settings } from '../shared/config';
+import { BIN, COMPILED, type Settings } from '../shared/config';
 import { bunPath, hookEntry, isSandboxHome, serverUrl } from '../harness/env';
+import { tmuxInstallHint } from '../shared/hints';
 import { ulid } from '../shared/ids';
 import type { Agent, CheckStatus, DoctorCheck, DoctorRun, HarnessCatalog, HarnessHealth, HarnessName } from '../shared/types';
 import type { CatalogService } from './catalog';
@@ -35,12 +37,13 @@ export interface HarnessOps {
 export const realOps: HarnessOps = {
   async binary(h) {
     const path = binaryFor(h as RealHarness);
+    const warn = overrideProblem(h as RealHarness);
     if (!binaryExists(path)) {
-      return { ok: false, path: null, version: null, detail: `not found at ${path}`, fix: `Install ${h}${h === 'codex' ? ' (brew install codex)' : h === 'claude' ? ' (curl -fsSL https://claude.ai/install.sh | bash)' : ' (curl -fsSL https://opencode.ai/install | bash)'} or set SPARROW_${h.toUpperCase()}_BIN to its path, then Run doctor.` };
+      return { ok: false, path: null, version: null, detail: `not found at ${path}${warn ? ` — ${warn}` : ''}`, fix: `Install ${h}${h === 'codex' ? ' (brew install codex)' : h === 'claude' ? ' (curl -fsSL https://claude.ai/install.sh | bash)' : ' (curl -fsSL https://opencode.ai/install | bash)'} or set SPARROW_${h.toUpperCase()}_BIN to its path, then Run doctor.` };
     }
     const version = await harnessVersion(h as RealHarness);
     if (!version) return { ok: false, path, version: null, detail: `${path} did not report a version`, fix: `Run '${path} --version' in a terminal to see why it fails, fix it, then Run doctor.` };
-    return { ok: true, path, version, detail: `${path} (v${version})`, fix: null };
+    return { ok: true, path, version, detail: `${path} (v${version})${warn ? ` — ${warn}` : ''}`, fix: null };
   },
   login: (h) => loginStatus(h as RealHarness),
   diagnose: (probe) => (probe.harness === 'opencode' ? opencodeLastError(probe.session_id) : null),
@@ -360,22 +363,25 @@ const sameFile = (a: string, b: string) => {
  * The `sparrow` on PATH check. `sparrow install` links the REAL ~/.local/bin/sparrow and writes real harness folders, so a
  * sandbox server (SPARROW_HOME or SPARROW_SKILLS_HOME set) never recommends it: it points at this checkout's own binary.
  */
-export function pathCheck(found: string | null, sandbox: boolean): { status: CheckStatus; detail: string; fix: string | null } {
-  const direct = `Run this checkout's binary directly (${BIN}) or the sandbox's own \`sbx\` wrapper that \`sparrow sandbox up\` prints.`;
+export function pathCheck(found: string | null, sandbox: boolean, compiled = COMPILED): { status: CheckStatus; detail: string; fix: string | null } {
+  const what = compiled ? 'binary' : "checkout's binary";
+  const direct = `Run this ${what} directly (${BIN}) or the sandbox's own \`sbx\` wrapper that \`sparrow sandbox up\` prints.`;
   if (!found) {
     return {
       status: 'fail', detail: 'sparrow is not on PATH (agents still get it; your own terminal does not)',
       fix: sandbox
         ? `This is a sandbox server: do not run \`sparrow install\` (it writes your real ~/.local/bin and harness folders). ${direct}`
-        : 'Run `bun run sparrow install` in the Sparrow repo (it links ~/.local/bin/sparrow; make sure ~/.local/bin is on PATH), then open a new terminal.',
+        : compiled
+          ? 'Run `sparrow install` (it links ~/.local/bin/sparrow; make sure ~/.local/bin is on PATH), then open a new terminal.'
+          : 'Run `bun run sparrow install` in the Sparrow repo (it links ~/.local/bin/sparrow; make sure ~/.local/bin is on PATH), then open a new terminal.',
     };
   }
   if (!sameFile(found, BIN)) {
     return {
-      status: 'warn', detail: `${found} is not this checkout's ${BIN}`,
+      status: 'warn', detail: compiled ? `${found} is not this binary (${BIN})` : `${found} is not this checkout's ${BIN}`,
       fix: sandbox
         ? `This is a sandbox server: do not run \`sparrow install\` (it would relink your real ~/.local/bin/sparrow). ${direct}`
-        : 'Run `sparrow install` from this checkout to relink it.',
+        : compiled ? 'Another `sparrow` comes first on PATH: remove it, or run this binary\'s `install` to relink ~/.local/bin/sparrow.' : 'Run `sparrow install` from this checkout to relink it.',
     };
   }
   return { status: 'pass', detail: found, fix: null };
@@ -469,7 +475,7 @@ export function defaultSharedChecks(): SharedCheck[] {
         const r = await run(['tmux', '-V'], { timeoutMs: 10_000 });
         return r.code === 0
           ? { status: 'pass', detail: r.stdout.trim(), fix: null }
-          : { status: 'fail', detail: (r.stderr || 'tmux not found').trim(), fix: 'Install tmux (brew install tmux), then Run doctor.' };
+          : { status: 'fail', detail: (r.stderr || 'tmux not found').trim(), fix: `Install tmux (${tmuxInstallHint()}), then Run doctor.` };
       },
     },
     {
@@ -497,9 +503,12 @@ export function defaultSharedChecks(): SharedCheck[] {
     {
       id: 'hooks', label: 'Hook paths exist',
       async run() {
-        const need = [['bun', bunPath()], ['hook entry', hookEntry()], ['opencode plugin', pluginSource()]] as const;
+        // Compiled: hooks run through the binary itself, no bun and no .ts entry.
+        const need = COMPILED
+          ? [['sparrow binary', BIN], ['opencode plugin', pluginSource()]] as const
+          : [['bun', bunPath()], ['hook entry', hookEntry()], ['opencode plugin', pluginSource()]] as const;
         const bad = need.filter(([, p]) => !existsSync(p));
-        if (bad.length) return { status: 'fail', detail: bad.map(([n, p]) => `${n} missing: ${p}`).join('; '), fix: 'Agent hooks call these by absolute path. Reinstall bun or restore the Sparrow checkout (git status), then restart Sparrow.' };
+        if (bad.length) return { status: 'fail', detail: bad.map(([n, p]) => `${n} missing: ${p}`).join('; '), fix: COMPILED ? 'Agent hooks call the sparrow binary by absolute path. Reinstall Sparrow (or run `sparrow install`), then restart it.' : 'Agent hooks call these by absolute path. Reinstall bun or restore the Sparrow checkout (git status), then restart Sparrow.' };
         const managed = missingManagedHooks(managedSettingsFiles());
         if (managed.length) {
           const bins = [...new Set(managed.map((m) => m.binary))];
