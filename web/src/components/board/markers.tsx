@@ -37,7 +37,7 @@ const PAYOFF_TEXT: Record<PayoffTone, string> = {
   good: 'text-emerald-700 dark:text-emerald-300',
   invest: 'text-indigo-700 dark:text-indigo-300',
   neutral: 'text-muted-foreground',
-  costly: 'text-amber-900/65',
+  costly: 'text-amber-900/65 dark:text-amber-300/80',
   dim: 'text-muted-foreground/70',
 }
 
