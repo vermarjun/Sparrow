@@ -1,4 +1,4 @@
-// Builds the Phase-2 demo HOME under <repo>/.sandbox/home (never anywhere else):
+// Builds a demo HOME under <repo>/.sandbox/home (never anywhere else):
 // a git library with a bare origin, a managed link, an unmanaged folder, External entries, two conflicts and a broken link.
 //   bun scripts/skills-demo-fixture.ts
 import { existsSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';

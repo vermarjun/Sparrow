@@ -100,7 +100,7 @@ For agents in `working`: window alive → keep (re-adopt, restart watchdog). Dea
 
 ### 3.10 Release (`POST /api/release {agent}`)
 Caller must be the agent's parent or the human captain. Stop the window, end any call `released`, state `retired`, drop pending deliveries (quiet and waking).
-Permanent by design (owner decision, 17 Oct 2026): an agent is hired for one job. Before release it stays callable by its session id indefinitely, with full memory. After its job is verified and integrated, the captain releases it; new work goes to a fresh hire so no agent carries stale context. Do not add un-retire, rehire or number expiry unless the owner asks.
+Permanent by design: an agent is hired for one job. Before release it stays callable by its session id indefinitely, with full memory. After its job is verified and integrated, the captain releases it; new work goes to a fresh hire so no agent carries stale context. Do not add un-retire, rehire or number expiry without an explicit lifecycle design change.
 
 ### 3.11 Limits
 `max_running` counts agents in state `working` across all projects (human captains excluded). `loadSettings()` gives all tunables: defaults, then `<SPARROW_HOME>/config.json`, then `SPARROW_SETTINGS` (env). The web **Settings** page edits them live (`src/server/settings.ts`): `PUT /api/settings` validates every value (whole numbers within each field's range; all-or-nothing), writes `config.json` atomically keeping other keys (`skills_dir`, unknown ones), and mutates the shared settings object, so every reader sees the new value at once. Raising `max_running` dequeues at once; `watchdog_ms` / `snapshot_ms` re-arm their timers. `null` resets a key (removes it from the file). Keys set by `SPARROW_SETTINGS` are read-only (409). A caller identified as an agent (`x-sparrow-agent`) gets 403; like the rest of the local API this is a guard against mistakes, not authentication.
@@ -377,7 +377,7 @@ each harness's own skills folder, and a per-agent choice of skills at spawn. Man
    and locked for every agent.
 3. Everything the user installed that is not a harness default or Sparrow's own moves into the library on migration:
    `~/.claude/skills`, `~/.codex/skills`, the OpenCode folder, `~/.agents/skills` (`npx skills`, the AWS set),
-   `~/Desktop/Skills`, and links to outside HOME (brew's `agent-browser`) or into other folders (the library keeps one
+   `~/Desktop/Skills`, and links to outside HOME (a package-managed skill) or into other folders (the library keeps one
    copy; the link's content is copied and the link replaced). Harness defaults stay untouched: Claude's built-ins,
    Codex's `.system` and enabled plugins, OpenCode's `customize-opencode`; so do Sparrow's two skills and claude.ai's
    `~/.claude/skills/synced` (rewritten by claude.ai: it stays a read-only **External** entry with **Adopt**). Claude
@@ -509,8 +509,8 @@ sets the upstream).
 Run from Skills → **Migrate existing skills** (wizard) or the API; refused (409) while the library location is unsafe (§12.2).
 **Scope: everything that is not a harness default or Sparrow's own moves into the library; the library is the single copy.**
 - *Candidates* (a real folder or a link, with a `SKILL.md`): entries in the `claude`, `codex`, `opencode` roots, in
-  `~/.agents/skills` (the `npx skills` AWS set, `terminal-browser`) and in `~/Desktop/Skills`. A link to anywhere (outside
-  HOME such as brew's `agent-browser`, another folder, a tool's folder, `~/.agents/skills`) is a candidate: the target's content is
+  `~/.agents/skills` (skills installed by other tools) and in `~/Desktop/Skills`. A link to anywhere (outside
+  HOME such as a package-managed skill, another folder, a tool's folder, `~/.agents/skills`) is a candidate: the target's content is
   copied into the library, the link is moved to the backup and replaced by a library link, and the original link target is noted in
   the backup manifest (`moved[].linkTarget`). The target itself is never touched.
 - *Skipped and reported* (`skipped[].code`): Sparrow's skills (`sparrow`), Codex `.system` and claude.ai `synced/` (`container`),

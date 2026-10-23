@@ -2,7 +2,7 @@
 import { chromeExecutable } from './browser'
 // Board interactions against a REAL Sparrow server (or the mock): creates two probe tickets, drives the board with a real
 // browser (drag, hover actions, Later line, search) and confirms every result with GET /api/cards/:id. Probes end in Dropped.
-//   bun scripts/board-e2e.ts --url http://127.0.0.1:64184 --project sparrow-board [--out ../.sandbox/shots/board-v2] [--size 1440x900]
+//   bun scripts/board-e2e.ts --url http://127.0.0.1:4140 --project tortuga [--out ../.sandbox/shots/board-v2] [--size 1440x900]
 import { mkdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'

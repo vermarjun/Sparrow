@@ -10,7 +10,7 @@ import puppeteer, { type Page } from 'puppeteer-core'
 
 const { values } = parseArgs({ args: Bun.argv.slice(2), options: { url: { type: 'string' }, api: { type: 'string' }, out: { type: 'string' }, only: { type: 'string' }, themes: { type: 'string' }, project: { type: 'string' } } })
 const URL_ = values.url ?? process.env.SPARROW_WEB_URL ?? 'http://localhost:5281'
-const API = values.api ?? 'http://127.0.0.1:4181'
+const API = values.api ?? process.env.SPARROW_MOCK_URL ?? 'http://127.0.0.1:4181'
 const OUT = resolve(values.out ?? join(import.meta.dir, '../../.sandbox/shots/captains'))
 const PROJECT = values.project ?? process.env.SPARROW_DEMO_PROJECT ?? 'tortuga'
 const ONLY = values.only ? new Set(values.only.split(',')) : null
