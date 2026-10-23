@@ -1,0 +1,31 @@
+  ── DM from @captain · 04:12 ──
+  Re-review after @maya's changes: read src/strings.ts, src/retry.ts and the tests, run bun test,
+  and report a PASS/FAIL table for the three edge cases you found earlier (titleCase empty words,
+  backoffMs negative, backoffMs NaN). Read-only.
+
+  Report with the sparrow CLI: `sparrow update` as you go, then `sparrow done` (or `sparrow ask` if
+  blocked).
+
+
+
+[2m• [0mI’ll re-read the changed source and tests, then verify the three reported edge cases and run [38;2;166;227;161mbun[39m
+  [38;2;166;227;161mtest[39m.
+
+[1m[38;5;2m•[0m [1mRan[0m [38;2;137;180;250msparrow[38;2;205;214;244m update [38;2;166;227;161m"starting re-review of titleCase empty words and backoffMs negative/NaN; next …
+[2m[39m  └ test/retry.test.ts:12:  expect(backoffMs(-100)).toBe(60_000)[0m
+[2m    test/retry.test.ts:13:  expect(backoffMs(NaN)).toBe(60_000)[0m
+[2m    src/strings.ts:14:export function titleCase(input: string): string {[0m
+[2m    + 39 lines (⌃t to expand)
+[0m
+[1m[38;5;2m•[0m [1mRan[0m [38;2;137;180;250mcat[38;2;205;214;244m test/strings.test.ts [38;2;148;226;213m&&[38;2;205;214;244m [38;2;137;180;250mcat[38;2;205;214;244m test/retry.test.ts [38;2;148;226;213m&&[38;2;205;214;244m [38;2;137;180;250mbun[38;2;205;214;244m test[39m
+[2m  └  0 fail[0m
+[2m     18 expect() calls[0m
+[2m    Ran 5 tests across 2 files. [5.00ms][0m
+[2m    + 49 lines (⌃t to expand)
+[0m
+[1m[38;2;128;128;128m•[0m [2mWorking[0m [2m(10s • [0;1mesc[0;2m to interrupt)[0m
+
+
+[1m›[0m [2mAsk Codex to do anything[0m
+
+  [38;2;246;226;183mGPT-6-Luna low[39m · [38;2;171;223;167m~/code/tortuga

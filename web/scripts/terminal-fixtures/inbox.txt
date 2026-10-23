@@ -1,0 +1,22 @@
+$ sparrow inbox
+━━ 📨 2 new messages for @captain ━━
+── @leo · demo-reviewer · done ok · call 18s ──
+  04:12:39  update  starting re-review of titleCase empty words and backoffMs negative/NaN; next inspect changes and run bun test
+  04:12:48  result (ok)
+    ## Result
+    Re-review confirms all three previously reported edge cases are fixed in the current code. The requested test suite passes.
+
+    | Edge case | Result | Evidence |
+    |---|---|---|
+    | `titleCase` empty words | PASS | `src/strings.ts:15` now uses `charAt(0)`, which safely yields `''` for empty tokens. Probes return `''` for empty input, preserve double spaces in `hello  world`, and preserve leading/trailing spaces. Tests cover these cases. |
+    | `backoffMs` negative attempts | PASS | `src/retry.ts:3-4` maps negative attempts to 0; probes `-1` and `-100` both return `60000`. Tests cover both. |
+    | `backoffMs` NaN | PASS | `Number.isNaN(attempt)` maps NaN to 0; probe returns `60000`. Test covers NaN. |
+
+    ## Evidence
+    `bun test`: 5 pass, 0 fail, 18 expect calls; exit 0. Ran targeted `bun -e` probes for empty/repeated/edge spaces and negative/NaN attempts; all returned expected values.
+
+    ## Files
+    None changed.
+
+    ## Next
+    None.
