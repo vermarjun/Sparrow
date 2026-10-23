@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Sparrow: social preview</title>
+<link rel="stylesheet" href="diagram.css">
+<style>
+  .frame { height: 640px; padding: 0; border: 0; border-radius: 0; }
+  .layer { position: absolute; inset: 0; }
+  .brand { position: absolute; left: 72px; top: 64px; display: flex; align-items: center; gap: 18px; font: 700 54px/1 'Geist'; letter-spacing: -.03em; }
+  .brand .ic { width: 64px; height: 64px; color: var(--accent); }
+  .tag1 { position: absolute; left: 72px; top: 196px; width: 600px; font: 700 54px/1.14 'Geist'; letter-spacing: -.03em; color: var(--ink); }
+  .tag1 span { color: var(--accent-ink); }
+  .url { position: absolute; left: 72px; top: 548px; font: 500 24px 'Geist Mono', monospace; color: var(--ink-2); }
+  .cap { position: absolute; left: 700px; top: 246px; width: 176px; height: 148px; padding: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; border-color: var(--accent); }
+  .cap .ic { width: 52px; height: 52px; color: var(--accent-ink); }
+  .cap b { font: 650 26px 'Geist'; }
+  .win { position: absolute; left: 960px; width: 256px; height: 104px; padding: 0 22px; display: flex; flex-direction: column; justify-content: center; gap: 6px; }
+  .win b { font: 650 28px/1 'Geist'; display: flex; align-items: center; gap: 12px; letter-spacing: -.01em; }
+  .win b::before { content: ''; width: 16px; height: 16px; border-radius: 50%; background: var(--c); }
+  .win span { font: 500 20px 'Geist Mono', monospace; color: var(--ink-2); }
+  .win.claude { --c: var(--claude); } .win.codex { --c: var(--codex); } .win.opencode { --c: var(--opencode); }
+</style></head>
+<body>
+<div class="frame"><div class="layer">
+  <div class="brand"><i class="ic" data-i="sparrow"></i>Sparrow</div>
+  <div class="tag1">One captain.<br>Every harness.<br><span>No message overboard.</span></div>
+  <div class="url">github.com/vermarjun/Sparrow</div>
+  <div class="card cap" id="cap"><i class="ic" data-i="ship-wheel"></i><b>captain</b></div>
+  <div class="card win claude" id="w1" style="top:116px"><b>Claude Code</b><span>@maya</span></div>
+  <div class="card win codex" id="w2" style="top:268px"><b>Codex</b><span>@leo</span></div>
+  <div class="card win opencode" id="w3" style="top:420px"><b>OpenCode</b><span>@iris</span></div>
+</div>
+<b class="edge-def" data-from="#cap" data-to="#w1" data-fs="r" data-ts="l" data-tone="accent" data-mx="918"></b>
+<b class="edge-def" data-from="#cap" data-to="#w2" data-fs="r" data-ts="l" data-tone="accent" data-mx="918"></b>
+<b class="edge-def" data-from="#cap" data-to="#w3" data-fs="r" data-ts="l" data-tone="accent" data-mx="918"></b>
+</div>
+<script src="icons.js"></script><script src="diagram.js"></script>
+</body></html>
