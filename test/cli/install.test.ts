@@ -1,7 +1,7 @@
 // `sparrow install` with a temp HOME + SPARROW_HOME: never touches the real home.
 import { describe, expect, test } from 'bun:test';
-import { existsSync, readdirSync, readFileSync, readlinkSync, writeFileSync, symlinkSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, writeFileSync, symlinkSync, mkdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { BIN, REPO, run, tempDir } from './helpers';
 
 function env(home: string, extraPath = true) {
@@ -84,6 +84,21 @@ describe('sparrow install', () => {
     expect(r.stdout).toContain('is not on your PATH');
     expect(r.stdout).toContain('exists and is not our symlink; left alone');
     expect(readFileSync(join(home, '.local', 'bin', 'sparrow'), 'utf8')).toContain('echo mine');
+  }, 120_000);
+
+  test('the link path IS the binary (install.sh layout): up to date, never replaced, even with --force', async () => {
+    const home = tempDir('sparrow-t3-home-');
+    mkdirSync(join(home, '.local'), { recursive: true });
+    symlinkSync(dirname(BIN), join(home, '.local', 'bin')); // ~/.local/bin/sparrow resolves to BIN itself
+    const before = readFileSync(BIN, 'utf8');
+    for (const args of [['install'], ['install', '--force']]) {
+      const r = await run(args, { env: env(home), cwd: home });
+      expect(r.code).toBe(0);
+      expect(r.stdout).toContain('link up to date');
+      expect(r.stdout).not.toContain('not our symlink');
+      expect(lstatSync(BIN).isSymbolicLink()).toBe(false);
+      expect(readFileSync(BIN, 'utf8')).toBe(before);
+    }
   }, 120_000);
 
   test('replaces a stale symlink from an old checkout', async () => {

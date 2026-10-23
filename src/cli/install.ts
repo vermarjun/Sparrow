@@ -164,7 +164,9 @@ async function installLocked(opts: InstallOpts): Promise<InstallResult> {
   else {
     mkdirSync(binDir, { recursive: true });
     let linkState: 'ok' | 'made' | 'replaced' | 'blocked' = 'made';
-    if (existsSync(link) || isSymlink(link)) {
+    // install.sh / a copied binary: the link path IS the binary. Never "replace" it with a link to itself, even with --force.
+    if (sameFile(link, BIN)) linkState = 'ok';
+    else if (existsSync(link) || isSymlink(link)) {
       if (isSymlink(link) && readlinkSync(link) === BIN) linkState = 'ok';
       // Without --force, only replace a symlink into another sparrow checkout (…/bin/sparrow) or an older binary, never a user's own link/file.
       else if (opts.force || (isSymlink(link) && /(^|\/)(bin\/sparrow|sparrow[\w.-]*)$/.test(readlinkSync(link)))) linkState = 'replaced';
