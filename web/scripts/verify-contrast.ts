@@ -1,13 +1,14 @@
 #!/usr/bin/env bun
+import { chromeExecutable } from './browser'
 // Contrast audit: convert computed oklch/oklab/rgb colors to sRGB and flag text below WCAG 4.5:1 (3:1 large).
-//   bun scripts/verify-contrast.ts [--url http://127.0.0.1:4183] [--project plutus]
+//   bun scripts/verify-contrast.ts [--url http://127.0.0.1:4183] [--project tortuga]
 import { parseArgs } from 'node:util'
 import puppeteer from 'puppeteer-core'
 
 const { values } = parseArgs({ args: Bun.argv.slice(2), options: { url: { type: 'string' }, project: { type: 'string' } } })
-const URL_ = values.url ?? 'http://127.0.0.1:4183'
-const PROJECT = values.project ?? 'plutus'
-const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+const URL_ = values.url ?? process.env.SPARROW_WEB_URL ?? 'http://127.0.0.1:4183'
+const PROJECT = values.project ?? process.env.SPARROW_DEMO_PROJECT ?? 'tortuga'
+const CHROME = chromeExecutable()
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const routes = ['captains', 'captain/ag_cap', 'captain/ag_orion?tab=team', 'captain/ag_orion?tab=team&agent=ag_zoe', 'captain/ag_cap?tab=cards', 'board', 'resumes', 'skills', 'doctor', 'settings']
 

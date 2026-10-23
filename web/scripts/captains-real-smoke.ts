@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { chromeExecutable } from './browser'
 // Smoke the Captains UI against the REAL Sparrow server (src/server) with the `fake` harness.
 // Fully isolated: SPARROW_HOME under ../.sandbox/real-smoke, a free port (never 4040), its own tmux socket + prefix.
 //   bun scripts/captains-real-smoke.ts --dist <built web dir> [--out <shots dir>] [--keep]
@@ -11,14 +12,14 @@ import puppeteer from 'puppeteer-core'
 
 const { values } = parseArgs({ args: Bun.argv.slice(2), options: { dist: { type: 'string' }, out: { type: 'string' }, keep: { type: 'boolean' } } })
 const DIST = resolve(values.dist ?? join(import.meta.dir, '..', 'dist'))
-const OUT = resolve(values.out ?? join(import.meta.dir, '../../.orchestra/shots/captains'))
+const OUT = resolve(values.out ?? join(import.meta.dir, '../../.sandbox/shots/captains'))
 const free = () => { const s = Bun.listen({ hostname: '127.0.0.1', port: 0, socket: { data() {} } }); const p = s.port; s.stop(true); return p }
 const PORT = free()
 const SOCKET = `sparrow-captains-smoke-${PORT}`
 const home = resolve(join(import.meta.dir, '../../.sandbox/real-smoke', String(PORT)))
 mkdirSync(home, { recursive: true })
 Object.assign(process.env, {
-  SPARROW_HOME: home, SPARROW_PORT: String(PORT), SPARROW_URL: `http://127.0.0.1:${PORT}`,
+  SPARROW_SKILLS_HOME: join(home, 'skills'), SPARROW_HOME: home, SPARROW_PORT: String(PORT), SPARROW_URL: `http://127.0.0.1:${PORT}`,
   SPARROW_TMUX_SOCKET: SOCKET, SPARROW_TMUX_PREFIX: 'capsmoke-',
   SPARROW_SETTINGS: JSON.stringify({ close_grace_ms: 1500, watchdog_ms: 1000, snapshot_ms: 2000, max_running: 4 }),
 })
@@ -82,7 +83,7 @@ try {
   check('?fleet= returns only that fleet', fleetMsgs.length > 0 && fleetMsgs.every((m) => !m.thread.includes(lead.id)), `${fleetMsgs.length} msgs`)
 
   // ---------------------------------------------------------------- UI
-  const browser = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true, args: ['--no-sandbox'] })
+  const browser = await puppeteer.launch({ executablePath: chromeExecutable(), headless: true, args: ['--no-sandbox'] })
   const page = await browser.newPage()
   await page.setViewport({ width: 1440, height: 900 })
   await page.evaluateOnNewDocument(() => localStorage.setItem('sparrow.theme', 'light'))

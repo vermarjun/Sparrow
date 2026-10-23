@@ -40,7 +40,7 @@ skill(join(lib, 'write-like-a-human'), 'write-like-a-human', 'De-AI voice pass f
   { 'references/tells.md': '# Tells\n\n- delve\n- tapestry\n', 'scripts/check.sh': '#!/bin/sh\necho checking\n' });
 skill(join(lib, 'component-design'), 'component-design', 'Routes UI work to component libraries and design tokens before writing custom markup.', '\n# Component design\n\nPrefer the existing component library. Check `components/ui` first.\n');
 skill(join(lib, 'react-best-practices'), 'react-best-practices', 'React and Next.js performance rules from Vercel Engineering.', '\n# React best practices\n\n1. Avoid waterfalls.\n2. Keep bundles small.\n');
-skill(join(lib, 'jops'), 'jops', 'Job application orchestrator: tracks roles, drafts, follow-ups.', '\n# jops\n\nRuns the job search loop.\n');
+skill(join(lib, 'release-notes'), 'release-notes', 'Release note orchestrator: tracks changes, drafts, and publication.', '\n# release-notes\n\nGroups changes into release notes.\n');
 skill(join(lib, 'web-design-guidelines'), 'web-design-guidelines', 'Review UI code against the Web Interface Guidelines.', '\n# Web design guidelines\n\nCheck accessibility, focus states and motion.\n');
 writeFileSync(join(lib, 'skills.json'), JSON.stringify({
   version: 1,
@@ -51,7 +51,7 @@ writeFileSync(join(lib, 'skills.json'), JSON.stringify({
       harnesses: ['claude'],
       source: { source: 'vercel-labs/agent-skills', sourceType: 'github', sourceUrl: 'https://github.com/vercel-labs/agent-skills.git', skillPath: 'skills/react-best-practices/SKILL.md', installedAt: '2026-10-01T10:00:00.000Z', updatedAt: '2026-10-01T10:00:00.000Z' },
     },
-    jops: { harnesses: [] },
+    'release-notes': { harnesses: [] },
     'web-design-guidelines': { harnesses: ['claude', 'opencode'] },
   },
 }, null, 2) + '\n');
@@ -61,9 +61,9 @@ git(lib, 'commit', '-q', '-m', 'seed library');
 git(lib, 'remote', 'add', 'origin', origin);
 git(lib, 'push', '-q', '-u', 'origin', 'main');
 // history on one skill, then two unpushed commits and one uncommitted change: "1 changed · 2 unpushed"
-writeFileSync(join(lib, 'jops', 'SKILL.md'), '---\nname: jops\ndescription: Job application orchestrator: tracks roles, drafts, follow-ups.\n---\n\n# jops\n\nRuns the job search loop.\n\nAdded a follow-up reminder step.\n');
+writeFileSync(join(lib, 'release-notes', 'SKILL.md'), '---\nname: release-notes\ndescription: Release note orchestrator: tracks changes, drafts, and publication.\n---\n\n# release-notes\n\nGroups changes into release notes.\n\nAdded a publication reminder step.\n');
 git(lib, 'add', '--all');
-git(lib, 'commit', '-q', '-m', 'jops: follow-up reminders');
+git(lib, 'commit', '-q', '-m', 'release-notes: publication reminders');
 writeFileSync(join(lib, 'component-design', 'SKILL.md'), '---\nname: component-design\ndescription: Routes UI work to component libraries and design tokens before writing custom markup.\n---\n\n# Component design\n\nPrefer the existing component library. Check `components/ui` first.\n\nThen check the design tokens.\n');
 git(lib, 'add', '--all');
 git(lib, 'commit', '-q', '-m', 'component-design: mention tokens');
@@ -87,7 +87,7 @@ skill(join(agents, 'aws-cdk'), 'aws-cdk', 'Write CDK stacks in TypeScript.', '\n
 skill(join(claude, 'synced', 'claude-ai', 'brand-voice'), 'brand-voice', 'Synced from claude.ai: the team brand voice.', '\n# Brand voice\n\nPlain, warm, direct.\n');
 // conflicts: a differing copy and an identical copy
 skill(join(codex, 'component-design'), 'component-design', 'Routes UI work to component libraries and design tokens before writing custom markup.', '\n# Component design\n\nPrefer the existing component library. Always check `components/ui` first.\n\nNever hand-roll a button.\n', { 'notes.md': 'local notes\n' });
-skill(join(opencode, 'jops'), 'jops', 'Job application orchestrator: tracks roles, drafts, follow-ups.', '\n# jops\n\nRuns the job search loop.\n\nAdded a follow-up reminder step.\n');
+skill(join(opencode, 'release-notes'), 'release-notes', 'Release note orchestrator: tracks changes, drafts, and publication.', '\n# release-notes\n\nGroups changes into release notes.\n\nAdded a publication reminder step.\n');
 // broken link
 link(join(home, 'Desktop', 'Skills', 'retired-skill'), join(claude, 'retired-skill'));
 console.log(`fixture ready: ${home}\n  library ${lib}\n  origin  ${origin}`);

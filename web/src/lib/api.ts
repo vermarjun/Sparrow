@@ -109,7 +109,7 @@ export const api = {
   messages: (project: string, thread: string, after?: number, limit = 500) =>
     req<MessageView[]>('GET', `/api/messages${q({ project, thread, after, limit })}`),
   cards: (project: string) => req<Card[]>('GET', `/api/cards${q({ project })}`),
-  /** One ticket by id or key (`12`, `#12`, `PLU-12`). */
+  /** One ticket by id or key (`12`, `#12`, `TOR-12`). */
   card: (id: number | string) => req<Card>('GET', `/api/cards/${encodeURIComponent(String(id))}`),
   createCard: (project: string, body: CardCreateReq) =>
     req<{ card: Card }>('POST', '/api/cards', { ...body, project }),

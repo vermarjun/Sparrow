@@ -1,4 +1,4 @@
-// Pure logic for the Captains UI (docs/plans/multi-captain.md §7): hues, names, status grouping and filters,
+// Pure logic for the Captains UI (docs/DESIGN.md): hues, names, status grouping and filters,
 // the fleet tree and strip, and the Activity feed (day groups, update policy, per-agent filter).
 // Unit-tested in web/test/captains.test.ts; components only render what these return.
 import type { Agent, AgentState, CaptainStatus, CaptainSummary, MessageView } from '@shared/types'
@@ -42,7 +42,7 @@ export function captainSubline(a: CapLike): string {
   return parts.join(' · ')
 }
 
-/** `/Users/x/Desktop/plutus-feat1` → `~/Desktop/plutus-feat1`. */
+/** `/home/demo/Desktop/tortuga-feat1` → `~/code/tortuga-feat1`. */
 export const tildePath = (p: string) => p.replace(/^\/(?:Users|home)\/[^/]+(?=\/|$)/, '~')
 
 /** `7f3a9c21-8d4e-…` → `7f3a9c21`; short ids stay. */

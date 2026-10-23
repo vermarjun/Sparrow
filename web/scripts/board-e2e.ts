@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
+import { chromeExecutable } from './browser'
 // Board interactions against a REAL Sparrow server (or the mock): creates two probe tickets, drives the board with a real
 // browser (drag, hover actions, Later line, search) and confirms every result with GET /api/cards/:id. Probes end in Dropped.
-//   bun scripts/board-e2e.ts --url http://127.0.0.1:64184 --project sparrow-board [--out ../.orchestra/shots/board-v2] [--size 1440x900]
+//   bun scripts/board-e2e.ts --url http://127.0.0.1:64184 --project sparrow-board [--out ../.sandbox/shots/board-v2] [--size 1440x900]
 import { mkdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
@@ -9,9 +10,9 @@ import puppeteer from 'puppeteer-core'
 import type { Card } from '../../src/shared/types'
 
 const { values } = parseArgs({ args: Bun.argv.slice(2), options: { url: { type: 'string' }, project: { type: 'string' }, out: { type: 'string' }, size: { type: 'string' }, prefix: { type: 'string' } } })
-const URL_ = values.url ?? 'http://127.0.0.1:4140'
-const PROJECT = values.project ?? 'plutus'
-const OUT = resolve(values.out ?? join(import.meta.dir, '../../.orchestra/shots/board-v2'))
+const URL_ = values.url ?? process.env.SPARROW_WEB_URL ?? 'http://127.0.0.1:4140'
+const PROJECT = values.project ?? process.env.SPARROW_DEMO_PROJECT ?? 'tortuga'
+const OUT = resolve(values.out ?? join(import.meta.dir, '../../.sandbox/shots/board-v2'))
 const PREFIX = values.prefix ?? 'e2e-'
 const [W, H] = (values.size ?? '1440x900').split('x').map(Number)
 mkdirSync(OUT, { recursive: true })
@@ -31,7 +32,7 @@ console.error(`probes: #${a.id} (todo), #${b.id} (proposed)`)
 
 const consoleErrors: string[] = []
 const writes: { method: string; url: string; body: unknown }[] = []
-const browser = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', args: ['--no-sandbox'], headless: true })
+const browser = await puppeteer.launch({ executablePath: chromeExecutable(), args: ['--no-sandbox'], headless: true })
 const page = await browser.newPage()
 await page.setViewport({ width: W, height: H })
 page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()) })

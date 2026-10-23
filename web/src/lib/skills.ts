@@ -166,7 +166,7 @@ export function originLabel(e: Pick<SkillEntry, 'root' | 'kind' | 'linkTarget'>)
   return `Folder in ${ROOT_LABEL[e.root]}`
 }
 
-/** `/Users/me/x` → `~/x` when the path is inside `home`. */
+/** `/home/demo/x` → `~/x` when the path is inside `home`. */
 export function tilde(path: string, home: string): string {
   if (!home) return path
   if (path === home) return '~'

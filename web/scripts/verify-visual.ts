@@ -1,14 +1,15 @@
 #!/usr/bin/env bun
+import { chromeExecutable } from './browser'
 // Programmatic visual audit (the verifier model cannot read PNGs): detect light "slabs" in dark mode,
 // low-contrast text, and elements clipped/pushed past the viewport. Runs against the mock on --url.
-//   bun scripts/verify-visual.ts [--url http://127.0.0.1:4183] [--project plutus]
+//   bun scripts/verify-visual.ts [--url http://127.0.0.1:4183] [--project tortuga]
 import { parseArgs } from 'node:util'
 import puppeteer from 'puppeteer-core'
 
 const { values } = parseArgs({ args: Bun.argv.slice(2), options: { url: { type: 'string' }, project: { type: 'string' } } })
-const URL_ = values.url ?? 'http://127.0.0.1:4183'
-const PROJECT = values.project ?? 'plutus'
-const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+const URL_ = values.url ?? process.env.SPARROW_WEB_URL ?? 'http://127.0.0.1:4183'
+const PROJECT = values.project ?? process.env.SPARROW_DEMO_PROJECT ?? 'tortuga'
+const CHROME = chromeExecutable()
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const routes = [

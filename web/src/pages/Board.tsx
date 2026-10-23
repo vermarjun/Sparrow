@@ -135,7 +135,7 @@ export function BoardPage() {
         <div className="mx-4 mb-3 rounded-lg border border-dashed bg-background px-4 py-3 text-xs leading-relaxed text-muted-foreground">
           <span className="font-medium text-foreground/80">No tickets yet.</span> Agents propose tickets with{' '}
           <code className="rounded bg-muted px-1">sparrow propose "…"</code>; the captain moves them with{' '}
-          <code className="rounded bg-muted px-1">sparrow card move PLU-1 todo</code> or you drag them here. The board only tracks work.
+          <code className="rounded bg-muted px-1">sparrow card move TOR-1 todo</code> or you drag them here. The board only tracks work.
         </div>
       )}
 

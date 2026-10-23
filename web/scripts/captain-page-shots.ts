@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
+import { chromeExecutable } from './browser'
 // Captain page screenshots + checks against the mock (stable: start the mock with --no-live) served through vite.
-//   bun scripts/captain-page-shots.ts --url http://127.0.0.1:5282 [--out ../.orchestra/shots/captains] [--project plutus]
+//   bun scripts/captain-page-shots.ts --url http://127.0.0.1:5282 [--out ../.sandbox/shots/captains] [--project tortuga]
 //   bun scripts/captain-page-shots.ts --url http://127.0.0.1:5282 --live   (mock WITH live ticks, e.g. MOCK_TICK_MS=2500:
 //     appends must not move the header/tabs, scrolled-up readers get "Jump to latest")
 // Prints a JSON summary: console errors, page errors, horizontal-scroll checks, live-tick measurements.
@@ -10,10 +11,10 @@ import { parseArgs } from 'node:util'
 import puppeteer, { type Page } from 'puppeteer-core'
 
 const { values } = parseArgs({ args: Bun.argv.slice(2), options: { url: { type: 'string' }, out: { type: 'string' }, project: { type: 'string' }, live: { type: 'boolean' } } })
-const URL_ = values.url ?? 'http://127.0.0.1:5282'
-const OUT = resolve(values.out ?? join(import.meta.dir, '../../.orchestra/shots/captains'))
-const PROJECT = values.project ?? 'plutus'
-const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+const URL_ = values.url ?? process.env.SPARROW_WEB_URL ?? 'http://127.0.0.1:5282'
+const OUT = resolve(values.out ?? join(import.meta.dir, '../../.sandbox/shots/captains'))
+const PROJECT = values.project ?? process.env.SPARROW_DEMO_PROJECT ?? 'tortuga'
+const CHROME = chromeExecutable()
 mkdirSync(OUT, { recursive: true })
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))

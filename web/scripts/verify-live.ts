@@ -1,14 +1,15 @@
 #!/usr/bin/env bun
+import { chromeExecutable } from './browser'
 // Check 4 (live): against a mock started WITHOUT --no-live (MOCK_TICK_MS=2000), verify the Activity feed appends
 // messages while the header + tabs stay put, and home rows keep their height.
-//   bun scripts/verify-live.ts [--url http://127.0.0.1:4184] [--project plutus]
+//   bun scripts/verify-live.ts [--url http://127.0.0.1:4184] [--project tortuga]
 import { parseArgs } from 'node:util'
 import puppeteer, { type Page } from 'puppeteer-core'
 
 const { values } = parseArgs({ args: Bun.argv.slice(2), options: { url: { type: 'string' }, project: { type: 'string' } } })
-const URL_ = values.url ?? 'http://127.0.0.1:4184'
-const PROJECT = values.project ?? 'plutus'
-const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+const URL_ = values.url ?? process.env.SPARROW_WEB_URL ?? 'http://127.0.0.1:4184'
+const PROJECT = values.project ?? process.env.SPARROW_DEMO_PROJECT ?? 'tortuga'
+const CHROME = chromeExecutable()
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const checks: { name: string; ok: boolean; detail?: string }[] = []
 const check = (name: string, ok: boolean, detail?: string) => { checks.push({ name, ok, detail }); console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}${detail ? ` — ${detail}` : ''}`) }
