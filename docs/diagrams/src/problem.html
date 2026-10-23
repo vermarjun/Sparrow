@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Sparrow: the problem</title>
+<link rel="stylesheet" href="diagram.css">
+<style>
+  .panels { display: grid; grid-template-columns: 1fr 1fr; column-gap: 24px; margin-top: 26px; position: relative; }
+  .panel { padding: 22px 24px 20px; display: flex; flex-direction: column; border-radius: 18px; }
+  .panel .ph { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .panel .ph .k { color: var(--ink-2); font-size: 14px; }
+  .meters { display: flex; flex-direction: column; gap: 14px; }
+  .m { display: flex; align-items: center; gap: 14px; height: 36px; }
+  .m .chip { width: 124px; flex: none; }
+  .track { flex: 1; height: 14px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--line); overflow: hidden; }
+  .track i { display: block; height: 100%; border-radius: 8px; background: var(--c); }
+  .m .lbl { width: 172px; flex: none; font-size: 15px; font-weight: 550; color: var(--ink-2); display: flex; align-items: center; gap: 7px; }
+  .m .lbl.bad { color: var(--bad-ink); }
+  .m .lbl .ic { width: 17px; height: 17px; }
+  .sep { height: 1px; background: var(--line); margin: 20px 0 16px; }
+  .rows { display: flex; flex-direction: column; gap: 11px; }
+  .row { display: flex; align-items: center; gap: 12px; font-size: 16px; color: var(--ink); }
+  .row .ic { width: 22px; height: 22px; }
+  .row .ic.x { color: var(--bad-ink); } .row .ic.y { color: var(--ok-ink); }
+  .pfoot { margin-top: auto; padding-top: 18px; }
+  .arrowbadge { position: absolute; left: 50%; top: 94px; transform: translate(-50%, -50%); width: 46px; height: 46px; border-radius: 50%; background: var(--accent); color: #1b1303; display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow); z-index: 4; border: 4px solid var(--bg); }
+  .arrowbadge .ic { width: 22px; height: 22px; }
+  .fix .m { height: 36px; }
+  .fixtop { display: grid; grid-template-columns: 1fr 150px; column-gap: 70px; align-items: center; }
+  .fix .m .chip { width: 124px; }
+  .fixtop { column-gap: 56px; grid-template-columns: 1fr 156px; }
+  .fix .m .pct { width: 58px; text-align: left; font: 550 14px 'Geist Mono', monospace; color: var(--ink-2); }
+  .capnode { text-align: center; padding: 16px 12px; border-color: var(--accent); }
+  .capnode .ic { width: 34px; height: 34px; color: var(--accent-ink); }
+  .capnode b { display: block; font: 650 17px/1.2 'Geist'; margin-top: 6px; }
+  .capnode span { font-size: 14px; color: var(--ink-2); }
+</style></head>
+<body>
+<div class="frame edges-top"><div class="layer">
+  <div class="head"><span class="eyebrow">The problem</span><span class="wordmark"><i class="ic" data-i="sparrow"></i>Sparrow</span></div>
+  <h1 class="title">Three subscriptions. One does all the work.</h1>
+
+  <div class="panels">
+    <div class="arrowbadge"><i class="ic" data-i="arrow-right"></i></div>
+    <div class="card panel">
+      <div class="ph"><span class="k">Today</span><span class="tag">illustrative</span></div>
+      <div class="meters">
+        <div class="m"><span class="chip claude">Claude Code</span><span class="track"><i style="width:100%;--c:var(--bad)"></i></span><span class="lbl bad"><i class="ic" data-i="ban"></i>weekly limit reached</span></div>
+        <div class="m"><span class="chip codex">Codex</span><span class="track"><i style="width:7%;--c:var(--codex)"></i></span><span class="lbl">7% used</span></div>
+        <div class="m"><span class="chip opencode">OpenCode</span><span class="track"><i style="width:2%;--c:var(--opencode)"></i></span><span class="lbl">2% used</span></div>
+      </div>
+      <div class="sep"></div>
+      <div class="rows">
+        <div class="row"><i class="ic x" data-i="square-terminal"></i>Separate terminals</div>
+        <div class="row"><i class="ic x" data-i="copy"></i>You copy-paste context between them</div>
+        <div class="row"><i class="ic x" data-i="unplug"></i>Agents can't talk to each other</div>
+        <div class="row"><i class="ic x" data-i="scroll-text"></i>Results scroll away</div>
+        <div class="row"><i class="ic x" data-i="eye-off"></i>Nobody checks anybody's work</div>
+      </div>
+      <div class="pfoot caption">Congratulations, you are the message bus.</div>
+    </div>
+
+    <div class="card panel fix" id="fix">
+      <div class="ph"><span class="k">With Sparrow</span><span class="tag">illustrative</span></div>
+      <div class="fixtop">
+        <div class="meters">
+          <div class="m" id="m1"><span class="chip claude">Claude Code</span><span class="track"><i style="width:64%;--c:var(--claude)"></i></span><span class="pct">64%</span></div>
+          <div class="m" id="m2"><span class="chip codex">Codex</span><span class="track"><i style="width:58%;--c:var(--codex)"></i></span><span class="pct">58%</span></div>
+          <div class="m" id="m3"><span class="chip opencode">OpenCode</span><span class="track"><i style="width:61%;--c:var(--opencode)"></i></span><span class="pct">61%</span></div>
+        </div>
+        <div class="card capnode" id="capn"><i class="ic" data-i="ship-wheel"></i><b>Your captain</b><span>one session</span></div>
+      </div>
+      <div class="sep"></div>
+      <div class="rows">
+        <div class="row"><i class="ic y" data-i="square-terminal"></i>Agents work in tmux windows you can attach to</div>
+        <div class="row"><i class="ic y" data-i="clipboard-list"></i>Briefs go out, results come back</div>
+        <div class="row"><i class="ic y" data-i="messages-square"></i>Agents message their own crew</div>
+        <div class="row"><i class="ic y" data-i="inbox"></i>Results land in an inbox and stay in the log</div>
+        <div class="row"><i class="ic y" data-i="shield-check"></i>A verifier checks the work</div>
+      </div>
+      <div class="pfoot caption">One captain. Every subscription pulling its weight.</div>
+    </div>
+  </div>
+</div>
+<b class="edge-def" data-from="#m1 .pct" data-to="#capn" data-fs="r" data-ts="l" data-tone="accent" data-mx="1034" data-nohead></b>
+<b class="edge-def" data-from="#m2 .pct" data-to="#capn" data-fs="r" data-ts="l" data-tone="accent" data-mx="1034" data-nohead></b>
+<b class="edge-def" data-from="#m3 .pct" data-to="#capn" data-fs="r" data-ts="l" data-tone="accent" data-mx="1034"></b>
+</div>
+<script src="icons.js"></script><script src="diagram.js"></script>
+</body></html>

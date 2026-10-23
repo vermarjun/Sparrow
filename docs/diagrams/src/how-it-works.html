@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Sparrow: how it works</title>
+<link rel="stylesheet" href="diagram.css">
+<style>
+  .stage { margin-top: 24px; position: relative; }
+  .top { position: relative; height: 462px; }
+  .top > .card { position: absolute; }
+  .you { left: 0; top: 100px; width: 150px; display: flex; align-items: center; gap: 10px; padding: 14px 18px; }
+  .you b { font: 650 18px/1 'Geist'; }
+  .web { left: 620px; top: 0; width: 320px; }
+  .web .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  .web .chips .chip { font-size: 14px; padding: 5px 10px; }
+  .web .chips .chip::before { display: none; }
+  .cap { left: 0; top: 215px; width: 206px; }
+  .cap .chip { margin-top: 12px; }
+  .cap .also { margin-top: 12px; font-size: 14px; color: var(--ink-2); line-height: 1.4; }
+  .cap .tray { margin-top: 14px; display: flex; align-items: center; gap: 8px; padding-top: 12px; border-top: 1px dashed var(--line); font-weight: 600; font-size: 15px; }
+  .cap .tray .ic { color: var(--accent-ink); width: 18px; height: 18px; }
+  .cli { left: 378px; top: 215px; width: 150px; }
+  .cli .cmds { margin-top: 8px; font-size: 14px; line-height: 1.5; }
+  .srv { left: 620px; top: 215px; width: 320px; }
+  .srv .addr { display: flex; align-items: center; gap: 8px; margin: 10px 0 12px; }
+  .srv .tables { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .srv .tables .tag { text-transform: none; letter-spacing: 0; font-size: 13.5px; }
+  .note { left: 980px; top: 215px; width: 188px; }
+  .tmux { margin-top: 70px; padding: 18px 22px 16px; }
+  .tmux .th { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .tmux .th .l { display: flex; align-items: center; gap: 10px; font: 650 17px/1 'Geist'; }
+  .tmux .th .l .ic { color: var(--accent-ink); }
+  .wins { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .win .body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 8px; }
+  .win .who { font: 650 18px/1 'Geist'; color: var(--term-ink); }
+  .win .role { display: flex; align-items: center; gap: 9px; }
+  .win .bar { padding: 8px 12px; }
+  .tmux .tf { margin-top: 14px; display: flex; align-items: center; gap: 9px; font-size: 15px; color: var(--ink-2); }
+  .tmux .tf .ic { width: 18px; height: 18px; color: var(--accent-ink); }
+</style></head>
+<body>
+<div class="frame"><div class="layer">
+  <div class="head"><span class="eyebrow">How it works</span><span class="wordmark"><i class="ic" data-i="sparrow"></i>Sparrow</span></div>
+
+  <div class="stage"><div class="top">
+    <div class="card you" id="you"><i class="ic" data-i="user"></i><b>You</b></div>
+    <div class="card web" id="web">
+      <h3><i class="ic" data-i="monitor"></i>Web UI</h3>
+      <div class="chips"><span class="chip plain">Captains</span><span class="chip plain">Activity</span><span class="chip plain">Team</span><span class="chip plain">Board</span><span class="chip plain">Live screen peek</span></div>
+    </div>
+
+    <div class="card cap accent" id="cap">
+      <h3><i class="ic" data-i="ship-wheel"></i>Your captain</h3>
+      <span class="chip claude">Claude Code</span>
+      <div class="also">Codex and OpenCode sessions can register as captains too.</div>
+      <div class="tray"><i class="ic" data-i="inbox"></i>Inbox</div>
+    </div>
+    <div class="card cli" id="cli">
+      <h3><i class="ic" data-i="square-terminal"></i><span class="mono">sparrow</span></h3>
+      <div class="cmds txt">the CLI: hire, send, card, inbox</div>
+    </div>
+    <div class="card srv" id="srv">
+      <h3><i class="ic" data-i="server"></i>Sparrow server</h3>
+      <div class="addr"><span class="pill-cmd">127.0.0.1:4040</span><span class="tag">local only</span></div>
+      <div class="k" style="display:flex;align-items:center;gap:7px"><i class="ic" data-i="database" style="width:16px;height:16px"></i>SQLite</div>
+      <div class="tables"><span class="tag">agents</span><span class="tag">calls</span><span class="tag">messages</span><span class="tag">deliveries</span><span class="tag">cards</span></div>
+    </div>
+    <div class="card dashed note" id="note">
+      <h3 style="font-size:15.5px"><i class="ic" data-i="zap"></i>Turn-end hooks</h3>
+      <p style="margin-top:6px;font-size:14.5px">Claude Stop hook, Codex notify, OpenCode plugin tell the server when an agent stops.</p>
+    </div>
+
+    </div>
+    <div class="card tmux" id="tmux">
+      <div class="th">
+        <span class="l" style="white-space:nowrap"><i class="ic" data-i="layers"></i>tmux session <span class="pill-cmd" style="padding:5px 8px">sparrow-&lt;project&gt;</span> one window per agent</span>
+        <span class="pill-cmd accent" style="white-space:nowrap">attach any time: tmux attach -t sparrow-&lt;project&gt;</span>
+      </div>
+      <div class="wins">
+        <div class="term win"><div class="bar"><span class="lights"><i></i><i></i><i></i></span><span>maya</span><span class="grow"></span><span class="chip on-term claude">Claude Code</span></div>
+          <div class="body"><div class="role"><span class="who">@maya</span><span class="tag" style="color:var(--term-dim);border-color:var(--term-line)">builder</span></div><div><span class="gold">❯</span> <span class="dim">real interactive TUI</span></div></div></div>
+        <div class="term win"><div class="bar"><span class="lights"><i></i><i></i><i></i></span><span>leo</span><span class="grow"></span><span class="chip on-term codex">Codex</span></div>
+          <div class="body"><div class="role"><span class="who">@leo</span><span class="tag" style="color:var(--term-dim);border-color:var(--term-line)">verifier</span></div><div><span class="gold">❯</span> <span class="dim">real interactive TUI</span></div></div></div>
+        <div class="term win"><div class="bar"><span class="lights"><i></i><i></i><i></i></span><span>iris</span><span class="grow"></span><span class="chip on-term opencode">OpenCode</span></div>
+          <div class="body"><div class="role"><span class="who">@iris</span><span class="tag" style="color:var(--term-dim);border-color:var(--term-line)">researcher</span></div><div><span class="gold">❯</span> <span class="dim">real interactive TUI</span></div></div></div>
+      </div>
+      <div class="tf"><i class="ic" data-i="key-round"></i>Each window runs the harness with the logins you already have.</div>
+    </div>
+  </div>
+
+  <div class="foot"><span class="caption">Yes, those are the real TUIs. We didn't wrap them in a chat bubble.</span><span class="wave"><svg viewBox="0 0 600 14" preserveAspectRatio="none"><path d="M0 7 q15 -8 30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span></div>
+</div>
+<b class="edge-def" data-from="#you" data-to="#cap" data-fs="b" data-ts="t" data-fp="75" data-tp="75" data-label="<span class=step>1</span>ask in plain English" data-lclass="text" data-lx="108"></b>
+<b class="edge-def" data-from="#cap" data-to="#cli" data-fs="r" data-ts="l" data-fp="36" data-tp="36" data-tone="accent" data-label="<span class=step>2</span>sparrow hire" data-lclass="accent" data-ly="-24"></b>
+<b class="edge-def" data-from="#cli" data-to="#srv" data-fs="r" data-ts="l" data-fp="36" data-tp="36" data-tone="accent" data-label="<span class=step>3</span>HTTP" data-lclass="accent" data-ly="-24"></b>
+<b class="edge-def" data-from="#web" data-to="#srv" data-fs="b" data-ts="t" data-both data-label="HTTP + SSE" data-lclass="text"></b>
+<b class="edge-def" data-from="#srv" data-to="#tmux" data-fs="b" data-ts="t" data-fp="96" data-tp="716" data-tone="accent" data-label="<span class=step>4</span>opens windows" data-lclass="accent" data-lx="-92"></b>
+<b class="edge-def" data-from="#tmux" data-to="#srv" data-fs="t" data-ts="b" data-fp="870" data-tp="250" data-dashed data-label="turn ends" data-lclass="text" data-lx="50"></b>
+<b class="edge-def" data-from="#tmux" data-to="#cap" data-fs="t" data-ts="b" data-fp="103" data-tp="103" data-tone="ok" data-label="<span class=step>5</span>sparrow update | ask | done" data-lclass="ok" data-lx="184"></b>
+</div>
+<script src="icons.js"></script><script src="diagram.js"></script>
+</body></html>

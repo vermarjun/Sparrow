@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Sparrow: one captain, a crew of agents</title>
+<link rel="stylesheet" href="diagram.css">
+<style>
+  .grid { display: grid; grid-template-columns: 410px 1fr; column-gap: 0; margin-top: 26px; }
+  .left { display: grid; grid-template-rows: 146px 146px 160px; row-gap: 18px; }
+  .right { display: grid; grid-template-rows: 146px 146px 160px; row-gap: 18px; width: 520px; justify-self: end; }
+  .wordmark.big { font-size: 32px; gap: 12px; letter-spacing: -.02em; }
+  .wordmark.big .ic { width: 40px; height: 40px; }
+  .term.cap { grid-row: 1 / 3; display: flex; flex-direction: column; }
+  .term.cap .body { flex: 1; }
+  .agent .body { display: flex; flex-direction: column; gap: 10px; }
+  .agent .who { font: 650 20px/1 'Geist', sans-serif; color: var(--term-ink); }
+  .agent .role { display: flex; align-items: center; gap: 10px; }
+  .agent .doing { font-size: 15.5px; }
+  .term { display: flex; flex-direction: column; }
+  .term .body { flex: 1; }
+  .inbox { display: flex; flex-direction: column; gap: 8px; padding: 16px 20px; }
+  .inbox .top { display: flex; align-items: center; justify-content: space-between; }
+  .inbox .top b { font: 650 17px/1 'Geist', sans-serif; display: flex; align-items: center; gap: 9px; }
+  .inbox .secs { display: grid; grid-template-columns: 92px 1fr; row-gap: 5px; align-items: baseline; font-size: 15px; }
+  .inbox .secs .k { font-size: 12.5px; }
+  .inbox .secs span:nth-child(even) { color: var(--ink-2); }
+  .lines div { white-space: pre; }
+</style></head>
+<body>
+<div class="frame"><div class="layer">
+  <div class="head">
+    <span class="wordmark big"><i class="ic" data-i="sparrow"></i>Sparrow</span>
+    <span class="eyebrow">One captain · a crew of agents</span>
+  </div>
+
+  <div class="grid">
+    <div class="left">
+      <div class="term cap" id="cap">
+        <div class="bar"><span class="lights"><i></i><i></i><i></i></span><i class="ic" data-i="ship-wheel" style="width:16px;height:16px;color:#ebc268"></i><span>captain</span><span class="grow"></span><span class="chip on-term claude">Claude Code</span></div>
+        <div class="body lines">
+<div><span class="gold">❯</span> sparrow hire builder - &lt;&lt;'EOF'</div>
+<div class="dim">  Add rate limiting to the API.</div>
+<div class="dim">  Tests first, then ship.</div>
+<div>  EOF</div>
+<div><span class="gold">❯</span> sparrow hire verifier …</div>
+<div><span class="gold">❯</span> sparrow hire researcher …</div>
+<div><span class="gold">❯</span> sparrow inbox --wait 300<span class="cur"></span></div>
+        </div>
+      </div>
+      <div class="card inbox" id="inbox">
+        <div class="top"><b><i class="ic" data-i="inbox"></i>Captain inbox</b><span class="tag ok">result ok · @maya</span></div>
+        <div class="secs">
+          <span class="k">Result</span><span>Rate limiter shipped</span>
+          <span class="k">Evidence</span><span>41 tests pass</span>
+          <span class="k">Files</span><span class="mono" style="font-size:14px">src/api/limit.ts</span>
+          <span class="k">Next</span><span>none</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="right">
+      <div class="term agent" id="iris">
+        <div class="bar"><span class="lights"><i></i><i></i><i></i></span><span>sparrow-app:iris</span><span class="grow"></span><span class="chip on-term opencode">OpenCode</span></div>
+        <div class="body"><div class="role"><span class="who">@iris</span><span class="tag" style="color:var(--term-dim);border-color:var(--term-line)">researcher</span></div>
+          <div class="doing"><span class="gold">❯</span> reading the RFC<span class="cur"></span></div></div>
+      </div>
+      <div class="term agent" id="leo">
+        <div class="bar"><span class="lights"><i></i><i></i><i></i></span><span>sparrow-app:leo</span><span class="grow"></span><span class="chip on-term codex">Codex</span></div>
+        <div class="body"><div class="role"><span class="who">@leo</span><span class="tag" style="color:var(--term-dim);border-color:var(--term-line)">verifier</span></div>
+          <div class="doing"><span class="gold">❯</span> running acceptance checks<span class="cur"></span></div></div>
+      </div>
+      <div class="term agent" id="maya">
+        <div class="bar"><span class="lights"><i></i><i></i><i></i></span><span>sparrow-app:maya</span><span class="grow"></span><span class="chip on-term claude">Claude Code</span></div>
+        <div class="body"><div class="role"><span class="who">@maya</span><span class="tag" style="color:var(--term-dim);border-color:var(--term-line)">builder</span></div>
+          <div class="doing"><span class="gold">❯</span> implementing rate limit<span class="cur"></span></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+<b class="edge-def" data-from="#cap" data-to="#iris" data-fs="r" data-ts="l" data-ty=".5" data-tone="accent" data-mx="520"></b>
+<b class="edge-def" data-from="#cap" data-to="#leo" data-fs="r" data-ts="l" data-tone="accent" data-mx="520" data-label="sparrow hire" data-lclass="accent"></b>
+<b class="edge-def" data-from="#cap" data-to="#maya" data-fs="r" data-ts="l" data-ty=".36" data-tone="accent" data-mx="520"></b>
+<b class="edge-def" data-from="#maya" data-to="#inbox" data-fs="l" data-ts="r" data-fy=".72" data-ty=".72" data-tone="ok" data-label="sparrow done" data-lclass="ok"></b>
+</div>
+<script src="icons.js"></script><script src="diagram.js"></script>
+</body></html>

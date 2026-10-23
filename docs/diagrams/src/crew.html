@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Sparrow: the crew</title>
+<link rel="stylesheet" href="diagram.css">
+<style>
+  .stage { position: relative; height: 750px; margin-top: 22px; }
+  .stage .node { width: 208px; }
+  .r0 { top: 0; } .r1 { top: 172px; height: 134px; } .r2 { top: 366px; } .r3 { top: 556px; }
+  .you { position: absolute; left: 0; top: 18px; width: 120px; display: flex; align-items: center; gap: 10px; padding: 12px 16px; }
+  .you b { font: 650 18px/1 'Geist'; }
+  #cap { left: 440px; width: 288px; border-color: var(--accent); }
+  #cap .hd .ic { color: var(--accent-ink); width: 24px; height: 24px; }
+  .depthchain { position: absolute; right: 0; top: 8px; display: flex; align-items: center; gap: 8px; font: 500 14.5px 'Geist Mono', monospace; color: var(--ink-2); }
+  .depthchain .d { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border: 1.5px solid var(--line); border-radius: 50%; background: var(--surface); color: var(--ink); font-weight: 600; }
+  .depthchain .ic { width: 15px; height: 15px; color: var(--edge); }
+  .readonly { color: var(--ok-ink); border-color: var(--ok); }
+  .helper { width: 188px !important; border-style: dashed; box-shadow: none; background: var(--surface-2); }
+  .inset { position: absolute; left: 0; top: 372px; width: 640px; height: 370px; padding: 20px 22px; }
+  .inset .ih { display: flex; align-items: center; justify-content: space-between; }
+  .inset .ih b { font: 650 18px 'Geist'; display: flex; align-items: center; gap: 9px; }
+  .inset .ih b .ic { color: var(--accent-ink); }
+  .icap { position: absolute; top: 62px; width: 280px; padding: 12px 14px; }
+  .icap .who { font: 650 17px/1.1 'Geist'; }
+  .icap .line { font-size: 14px; color: var(--ink-2); margin-top: 6px; line-height: 1.35; }
+  .icap .team { display: flex; gap: 5px; margin-top: 9px; }
+  .icap .team .chip { font-size: 13px; padding: 4px 8px 4px 7px; }
+  .board { position: absolute; left: 22px; right: 22px; bottom: 20px; height: 140px; padding: 12px 14px; }
+  .board .cols { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 10px; }
+  .board .col { background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 7px 8px; min-height: 72px; }
+  .board .col .k { font-size: 12px; letter-spacing: .06em; }
+  .board .tk { margin-top: 6px; height: 14px; border-radius: 5px; background: var(--surface); border: 1.5px solid var(--line); }
+  .board .tk.a { border-color: var(--accent); }
+</style></head>
+<body>
+<div class="frame edges-top"><div class="layer">
+  <div class="head"><span class="eyebrow">The crew</span><span class="wordmark"><i class="ic" data-i="sparrow"></i>Sparrow</span></div>
+  <div class="stage">
+    <div class="card you" id="you"><i class="ic" data-i="user"></i><b>You</b></div>
+    <div class="depthchain"><span>depth limit 3</span><span class="d">0</span><i class="ic" data-i="arrow-right"></i><span class="d">1</span><i class="ic" data-i="arrow-right"></i><span class="d">2</span><i class="ic" data-i="arrow-right"></i><span class="d">3</span></div>
+
+    <div class="card node r0" id="cap"><div class="hd"><span class="who">@captain</span><i class="ic" data-i="ship-wheel"></i></div><div class="slug">your session · depth 0</div><div class="meta"><span class="chip claude">Claude Code</span></div></div>
+
+    <div class="card node r1" id="maya" style="left:0"><div class="who">@maya</div><div class="slug">builder</div><div class="meta"><span class="chip claude">Claude Code</span></div></div>
+    <div class="card node r1" id="leo" style="left:240px"><div class="who">@leo</div><div class="slug">builder-codex</div><div class="meta"><span class="chip codex">Codex</span></div></div>
+    <div class="card node r1" id="vera" style="left:480px"><div class="who">@vera</div><div class="slug">verifier</div><div class="meta"><span class="chip codex">Codex</span><span class="tag readonly">read-only</span></div></div>
+    <div class="card node r1" id="iris" style="left:720px"><div class="who">@iris</div><div class="slug">researcher</div><div class="meta"><span class="chip opencode">OpenCode</span></div></div>
+    <div class="card node r1 accent" id="sage" style="left:960px"><div class="who">@sage</div><div class="slug">sub-captain</div><div class="meta"><span class="chip claude">Claude Code · opus</span></div></div>
+
+    <div class="card node r2" id="tess" style="left:760px;width:190px"><div class="who">@tess</div><div class="slug">builder</div><div class="meta"><span class="chip claude">Claude Code</span></div></div>
+    <div class="card node r2" id="rex" style="left:970px;width:198px"><div class="who">@rex</div><div class="slug">builder-codex</div><div class="meta"><span class="chip codex">Codex</span></div></div>
+
+    <div class="card node helper r3" id="deck" style="left:668px"><div class="who" style="font-size:17px">deckhand</div><div class="meta" style="margin-top:8px"><span class="chip claude">haiku</span><span class="tag">one-shot</span></div><div class="note">cheap chores</div></div>
+    <div class="card node helper r3" id="adv" style="left:874px"><div class="who" style="font-size:17px">advisor</div><div class="meta" style="margin-top:8px"><span class="chip claude">opus</span><span class="tag readonly">read-only</span></div><div class="note">answers one question</div></div>
+
+    <div class="card soft inset" id="inset">
+      <div class="ih"><b><i class="ic" data-i="flag"></i>Many captains, one board</b><span class="tag">private teams</span></div>
+      <div class="card icap" id="ca" style="left:22px"><div class="who">@captain</div><div class="line">feature A · <span class="mono">../app-auth</span> worktree</div><div class="team"><span class="chip claude">@maya</span><span class="chip codex">@leo</span></div></div>
+      <div class="card icap" id="cb" style="right:22px"><div class="who">@cap-orion</div><div class="line">fix B</div><div class="team"><span class="chip opencode">@iris</span><span class="chip codex">@vera</span></div></div>
+      <div class="card board" id="board">
+        <div class="k" style="display:flex;align-items:center;gap:7px"><i class="ic" data-i="square-kanban" style="width:17px;height:17px"></i>Shared project board</div>
+        <div class="cols"><div class="col"><span class="k">Proposed</span><div class="tk"></div></div><div class="col"><span class="k">In progress</span><div class="tk a"></div><div class="tk a"></div></div><div class="col"><span class="k">Review</span><div class="tk"></div></div><div class="col"><span class="k">Done</span><div class="tk"></div><div class="tk"></div></div></div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="caption">Mutiny-proof: agents can only message their own crew.</span><span class="wave"><svg viewBox="0 0 600 14" preserveAspectRatio="none"><path d="M0 7 q15 -8 30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0 t30 0" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span></div>
+</div>
+<b class="edge-def" data-from="#you" data-to="#cap" data-fs="r" data-ts="l" data-fp="24" data-tp="42"></b>
+<b class="edge-def" data-from="#cap" data-to="#maya" data-fs="b" data-ts="t" data-tone="accent" data-label="sparrow hire" data-lclass="accent"></b>
+<b class="edge-def" data-from="#cap" data-to="#leo" data-fs="b" data-ts="t" data-tone="accent"></b>
+<b class="edge-def" data-from="#cap" data-to="#vera" data-fs="b" data-ts="t" data-tone="accent"></b>
+<b class="edge-def" data-from="#cap" data-to="#iris" data-fs="b" data-ts="t" data-tone="accent"></b>
+<b class="edge-def" data-from="#cap" data-to="#sage" data-fs="b" data-ts="t" data-tone="accent"></b>
+<b class="edge-def" data-from="#sage" data-to="#tess" data-fs="b" data-ts="t" data-tone="accent" data-label="hires its own crew" data-lclass="text" data-lx="-18"></b>
+<b class="edge-def" data-from="#sage" data-to="#rex" data-fs="b" data-ts="t" data-tone="accent"></b>
+<b class="edge-def" data-from="#tess" data-to="#deck" data-fs="b" data-ts="t"></b>
+<b class="edge-def" data-from="#tess" data-to="#adv" data-fs="b" data-ts="t" data-label="any builder may call" data-lclass="text" data-lx="-100"></b>
+<b class="edge-def" data-from="#maya" data-to="#leo" data-fs="b" data-ts="b" data-both data-dashed data-tone="ok" data-moff="30" data-label="agree on the API shape" data-lclass="ok"></b>
+<b class="edge-def" data-from="#ca" data-to="#board" data-fs="b" data-ts="t" data-fp="140" data-tp="140" data-tone="accent" data-label="sparrow card" data-lclass="accent"></b>
+<b class="edge-def" data-from="#cb" data-to="#board" data-fs="b" data-ts="t" data-fp="140" data-tp="456" data-tone="accent"></b>
+</div>
+<script src="icons.js"></script><script src="diagram.js"></script>
+</body></html>

@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Sparrow: resumes</title>
+<link rel="stylesheet" href="diagram.css">
+<style>
+  .stage { display: grid; grid-template-columns: 440px 1fr; column-gap: 34px; margin-top: 26px; align-items: stretch; }
+  .snip { display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+  .snip .fh { display: flex; align-items: center; gap: 9px; padding: 14px 18px; border-bottom: 1.5px solid var(--line); font: 550 14.5px 'Geist Mono', monospace; background: var(--surface-2); }
+  .snip .fh .ic { color: var(--accent-ink); width: 18px; height: 18px; }
+  .snip .fh .grow { flex: 1; }
+  .code { padding: 16px 18px; font: 500 14.5px/1.7 'Geist Mono', monospace; color: var(--ink); white-space: pre; }
+  .code .c { color: var(--ink-3); } .code .kk { color: var(--accent-ink); } .code .s { color: var(--ink); }
+  .snip .md { padding: 14px 18px 16px; border-top: 1.5px dashed var(--line); font-size: 14.5px; color: var(--ink-2); line-height: 1.5; margin-top: auto; }
+  .snip .md b { color: var(--ink); font-weight: 650; }
+  .cards { display: grid; grid-template-columns: repeat(3, 222px); grid-auto-rows: 292px; gap: 18px 14px; justify-content: end; }
+  .role { position: relative; padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+  .role::before { content: ''; height: 5px; background: var(--c); }
+  .role.claude { --c: var(--claude); } .role.codex { --c: var(--codex); } .role.opencode { --c: var(--opencode); }
+  .role .in { padding: 14px 16px 14px; display: flex; flex-direction: column; flex: 1; }
+  .role .top { display: flex; align-items: center; gap: 10px; }
+  .role .badge { width: 38px; height: 38px; border-radius: 11px; background: var(--accent-soft); color: var(--accent-ink); display: flex; align-items: center; justify-content: center; flex: none; }
+  .role .badge .ic { width: 21px; height: 21px; }
+  .role .ttl { font: 650 18px/1.1 'Geist'; letter-spacing: -.01em; }
+  .role .slug { font: 500 13.5px/1.2 'Geist Mono', monospace; color: var(--ink-2); margin-top: 3px; }
+  .role .chip { margin-top: 13px; align-self: flex-start; }
+  .role dl { display: grid; grid-template-columns: 54px 1fr; row-gap: 5px; margin: 12px 0 0; font-size: 14.5px; }
+  .role dt { font: 600 12px/1.8 'Geist Mono', monospace; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
+  .role dd { margin: 0; color: var(--ink); font-weight: 500; }
+  .role .job { margin-top: auto; padding-top: 10px; font-size: 14.5px; color: var(--ink-2); line-height: 1.35; border-top: 1px dashed var(--line); }
+</style></head>
+<body>
+<div class="frame"><div class="layer">
+  <div class="head"><span class="eyebrow">Resumes</span><span class="wordmark"><i class="ic" data-i="sparrow"></i>Sparrow</span></div>
+  <h1 class="title">Every role is a Markdown file.</h1>
+  <div class="stage">
+    <div class="card snip" id="snip">
+      <div class="fh"><i class="ic" data-i="file-text"></i>assets/resumes/builder.md<span class="grow"></span><span class="tag accent">Markdown</span></div>
+      <div class="code"><span class="c">---</span>
+<span class="kk">name:</span> builder
+<span class="kk">title:</span> Builder
+<span class="kk">harness:</span> claude
+<span class="kk">model:</span> opus
+<span class="kk">effort:</span> high
+<span class="kk">can_hire:</span> [deckhand, advisor]
+<span class="kk">limits:</span> { quiet_minutes: 15,
+          max_call_minutes: 90 }
+<span class="c">---</span></div>
+      <div class="md"><b>Below the frontmatter: the instructions.</b><br>"You are a senior software engineer. You own ONE task end to end…"</div>
+      <div class="md" style="display:flex;align-items:center;gap:10px"><i class="ic" data-i="monitor" style="color:var(--accent-ink)"></i><span>Edit any resume in the web UI, or in your editor.</span></div>
+    </div>
+
+    <div class="cards">
+      <div class="card role claude" id="r-builder"><div class="in">
+        <div class="top"><span class="badge"><i class="ic" data-i="hammer"></i></span><div><div class="ttl">Builder</div><div class="slug">builder</div></div></div>
+        <span class="chip claude">Claude Code</span>
+        <dl><dt>model</dt><dd>opus</dd><dt>effort</dt><dd>high</dd><dt>hires</dt><dd>deckhand, advisor</dd></dl>
+        <div class="job">Implements one task end to end and proves it.</div></div></div>
+      <div class="card role codex"><div class="in">
+        <div class="top"><span class="badge"><i class="ic" data-i="wrench"></i></span><div><div class="ttl">Builder</div><div class="slug">builder-codex</div></div></div>
+        <span class="chip codex">Codex</span>
+        <dl><dt>model</dt><dd>Codex default</dd><dt>effort</dt><dd>high</dd><dt>hires</dt><dd>deckhand, advisor</dd></dl>
+        <div class="job">Same job on Codex: parallel capacity, a second opinion.</div></div></div>
+      <div class="card role codex"><div class="in">
+        <div class="top"><span class="badge"><i class="ic" data-i="shield-check"></i></span><div><div class="ttl">Verifier</div><div class="slug">verifier</div></div></div>
+        <span class="chip codex">Codex</span>
+        <dl><dt>model</dt><dd>Codex default</dd><dt>effort</dt><dd>high</dd><dt>hires</dt><dd>deckhand, advisor</dd></dl>
+        <div class="job">Read-only. Checks the work and returns a PASS/FAIL table.</div></div></div>
+      <div class="card role opencode"><div class="in">
+        <div class="top"><span class="badge"><i class="ic" data-i="microscope"></i></span><div><div class="ttl">Researcher</div><div class="slug">researcher</div></div></div>
+        <span class="chip opencode">OpenCode</span>
+        <dl><dt>model</dt><dd>your OpenCode provider</dd><dt>hires</dt><dd>deckhand</dd></dl>
+        <div class="job">Web and code research, findings cited in Markdown.</div></div></div>
+      <div class="card role claude"><div class="in">
+        <div class="top"><span class="badge"><i class="ic" data-i="anchor"></i></span><div><div class="ttl">Deckhand</div><div class="slug">deckhand</div></div></div>
+        <span class="chip claude">Claude Code</span>
+        <dl><dt>model</dt><dd>haiku</dd><dt>effort</dt><dd>medium</dd><dt>hires</dt><dd>nobody</dd></dl>
+        <div class="job">One-shot chores: lookups, test runs, exact-spec edits.</div></div></div>
+      <div class="card role claude"><div class="in">
+        <div class="top"><span class="badge"><i class="ic" data-i="compass"></i></span><div><div class="ttl">Advisor</div><div class="slug">advisor</div></div></div>
+        <span class="chip claude">Claude Code</span>
+        <dl><dt>model</dt><dd>opus</dd><dt>effort</dt><dd>medium</dd><dt>hires</dt><dd>nobody</dd></dl>
+        <div class="job">Read-only. Answers one specific question.</div></div></div>
+    </div>
+  </div>
+  <div class="foot" style="margin-top:22px"><span class="caption" style="max-width:100%">Heavy thinking on Opus, bulk building on Codex, chores on Haiku, research on whatever OpenCode provider you pay for. Resumes are Markdown; edit them in the UI.</span></div>
+</div>
+<b class="edge-def" data-from="#snip" data-to="#r-builder" data-fs="r" data-ts="l" data-fp="140" data-tp="140" data-tone="accent"></b>
+</div>
+<script src="icons.js"></script><script src="diagram.js"></script>
+</body></html>
