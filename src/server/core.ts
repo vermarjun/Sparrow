@@ -528,12 +528,20 @@ export class Core {
     return { agent: this.refreshCaptain(agent, project, cwd, sid, harness, pid), project };
   }
 
-  /** Project semantics: the longest registered project root containing cwd; else its git root; else cwd. */
+  /** Prefer registered roots in the same repository; an unrelated Git worktree escapes an ancestor project. */
   projectRootFor(cwd: string): string {
     const inside = this.store.listProjects()
       .filter((p) => p.id !== DOCTOR_PROJECT && (cwd === p.root || cwd.startsWith(p.root.endsWith(sep) ? p.root : p.root + sep)))
       .sort((a, b) => b.root.length - a.root.length);
-    return inside[0]?.root ?? this.detectRoot(cwd);
+    const matched = inside[0]?.root;
+    const detected = this.detectRoot(cwd);
+    if (!matched) return detected;
+    // A linked worktree can live inside an unrelated registered ancestor (e.g. dotfiles).
+    // Non-git directories retain the registered-root rule.
+    if (gitRoot(cwd) !== resolvePath(cwd) || existsSync(join(cwd, '.git'))) {
+      if (this.detectRoot(matched) !== detected) return detected;
+    }
+    return matched;
   }
 
   identify(id: string): Agent {

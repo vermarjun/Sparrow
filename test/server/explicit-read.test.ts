@@ -1,5 +1,9 @@
 import { afterEach, expect, spyOn, test } from 'bun:test';
+import { mkdtempSync, mkdirSync, realpathSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { main } from '../../src/cli/main';
+import { gitRoot } from '../../src/server/core';
 import { agentOf, flush, hire, setup, type Ctx } from './helpers';
 
 let ctx: Ctx;
@@ -157,4 +161,31 @@ test('captain registration leaves result unread; loop takes once; foreground sen
   await ctx.req('POST', '/api/done', { summary: 'second result' }, a.id);
   expect((await waiting).body.inbox[0].text).toBe('second result');
   expect(ctx.store.countPending(ctx.captain.id)).toBe(0);
+});
+
+test('registered ancestor yields to unrelated git worktree but retains same-repo and non-git roots', async () => {
+  ctx = await setup({}, { detectRoot: gitRoot });
+  const temp = realpathSync(mkdtempSync(join(tmpdir(), 'sp-ancestor-')));
+  const home = join(temp, 'home'), b = join(temp, 'code', 'b'), wt = join(home, 'trees', 'b-feat');
+  mkdirSync(home, { recursive: true }); mkdirSync(b, { recursive: true });
+  const git = (cwd: string, ...args: string[]) => {
+    const r = Bun.spawnSync(['git', '-C', cwd, ...args], { stderr: 'pipe' });
+    if (r.exitCode) throw new Error(r.stderr.toString());
+  };
+  for (const root of [home, b]) {
+    git(root, 'init', '-q');
+    git(root, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'init');
+  }
+  await ctx.req('POST', '/api/captains/register', { cwd: home });
+  git(b, 'worktree', 'add', '-q', '-b', 'feat', wt);
+  mkdirSync(join(wt, 'sub')); mkdirSync(join(home, 'own'));
+  expect(ctx.core.projectRootFor(wt)).toBe(b);
+  expect(ctx.core.projectRootFor(join(wt, 'sub'))).toBe(b);
+  expect(ctx.core.projectRootFor(join(home, 'own'))).toBe(home);
+  // A more specific registered directory inside A remains the chosen project.
+  ctx.store.insertProject({ id: 'own', name: 'own', root: join(home, 'own'), created_at: Date.now() });
+  mkdirSync(join(home, 'own', 'sub'));
+  expect(ctx.core.projectRootFor(join(home, 'own', 'sub'))).toBe(join(home, 'own'));
+  mkdirSync(join(ctx.root, 'plain'));
+  expect(ctx.core.projectRootFor(join(ctx.root, 'plain'))).toBe(ctx.root);
 });
