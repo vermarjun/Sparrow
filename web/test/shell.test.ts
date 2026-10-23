@@ -8,7 +8,7 @@ import {
 
 const agent = (id: string, extra: Partial<Agent> = {}): Agent => ({
   id, project_id: 'p', handle: id.replace(/^ag_/, ''), kind: 'agent', resume: 'builder', title: 'Builder', harness: 'claude', model: null, effort: null,
-  can_hire: [], parent_id: null, depth: 1, cwd: '/Users/me/x', tmux_session: 's', tmux_window: id, tmux_window_id: null, session_id: null,
+  can_hire: [], parent_id: null, depth: 1, cwd: '/home/demo/x', tmux_session: 's', tmux_window: id, tmux_window_id: null, session_id: null,
   state: 'idle', call_id: null, last_end_reason: null, last_update: null, last_update_at: null, last_seen_at: null, resume_hash: null,
   last_run: null, fleet_id: 'ag_cap', captain: null, created_at: 0, updated_at: 0, ...extra,
 })
@@ -22,7 +22,7 @@ const summary = (id: string, status: CaptainStatus, title: string | null = `Titl
   results: { ok: 0, blocked: 0, failed: 0 }, unread: 0, questions: 0, last_activity_at: at, last_message: null, cards: 0,
   resume: { cwd: '/x', harness: 'claude', session_id: null, command: null, attach: null },
 })
-const row = (id: string, p: Partial<ProjectRow> = {}): ProjectRow => ({ id, name: id, root: `/Users/me/${id}`, created_at: 0, agents: 5, working: 1, cards: 0, ...p })
+const row = (id: string, p: Partial<ProjectRow> = {}): ProjectRow => ({ id, name: id, root: `/home/demo/${id}`, created_at: 0, agents: 5, working: 1, cards: 0, ...p })
 
 describe('nextCaptainName', () => {
   test('the first captain of a project is @captain', () => { expect(nextCaptainName([])).toBe('captain') })
@@ -94,8 +94,8 @@ describe('stepIndex / stepKey', () => {
 describe('projectCaption', () => {
   const caps = [summary('ag_a', 'working', 'A', 0, 3), summary('ag_b', 'idle'), summary('ag_c', 'archived', 'C', 0, 5)]
   test('the active project counts from its loaded captains, archived left out', () => {
-    expect(projectCaption(row('plutus'), caps)).toEqual({ text: '2 captains', working: 3 })
-    expect(projectCaption(row('plutus'), [caps[0]])).toEqual({ text: '1 captain', working: 3 })
+    expect(projectCaption(row('tortuga'), caps)).toEqual({ text: '2 captains', working: 3 })
+    expect(projectCaption(row('tortuga'), [caps[0]])).toEqual({ text: '1 captain', working: 3 })
   })
   test('other projects use the row counts, falling back to agents', () => {
     expect(projectCaption(row('x', { captains: 8, captains_working: 2 }), null)).toEqual({ text: '8 captains', working: 2 })
@@ -105,16 +105,16 @@ describe('projectCaption', () => {
 })
 
 describe('folderSuggestions', () => {
-  const recent = ['/Users/me/plutus', '/Users/me/sparrow', '/Users/me/lab/notes']
+  const recent = ['/home/demo/tortuga', '/home/demo/sparrow', '/home/demo/lab/notes']
   test('project root first, deduped, capped', () => {
-    expect(folderSuggestions('/Users/me/sparrow', recent, '')).toEqual(['/Users/me/sparrow', '/Users/me/plutus', '/Users/me/lab/notes'])
-    expect(folderSuggestions(null, recent, '', 2)).toEqual(['/Users/me/plutus', '/Users/me/sparrow'])
+    expect(folderSuggestions('/home/demo/sparrow', recent, '')).toEqual(['/home/demo/sparrow', '/home/demo/tortuga', '/home/demo/lab/notes'])
+    expect(folderSuggestions(null, recent, '', 2)).toEqual(['/home/demo/tortuga', '/home/demo/sparrow'])
   })
   test('filters as you type, ~ allowed; a picked value shows them all', () => {
-    expect(folderSuggestions(null, recent, 'lab')).toEqual(['/Users/me/lab/notes'])
-    expect(folderSuggestions(null, recent, '~/spar')).toEqual(['/Users/me/sparrow'])
-    expect(folderSuggestions(null, recent, '~/plutus')).toEqual(recent)
-    expect(folderSuggestions(null, recent, '/Users/me/plutus')).toEqual(recent)
+    expect(folderSuggestions(null, recent, 'lab')).toEqual(['/home/demo/lab/notes'])
+    expect(folderSuggestions(null, recent, '~/spar')).toEqual(['/home/demo/sparrow'])
+    expect(folderSuggestions(null, recent, '~/tortuga')).toEqual(recent)
+    expect(folderSuggestions(null, recent, '/home/demo/tortuga')).toEqual(recent)
     expect(folderSuggestions(null, recent, 'nope')).toEqual([])
   })
 })
@@ -134,10 +134,10 @@ describe('parseCreateError', () => {
 
 describe('mobileTitle', () => {
   test('captain name, project, or page name', () => {
-    expect(mobileTitle(parseRoute('#/captain/ag_x'), 'plutus', 'Rate limiting')).toBe('Rate limiting')
-    expect(mobileTitle(parseRoute('#/captain/ag_x'), 'plutus', null)).toBe('Captain')
-    expect(mobileTitle(parseRoute('#/captains'), 'plutus', null)).toBe('plutus')
-    expect(mobileTitle(parseRoute('#/board'), 'plutus', null)).toBe('Board')
+    expect(mobileTitle(parseRoute('#/captain/ag_x'), 'tortuga', 'Rate limiting')).toBe('Rate limiting')
+    expect(mobileTitle(parseRoute('#/captain/ag_x'), 'tortuga', null)).toBe('Captain')
+    expect(mobileTitle(parseRoute('#/captains'), 'tortuga', null)).toBe('tortuga')
+    expect(mobileTitle(parseRoute('#/board'), 'tortuga', null)).toBe('Board')
     expect(mobileTitle(parseRoute('#/doctor'), null, null)).toBe('Doctor')
   })
 })

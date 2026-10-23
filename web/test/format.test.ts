@@ -65,7 +65,7 @@ describe('text', () => {
     expect(previewLine('## Title\n\n| a | b |\n|---|---|\n**Pick** `x` now')).toBe('Title Pick x now')
   })
   test('tmux attach command', () => {
-    expect(tmuxAttach({ tmux_session: 'sparrow-plutus', tmux_window: 'james' })).toBe(String.raw`tmux attach -t sparrow-plutus \; select-window -t james`)
+    expect(tmuxAttach({ tmux_session: 'sparrow-tortuga', tmux_window: 'james' })).toBe(String.raw`tmux attach -t sparrow-tortuga \; select-window -t james`)
   })
   test('ago / duration', () => {
     expect(ago(1000, 1000 + 10_000)).toBe('now')
@@ -97,6 +97,6 @@ describe('fix round 1', () => {
     expect(t.length).toBe(40)
     expect(t.endsWith('ledger-demo')).toBe(true)
     expect(middleTruncate('/short', 40)).toBe('/short')
-    expect(tmuxSwitch({ tmux_session: 'sparrow-plutus', tmux_window: 'james' })).toBe('tmux switch-client -t sparrow-plutus:james')
+    expect(tmuxSwitch({ tmux_session: 'sparrow-tortuga', tmux_window: 'james' })).toBe('tmux switch-client -t sparrow-tortuga:james')
   })
 })

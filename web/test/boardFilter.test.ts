@@ -5,7 +5,7 @@ import { DAY, mkCard } from './cardFixtures'
 describe('search', () => {
   const c = mkCard(12, { title: 'Retry ring on reconnect', context: 'Asked by Maya', problem: 'drops frames', approach: 'backoff', details: 'legacy notes', tags: ['tower'], category: 'Server', checks: [{ text: 'no gap in log', done: false }] })
   test('matches key, #id, title, sections, tags, category, checks', () => {
-    for (const q of ['PLU-12', 'plu-12', '#12', 'retry', 'maya', 'frames', 'backoff', 'legacy', 'tower', 'server', 'gap in log']) expect(matchesQuery(c, q)).toBe(true)
+    for (const q of ['TOR-12', 'plu-12', '#12', 'retry', 'maya', 'frames', 'backoff', 'legacy', 'tower', 'server', 'gap in log']) expect(matchesQuery(c, q)).toBe(true)
   })
   test('every term must match; unknown terms fail', () => {
     expect(matchesQuery(c, 'retry frames')).toBe(true)

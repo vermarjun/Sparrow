@@ -41,14 +41,14 @@ describe('category combobox', () => {
     mkCard(5, { category: 'other', project_id: 'zed' }),
   ]
   test('most used first, project scoped, filtered by query', () => {
-    expect(categoryOptions(cards, 'plutus', '')).toEqual([{ name: 'ui', count: 2 }, { name: 'db', count: 1 }])
-    expect(categoryOptions(cards, 'plutus', 'D')).toEqual([{ name: 'db', count: 1 }])
+    expect(categoryOptions(cards, 'tortuga', '')).toEqual([{ name: 'ui', count: 2 }, { name: 'db', count: 1 }])
+    expect(categoryOptions(cards, 'tortuga', 'D')).toEqual([{ name: 'db', count: 1 }])
   })
   test('names the page already knows are offered too, after the used ones', () => {
-    expect(categoryOptions(cards, 'plutus', '', ['infra', 'ui']).map((o) => o.name)).toEqual(['ui', 'db', 'infra'])
+    expect(categoryOptions(cards, 'tortuga', '', ['infra', 'ui']).map((o) => o.name)).toEqual(['ui', 'db', 'infra'])
   })
   test('offers a new category only when it is not an existing one', () => {
-    const opts = categoryOptions(cards, 'plutus', 'ui')
+    const opts = categoryOptions(cards, 'tortuga', 'ui')
     expect(newCategory(opts, 'UI')).toBeNull()
     expect(newCategory(opts, 'Billing ')).toBe('billing')
     expect(newCategory(opts, '  ')).toBeNull()

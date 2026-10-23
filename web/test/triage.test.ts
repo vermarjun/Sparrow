@@ -94,12 +94,12 @@ describe('triageAction', () => {
 describe('patchUndo (the Undo of u / 1-3 / ⇧1-3)', () => {
   const c = mkCard(7, { urgent: false, impact: 'low', effort: null })
   test('urgent toggles back', () => {
-    expect(patchUndo(c, { urgent: true })).toEqual({ label: 'PLU-7 marked urgent', undo: { urgent: false } })
-    expect(patchUndo({ ...c, urgent: true }, { urgent: false })).toEqual({ label: 'PLU-7 no longer urgent', undo: { urgent: true } })
+    expect(patchUndo(c, { urgent: true })).toEqual({ label: 'TOR-7 marked urgent', undo: { urgent: false } })
+    expect(patchUndo({ ...c, urgent: true }, { urgent: false })).toEqual({ label: 'TOR-7 no longer urgent', undo: { urgent: true } })
   })
   test('return and effort restore the previous value, including "unset"', () => {
-    expect(patchUndo(c, { impact: 'high' })).toEqual({ label: 'PLU-7 return high', undo: { impact: 'low' } })
-    expect(patchUndo(c, { effort: 'medium' })).toEqual({ label: 'PLU-7 effort medium', undo: { effort: null } })
+    expect(patchUndo(c, { impact: 'high' })).toEqual({ label: 'TOR-7 return high', undo: { impact: 'low' } })
+    expect(patchUndo(c, { effort: 'medium' })).toEqual({ label: 'TOR-7 effort medium', undo: { effort: null } })
   })
   test('anything else has no undo', () => {
     expect(patchUndo(c, { title: 'x' })).toBeNull()

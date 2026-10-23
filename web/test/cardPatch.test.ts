@@ -69,12 +69,12 @@ describe('activity', () => {
 
 describe('copy text', () => {
   test('pick command uses the ticket key', () => {
-    expect(pickCommand(mkCard(12))).toBe('Pick up PLU-12 from the Sparrow board: run sparrow card pick PLU-12')
+    expect(pickCommand(mkCard(12))).toBe('Pick up TOR-12 from the Sparrow board: run sparrow card pick TOR-12')
   })
   test('brief uses handles for people', () => {
     const agents = { ag_m: { id: 'ag_m', handle: 'maya' } } as never
     const b = briefFor(mkCard(12, { created_by: 'ag_m', problem: 'broken' }), agents)
-    expect(b).toContain('# PLU-12 · Card 12')
+    expect(b).toContain('# TOR-12 · Card 12')
     expect(b).toContain('proposed by @maya')
     expect(b).toContain('## Problem')
     expect(whoName(agents)('user')).toBe('you')

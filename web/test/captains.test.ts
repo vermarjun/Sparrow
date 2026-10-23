@@ -9,7 +9,7 @@ import { emptyData, reduce, type Data } from '../src/lib/reduce'
 
 const agent = (id: string, extra: Partial<Agent> = {}): Agent => ({
   id, project_id: 'p', handle: id.replace(/^ag_/, ''), kind: 'agent', resume: 'builder', title: 'Builder', harness: 'claude', model: null, effort: null,
-  can_hire: [], parent_id: null, depth: 1, cwd: '/Users/me/x', tmux_session: 's', tmux_window: id, tmux_window_id: null, session_id: null,
+  can_hire: [], parent_id: null, depth: 1, cwd: '/home/demo/x', tmux_session: 's', tmux_window: id, tmux_window_id: null, session_id: null,
   state: 'idle', call_id: null, last_end_reason: null, last_update: null, last_update_at: null, last_seen_at: null, resume_hash: null,
   last_run: null, fleet_id: 'ag_cap', captain: null, created_at: 0, updated_at: 0, ...extra,
 })
@@ -48,8 +48,9 @@ describe('hue + names', () => {
     expect(captainSubline(cap('ag_orion', null))).toBe('@cap-orion')
   })
   test('tildePath + shortSession', () => {
-    expect(tildePath('/Users/vermarjun/Desktop/plutus')).toBe('~/Desktop/plutus')
-    expect(tildePath('/Users/vermarjun')).toBe('~')
+    expect(tildePath('/home/demo/code/tortuga')).toBe('~/code/tortuga')
+    expect(tildePath('/home/demo')).toBe('~')
+    expect(tildePath(['', 'Users', 'demo', 'code'].join('/'))).toBe('~/code') // macOS home
     expect(tildePath('/opt/x')).toBe('/opt/x')
     expect(shortSession('7f3a9c21-8d4e-4b6a-9f10-2e5c7d8a1b34')).toBe('7f3a9c21…')
     expect(shortSession(null)).toBe('')

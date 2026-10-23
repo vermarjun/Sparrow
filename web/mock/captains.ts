@@ -1,4 +1,4 @@
-// Mock of the multi-captain API (docs/plans/multi-captain.md §5): summaries, detail, patch, resume, fleet messages.
+// Mock of the captains API (docs/DESIGN.md): summaries, detail, patch, resume, fleet messages.
 // Unread = waking messages to the captain newer than its last_seen_at (the real server counts pending deliveries).
 import type {
   Agent, CaptainDetail, CaptainPatchReq, CaptainResume, CaptainStartRes, CaptainStatus, CaptainSummary, Card, FleetCounts,
@@ -116,7 +116,7 @@ export function createCaptains(db: CaptainsDb, emit: Emit) {
       effort: b.effort ?? null, can_hire: ['*'], parent_id: null, depth: 0, cwd, tmux_session: session, tmux_window: name, tmux_window_id: window_id,
       session_id: crypto.randomUUID(), state: 'idle', call_id: null, last_end_reason: null, last_update: null, last_update_at: null,
       last_seen_at: now, resume_hash: null, last_run: null, fleet_id: id,
-      captain: { title: b.title?.trim() || null, branch: cwd.includes('plutus-') ? `feat/${cwd.split('/').pop()}` : 'main', harness: 'claude', origin: 'sparrow', archived_at: null },
+      captain: { title: b.title?.trim() || null, branch: cwd.includes('tortuga-') ? `feat/${cwd.split('/').pop()}` : 'main', harness: 'claude', origin: 'sparrow', archived_at: null },
       created_at: now, updated_at: now,
     }
     db.agents.push(c)

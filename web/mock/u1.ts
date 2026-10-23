@@ -1,7 +1,9 @@
 // U1 mock endpoints: model catalog, doctor, editable resumes, captain launcher.
-// Data mirrors the contract facts measured on 17 Oct 2026 (real ids and versions).
+// Data mirrors the contract facts measured on 17 Oct 2026 (real ids and versions). Resumes are the shipped ones (assets/resumes).
 // The doctor run is simulated over ~MOCK_DOCTOR_MS (default 8 s) with doctor.updated events:
-// Claude passes, Codex passes on a new version ("re-verified"), OpenCode is logged out; skills warns.
+// Claude passes, Codex passes on a new version ("re-verified"); skills warns. OpenCode is logged in unless MOCK_OPENCODE_LOGGED_OUT=1.
+import { readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type {
   Agent, CaptainStartReq, CaptainStartRes, CatalogModel, DoctorCheck, DoctorRun, HarnessCatalog, HarnessHealth, HarnessName,
   ResumeStatus, ResumeView, ResumeWriteReq, ServerEvent, SettingField, SettingsView,
@@ -16,7 +18,7 @@ const SETTINGS: Omit<SettingField, 'value' | 'saved' | 'env_override'>[] = [
 ]
 
 const SLUG_RE = /^[a-z][a-z0-9-]{0,31}$/
-const HOME = '/Users/vermarjun'
+const HOME = '/home/demo'
 
 // ---------------------------------------------------------------- catalog
 const CLAUDE_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
@@ -54,7 +56,7 @@ export function seedCatalogs(now: number): HarnessCatalog[] {
       models: [
         M({ id: 'opencode-go/glm-5.3', label: 'GLM-5.3', cost: { input: 0.6, output: 2.2 } }),
         M({ id: 'opencode/glm-5.1', label: 'GLM-5.1', cost: { input: 0.45, output: 1.8 } }),
-        M({ id: 'opencode/kimi-k3', label: 'Kimi K3', efforts: ['low', 'medium', 'high'], default_effort: 'medium', cost: { input: 0.6, output: 2.5 } }),
+        M({ id: 'opencode-go/kimi-k3', label: 'Kimi K3', efforts: ['low', 'medium', 'high'], default_effort: 'medium', cost: { input: 0.6, output: 2.5 } }),
         M({ id: 'opencode-go/deepseek-v4', label: 'DeepSeek V4', efforts: ['minimal', 'low', 'medium', 'high'], default_effort: 'low', cost: { input: 0.27, output: 1.1 } }),
         M({ id: 'opencode/qwen4-coder', label: 'Qwen4 Coder', cost: { input: 0.3, output: 1.2 } }),
         M({ id: 'opencode/big-pickle', label: 'Big Pickle', cost: { input: 0, output: 0 } }),
@@ -67,40 +69,29 @@ export function seedCatalogs(now: number): HarnessCatalog[] {
 }
 
 // ---------------------------------------------------------------- resumes
-const BODIES: Record<string, string> = {
-  builder: `You are a senior software engineer. You own ONE task end to end: understand it, implement it, run it, test it, and prove it works.
-
-How you work:
-1. Read before writing. Find the files your task touches and the conventions around them.
-2. Plan briefly, then implement in small, verifiable steps.
-3. Run what you build. Add or update tests that cover the behaviour you changed.
-4. Finish with \`sparrow done\` using Result / Evidence / Files / Next.
-`,
-  verifier: `You are a read-only verifier. Check one builder's work against its acceptance checks.
-Run the tests, try edge cases, hit live endpoints. Report PASS/FAIL per check with evidence. Never edit code.
-`,
-  researcher: `You read widely and cite sources. Return a short digest: the answer first, then the evidence, then open questions.
-`,
-}
-
 type Row = Omit<ResumeView, 'hash' | 'status' | 'status_detail' | 'resolved_model' | 'stale_agents'>
-const R = (slug: string, title: string, harness: HarnessName, model: string | null, effort: string | null, can_hire: string[], description: string, builtin = false): Row => ({
-  slug, title, description, harness, model, effort, can_hire, limits: { quiet_minutes: 15, max_call_minutes: 90 },
-  body: BODIES[slug] ?? `You are a ${title}.\n`, path: builtin ? `${HOME}/Desktop/SWEFactory/sparrow/assets/resumes/${slug}.md` : `${HOME}/.sparrow/resumes/${slug}.md`, builtin,
-})
 
+/** The shipped resumes, read from assets/resumes (front matter + body), so the editor shows what a fresh install gets. */
 export function seedResumes(): Row[] {
-  return [
-    R('sub-captain', 'Sub-captain', 'claude', 'opus', 'high', ['builder', 'builder-codex', 'verifier', 'researcher', 'presenter'], 'Owns one slice: plans, hires, reviews, reports.'),
-    R('builder', 'Builder', 'claude', 'opus', 'high', [], 'Implements one task end to end in the given folder, runs it, reports evidence.'),
-    R('builder-codex', 'Builder (Codex)', 'codex', 'gpt-6-nova', 'medium', [], 'Same as builder, on Codex.'),
-    R('verifier', 'Verifier', 'codex', 'gpt-6.1-sol', 'medium', [], 'Read-only checker: runs tests, tries edge cases, reports pass/fail with evidence.'),
-    R('researcher', 'Researcher', 'opencode', 'opencode/glm-5.1', null, [], 'Reads widely, cites sources, writes a short digest.'),
-    R('scout', 'Scout', 'codex', 'gpt-6-luna', 'xhigh', [], 'Quick triage of an issue or log: what broke, where, and who should fix it.'),
-    R('presenter', 'Presenter', 'opencode', 'opencode-go/glm-5.3', null, [], 'Turns findings into a short HTML deck.', true),
-    { ...R('deckhand', 'Deckhand', 'claude', 'haiku', 'medium', [], 'Fast, cheap mechanical work. One-shot.', true), helper: true, one_shot: true },
-    { ...R('advisor', 'Advisor', 'claude', 'opus', 'medium', [], 'Read-only senior advisor: answers one question.', true), helper: true },
-  ]
+  const dir = join(import.meta.dir, '..', '..', 'assets', 'resumes')
+  const list = (v: string) => v.replace(/^\[|\]$/g, '').split(',').map((x) => x.trim()).filter(Boolean)
+  const rows: Row[] = []
+  for (const file of readdirSync(dir).filter((f) => f.endsWith('.md')).sort()) {
+    const text = readFileSync(join(dir, file), 'utf8')
+    const m = text.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/)
+    if (!m) continue
+    const fm: Record<string, string> = {}
+    for (const line of m[1].split('\n')) { const k = line.match(/^([a-z_]+):\s*(.*)$/); if (k) fm[k[1]] = k[2].trim() }
+    const num = (k: string) => Number(fm.limits?.match(new RegExp(`${k}:\\s*(\\d+)`))?.[1] ?? 15)
+    const slug = fm.name
+    rows.push({
+      slug, title: fm.title, harness: fm.harness as HarnessName, model: fm.model ?? null, effort: fm.effort ?? null, can_hire: list(fm.can_hire ?? '[]'),
+      description: (fm.description ?? '').replace('{{runtime}}', `${fm.harness} · ${fm.model}`), limits: { quiet_minutes: num('quiet_minutes'), max_call_minutes: num('max_call_minutes') },
+      body: m[2].trimStart(), path: `${HOME}/.sparrow/app/0.1.0/assets/resumes/${file}`, builtin: true,
+      ...(fm.helper === 'true' ? { helper: true } : {}), ...(fm.one_shot === 'true' ? { one_shot: true } : {}),
+    })
+  }
+  return rows
 }
 
 export function hashOf(r: Pick<Row, 'title' | 'description' | 'harness' | 'model' | 'effort' | 'can_hire' | 'limits' | 'body'>): string {
@@ -110,10 +101,11 @@ export function hashOf(r: Pick<Row, 'title' | 'description' | 'harness' | 'model
 
 // ---------------------------------------------------------------- doctor script
 interface Step { id: string; harness: HarnessName | null; label: string; status: DoctorCheck['status']; detail: string; fix?: string; ms: number }
+const OPENCODE_OUT = process.env.MOCK_OPENCODE_LOGGED_OUT === '1'
 const STEPS: Step[] = [
   { id: 'tmux', harness: null, label: 'tmux', status: 'pass', detail: 'tmux 3.5a at /opt/homebrew/bin/tmux', ms: 40 },
   { id: 'port', harness: null, label: 'Server port', status: 'pass', detail: '127.0.0.1:4040 answers as Sparrow (pid 81234)', ms: 12 },
-  { id: 'path', harness: null, label: 'sparrow on PATH', status: 'pass', detail: `${HOME}/.bun/bin/sparrow → bin/sparrow`, ms: 8 },
+  { id: 'path', harness: null, label: 'sparrow on PATH', status: 'pass', detail: `${HOME}/.local/bin/sparrow`, ms: 8 },
   { id: 'skills', harness: null, label: 'Skills', status: 'warn', detail: 'sparrow-captain skill in ~/.claude/skills is older than the packaged copy', fix: 'sparrow install', ms: 15 },
   { id: 'hooks', harness: null, label: 'Hooks', status: 'pass', detail: 'Stop hook fires through --settings (checked in the round trip)', ms: 5 },
   { id: 'claude.binary', harness: 'claude', label: 'Installed', status: 'pass', detail: `2.1.302 at ${HOME}/.local/bin/claude`, ms: 310 },
@@ -127,10 +119,16 @@ const STEPS: Step[] = [
   { id: 'codex.spawn', harness: 'codex', label: 'Opens in tmux', status: 'pass', detail: 'window u1doctor:codex-probe opened, TUI ready in 2.4 s', ms: 2400 },
   { id: 'codex.roundtrip', harness: 'codex', label: 'Round trip', status: 'pass', detail: 'gpt-6-luna · low: hire → done → window closed', ms: 51_700 },
   { id: 'opencode.binary', harness: 'opencode', label: 'Installed', status: 'pass', detail: '1.19.0 at /opt/homebrew/bin/opencode', ms: 150 },
-  { id: 'opencode.login', harness: 'opencode', label: 'Logged in', status: 'fail', detail: 'opencode auth list: 0 credentials in ~/.sparrow/opencode', fix: 'OPENCODE_CONFIG_DIR=~/.sparrow/opencode opencode auth login', ms: 610 },
+  OPENCODE_OUT
+    ? { id: 'opencode.login', harness: 'opencode', label: 'Logged in', status: 'fail', detail: 'opencode auth list: 0 credentials in ~/.sparrow/opencode', fix: 'OPENCODE_CONFIG_DIR=~/.sparrow/opencode opencode auth login', ms: 610 }
+    : { id: 'opencode.login', harness: 'opencode', label: 'Logged in', status: 'pass', detail: 'opencode auth list: 2 credentials', ms: 610 },
   { id: 'opencode.catalog', harness: 'opencode', label: 'Model list', status: 'pass', detail: '9 models across opencode and opencode-go', ms: 1800 },
-  { id: 'opencode.spawn', harness: 'opencode', label: 'Opens in tmux', status: 'skipped', detail: 'skipped: not logged in', ms: 0 },
-  { id: 'opencode.roundtrip', harness: 'opencode', label: 'Round trip', status: 'skipped', detail: 'skipped: not logged in', ms: 0 },
+  OPENCODE_OUT
+    ? { id: 'opencode.spawn', harness: 'opencode', label: 'Opens in tmux', status: 'skipped', detail: 'skipped: not logged in', ms: 0 }
+    : { id: 'opencode.spawn', harness: 'opencode', label: 'Opens in tmux', status: 'pass', detail: 'window u1doctor:opencode-probe opened, TUI ready in 2.9 s', ms: 2900 },
+  OPENCODE_OUT
+    ? { id: 'opencode.roundtrip', harness: 'opencode', label: 'Round trip', status: 'skipped', detail: 'skipped: not logged in', ms: 0 }
+    : { id: 'opencode.roundtrip', harness: 'opencode', label: 'Round trip', status: 'pass', detail: 'kimi-k3: hire → done → window closed', ms: 44_200 },
 ]
 const LOGIN_FIX = 'Run `OPENCODE_CONFIG_DIR=~/.sparrow/opencode opencode auth login`, then Run doctor again.'
 
@@ -149,14 +147,14 @@ export function createU1(ctx: U1Ctx, opts: { now?: number; doctorMs?: number; do
   let run: DoctorRun | null = null
   let prevVersions: Record<string, string | null> = { claude: '2.1.302', codex: '0.161.0', opencode: '1.19.0' }
   const tests = new Map<string, DoctorCheck>()
-  const recent = [`${HOME}/Desktop/plutus`, `${HOME}/Desktop/SWEFactory/sparrow`, `${HOME}/Desktop/plutus-wt/export-csv`, `${HOME}/code/notes`]
+  const recent = [`${HOME}/code/tortuga`, `${HOME}/code/tortuga-ledger`, `${HOME}/code/tortuga-webhooks`, `${HOME}/code/notes`]
   const doctorMs = opts.doctorMs ?? 8000
 
   // Agents hired from an older copy: the hash they carry is not the current one.
   for (const a of ctx.agents) {
     if (a.kind === 'human') continue
     const r = rows.get(a.resume)
-    a.resume_hash = r ? (['james', 'iris'].includes(a.handle) ? 'a1b2c3d4e5f6' : hashOf(r)) : null
+    a.resume_hash = r ? (a.handle === 'iris' ? 'a1b2c3d4e5f6' : hashOf(r)) : null
   }
 
   function health(): HarnessHealth[] {
@@ -298,12 +296,12 @@ export function createU1(ctx: U1Ctx, opts: { now?: number; doctorMs?: number; do
       const b = (body ?? {}) as CaptainStartReq
       if (!b.cwd?.trim()) return err(400, 'cwd: give the folder the captain should start in')
       const cwd = b.cwd.trim().replace(/^~(?=\/|$)/, HOME).replace(/\/+$/, '')
-      if (!cwd.startsWith('/')) return err(400, `cwd: ${b.cwd} is not an absolute path; use e.g. ~/Desktop/plutus`)
+      if (!cwd.startsWith('/')) return err(400, `cwd: ${b.cwd} is not an absolute path; use e.g. ~/code/tortuga`)
       if (cwd.includes('missing')) return err(400, `cwd: ${cwd} does not exist`)
       const claude = catalogs.find((c) => c.harness === 'claude')!
       if (b.model && !claude.models.some((m) => m.id === b.model || m.resolves_to === b.model)) return err(400, `model: ${b.model} is not offered by claude`)
       const project = cwd.split('/').pop()!
-      const made = ctx.startCaptain?.(b, cwd, /plutus/.test(cwd) ? 'plutus' : /sparrow/.test(cwd) ? 'sparrow' : project)
+      const made = ctx.startCaptain?.(b, cwd, /tortuga-ledger/.test(cwd) ? 'tortuga-ledger' : /tortuga/.test(cwd) ? 'tortuga' : project)
       if (typeof made === 'string') return err(400, made)
       const res: CaptainStartRes = made ?? { session: `sparrow-${project}`, window: 'captain', window_id: '@41', cwd, attach: `tmux attach -t sparrow-${project} \\; select-window -t @41` }
       const i = recent.indexOf(cwd)

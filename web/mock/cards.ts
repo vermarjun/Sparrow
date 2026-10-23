@@ -22,7 +22,7 @@ export function seedCards(now = Date.now()): Card[] {
       ...comments.map(([m, by, text]) => ({ at: t(m), by, text, kind: 'comment' as const })),
     ].sort((a, b) => a.at - b.at)
     return {
-      id, project_id: 'plutus', title, details: '', category: null, state, position: id, assignee_id: null, created_by: 'ag_cap', notes,
+      id, project_id: 'tortuga', title, details: '', category: null, state, position: id, assignee_id: null, created_by: 'ag_cap', notes,
       created_at: history[0].at, updated_at: notes.at(-1)?.at ?? history.at(-1)!.at,
       context: '', problem: '', approach: '', checks: [], tags: [], urgent: false, impact: null, effort: null, estimate_min: null,
       blocked_on: null, blocked_at: null, later_at: null, history, ...rest,
@@ -32,227 +32,156 @@ export function seedCards(now = Date.now()): Card[] {
 
   const cards: Card[] = [
     // ---------------------------------------------------------------- done
-    C(1, 'done', 'Store ledger amounts in minor units', {
-      category: 'db', assignee_id: 'ag_james', impact: 'high', effort: 'medium', estimate_min: 120, tags: ['migration'],
-      context: 'Maya flagged rounding drift in last month\'s statements. Every export and the new reports build on exact amounts.',
-      problem: 'Observed: amounts are stored as floats, so 0.1 + 0.2 style drift shows up in totals. Expected: integer minor units everywhere.',
-      approach: 'Add an integer column next to the old one, backfill it, switch every reader, then drop the float column in a follow-up.',
-      checks: ck(['Totals match the bank for the last 12 months', true], ['No float column is read anywhere', true], ['Migration can be re-run safely', true]),
-      path: [[10 * D, 'proposed'], [9 * D + 20, 'todo', 'user'], [9 * D, 'in_progress', 'ag_james'], [9 * D - 140, 'review', 'ag_james'], [9 * D - 155, 'done', 'user']],
-      comments: [[9 * D - 200, 'ag_james', 'Migration 0007 applied on the sandbox copy. 4 rows needed manual rounding, listed in the PR.']],
-    }),
-    C(2, 'done', 'Compare CSV libraries for Bun', {
-      category: 'research', assignee_id: 'ag_omar', created_by: 'ag_maya', impact: 'medium', effort: 'low', estimate_min: 60,
-      context: 'Needed before we commit to a library for the export work.',
-      problem: 'We have no data on which CSV library streams large files and handles quoting correctly.',
-      approach: 'Try three libraries on a 50k-row sample and write up speed, memory and quoting behaviour in notes/csv.md.',
-      checks: ck(['Three libraries compared', true], ['Recommendation written in notes/csv.md', true]),
-      path: [[6 * D, 'todo', 'ag_maya'], [6 * D - 30, 'in_progress', 'ag_omar'], [6 * D - 65, 'review', 'ag_omar'], [6 * D - 75, 'done', 'user']],
-      comments: [[6 * D - 64, 'ag_omar', 'papaparse wins on streaming; see notes/csv.md.']],
-    }),
-    C(27, 'done', 'Add pagination to the ledger API', {
-      category: 'server', assignee_id: 'ag_james', impact: 'medium', effort: 'medium', estimate_min: 90,
-      problem: 'Observed: GET /api/ledger returns every row. Expected: pages of 100 with a cursor.',
-      approach: 'Cursor pagination on the entry date and id. Keep the old response shape behind a flag for one release.',
-      checks: ck(['Default page size is 100', true], ['Cursor survives inserts between pages', true], ['Old shape still available with ?all=1', true]),
-      path: [[7 * D, 'todo'], [5 * D, 'in_progress', 'ag_james'], [5 * D - 100, 'review', 'ag_james'], [5 * D - 125, 'in_progress', 'user'], [5 * D - 185, 'review', 'ag_james'], [5 * D - 215, 'done', 'user']],
-      comments: [[5 * D - 120, 'user', 'Cursor breaks when two entries share a timestamp. Please fix before it goes in.']],
-    }),
-    C(28, 'done', 'Write the export plan one-pager', {
-      category: 'docs', assignee_id: 'ag_maya', impact: 'medium', effort: 'low', estimate_min: 60,
-      context: 'Friday review with finance. They want to see scope and dates.',
-      checks: ck(['One page, no jargon', true], ['Covers CSV now, XLSX later', true]),
-      path: [[4 * D, 'proposed'], [4 * D - 10, 'todo', 'user'], [3 * D, 'in_progress', 'ag_maya'], [3 * D - 50, 'review', 'ag_maya'], [3 * D - 60, 'done', 'user']],
-    }),
-    C(29, 'done', 'Set up CI for the web package', {
-      category: 'infra', assignee_id: 'ag_leo', impact: 'medium', effort: 'low', estimate_min: 120, tags: ['ci'],
+    C(1, 'done', 'Set up CI for the web package', {
+      category: 'infra', assignee_id: 'ag_leo', created_by: 'ag_cap', impact: 'medium', effort: 'low', estimate_min: 120, tags: ['ci'],
+      context: 'Builds only ran on laptops, so a broken main went unnoticed for a day last week.',
       problem: 'Observed: web builds only run locally. Expected: every PR runs typecheck, lint, tests and build.',
-      approach: 'One workflow file that installs with the lockfile, then runs the four package scripts. Cache the install.',
+      approach: 'One workflow file that installs from the lockfile, then runs the four package scripts. Cache the install.',
       checks: ck(['PRs show a green or red check', true], ['Cold run under 4 minutes', true]),
       path: [[9 * D, 'proposed'], [8 * D, 'todo', 'user'], [2 * D, 'in_progress', 'ag_leo'], [2 * D - 80, 'review', 'ag_leo'], [2 * D - 95, 'done', 'user']],
     }),
+    C(2, 'done', 'Move session tokens to HttpOnly cookies', {
+      category: 'auth', assignee_id: 'ag_maya', created_by: 'ag_cap', impact: 'high', effort: 'medium', estimate_min: 120, tags: ['security'],
+      context: 'The security review flagged tokens in localStorage. It is the first item on the hardening list and the login work builds on it.',
+      problem: 'Observed: the session token is readable by any script on the page. Expected: it lives in an HttpOnly, SameSite=Lax cookie and the API reads it from there.',
+      approach: 'Set the cookie on login, read it in the auth middleware, keep the Authorization header working for one release so old clients do not break.',
+      checks: ck(['Token is not readable from JavaScript', true], ['Existing sessions keep working after deploy', true], ['Logout clears the cookie', true]),
+      path: [[10 * D, 'proposed'], [9 * D + 20, 'todo', 'user'], [9 * D, 'in_progress', 'ag_maya'], [9 * D - 140, 'review', 'ag_maya'], [9 * D - 160, 'done', 'user']],
+      comments: [[9 * D - 135, 'ag_maya', 'Cookie set in `login.ts`, middleware reads it first and falls back to the header. 12 new tests, all green.']],
+    }),
+    C(3, 'done', 'Document the REST error format', {
+      category: 'docs', assignee_id: 'ag_juno', created_by: 'ag_cap', impact: 'low', effort: 'low', estimate_min: 45,
+      checks: ck(['Every error code has an example', true], ['Linked from the README', true]),
+      path: [[7 * D, 'todo'], [5 * D, 'in_progress', 'ag_juno'], [5 * D - 40, 'review', 'ag_juno'], [5 * D - 50, 'done', 'user']],
+    }),
 
     // ---------------------------------------------------------------- review
-    C(4, 'review', 'Review export quoting and memory use (PR #41)', {
-      category: 'export', assignee_id: 'ag_iris', created_by: 'ag_maya', impact: 'medium', effort: 'low', estimate_min: 45, tags: ['pr-41'],
-      context: 'James opened PR #41 for the CSV writer. Maya wants a second pair of eyes before it merges.',
-      problem: 'Observed: the 50k-row test ran out of memory on the verifier. Expected: export streams in constant memory.',
-      approach: 'Run the integration suite, profile the memory use, and report where rows are buffered.',
-      checks: ck(['Suite result posted on the ticket', true], ['Memory peak under 200 MB for 50k rows', false], ['Quoting verified for commas, quotes and newlines', true]),
-      path: [[3 * D, 'todo', 'ag_maya'], [2 * D, 'in_progress', 'ag_iris'], [90, 'review', 'ag_iris']],
-      comments: [[19, 'system', '@iris crashed: out of memory on 50k rows. It needs a smaller sample or a memory fix first.'], [60, 'ag_iris', 'Quoting is fine. The memory failure is in `csv.ts` where rows are joined before writing.']],
-      events: [[2 * D, 'ag_maya', 'assigned to @iris']],
+    C(6, 'review', 'Verify the login limiter under concurrent requests', {
+      category: 'auth', assignee_id: 'ag_iris', created_by: 'ag_cap', impact: 'medium', effort: 'low', estimate_min: 45, tags: ['pr-62'],
+      context: 'Maya opened PR #62 for the limiter. A second pair of eyes has to try to break it before it merges.',
+      problem: 'Observed: the limiter has only been tested one request at a time. Expected: it holds with parallel logins from one IP.',
+      approach: 'Run the suite, fire 50 parallel logins from one address, and check the counter and the Retry-After header.',
+      checks: ck(['Suite result posted on the ticket', true], ['50 parallel logins produce exactly 5 attempts and 45 refusals', true], ['Retry-After matches the remaining window', false]),
+      path: [[3 * D, 'todo', 'ag_cap'], [2 * H, 'in_progress', 'ag_iris'], [25, 'review', 'ag_iris']],
+      comments: [[26, 'ag_iris', 'Parallel test passes now. Retry-After is off by one second at the window edge; noted in the PR.']],
+      events: [[2 * H, 'ag_cap', 'assigned to @iris']],
     }),
-    C(26, 'review', 'Hotfix: negative balances shown without a sign', {
-      category: 'ui', assignee_id: 'ag_leo', urgent: true, impact: 'high', effort: 'low', estimate_min: 60,
-      context: 'Finance reported two statements where a debit looked like a credit. Raised in the Monday sync.',
-      problem: 'Observed: -120.00 renders as 120.00 in the balance column. Expected: a minus sign and red text.',
-      approach: 'Format with the sign always visible and add a test with a negative balance.',
-      checks: ck(['Negative balances show a minus sign', true], ['A test covers a negative balance', true]),
-      path: [[3 * H, 'todo', 'ag_maya'], [2 * H + 40, 'in_progress', 'ag_leo'], [35, 'review', 'ag_leo']],
-      comments: [[36, 'ag_leo', 'Fixed in `format.ts`, 2 tests added. Ready for a look.']],
-      events: [[3 * H, 'user', 'marked urgent']],
+    C(7, 'review', 'Dark mode colors for the settings page', {
+      category: 'ui', assignee_id: 'ag_kit', created_by: 'ag_vega', impact: 'high', effort: 'low', estimate_min: 90, tags: ['ux'],
+      context: 'Settings is the one page that still flashes white in dark mode. Support has had four reports.',
+      problem: 'Observed: settings uses hard-coded hex colors. Expected: it follows the theme tokens like every other page.',
+      approach: 'Swap the hex values for tokens, check contrast in both themes, and add a screenshot test for each.',
+      checks: ck(['No hard-coded colors left on the page', true], ['Contrast passes in both themes', true], ['Screenshot tests for light and dark', true]),
+      path: [[2 * D, 'todo', 'ag_vega'], [5 * H, 'in_progress', 'ag_kit'], [50, 'review', 'ag_kit']],
+      comments: [[52, 'ag_kit', 'All 31 colors moved to tokens. axe reports 0 issues in both themes.']],
     }),
 
     // ---------------------------------------------------------------- in progress
-    C(3, 'in_progress', 'CSV export for the ledger', {
-      category: 'export', assignee_id: 'ag_james', urgent: true, impact: 'high', effort: 'medium', estimate_min: 240, tags: ['csv', 'finance'],
-      context: 'Finance asked for a monthly CSV of the ledger for their audit. Raised by Shubhankar on Monday, due before month end.',
-      problem: 'Observed: the only way to get ledger data out is copy and paste from the table. Expected: a button that downloads every row for a date range as a correct CSV.',
-      approach: 'Stream rows from the database to the response so big ranges do not use much memory. Quote fields the standard way. The endpoint takes a from and to date.\n\nRisk: very large ranges. We cap at 12 months for now.',
-      details: 'Older notes: papaparse for quoting, see notes/csv.md.',
-      checks: ck(['50k rows export in under 3 seconds', true], ['Commas, quotes and newlines round-trip', true], ['The endpoint takes a from and to date', true], ['Download button on the ledger page', false], ['Ranges over 12 months are rejected with a clear message', false]),
-      path: [[5 * D, 'proposed'], [5 * D - 40, 'todo', 'user'], [2 * D, 'in_progress', 'ag_james']],
-      comments: [[75, 'ag_james', 'Writer and 9 tests passing. Starting on the endpoint.'], [8, 'ag_james', 'Endpoint streams; 14/14 tests. Next: the 12 month cap.']],
-      events: [[5 * D - 100, 'user', 'marked urgent'], [2 * D, 'ag_maya', 'assigned to @james']],
+    C(4, 'in_progress', 'Rate limit POST /login', {
+      category: 'auth', assignee_id: 'ag_maya', urgent: true, impact: 'high', effort: 'medium', estimate_min: 240, tags: ['security', 'login'],
+      context: 'Credential stuffing showed up in last Thursday\'s logs: 11k failed logins from 300 addresses in one hour. Security wants it before the next release.',
+      problem: 'Observed: nothing limits failed logins, so a script can try passwords all day. Expected: 5 failed tries per account and address in 15 minutes, then a 429 with Retry-After.',
+      approach: 'Sliding-window counter in Redis keyed by account and IP. A successful login resets it. Add one audit line per lockout.\n\nRisk: users behind a shared office IP. The key includes the account, so one noisy neighbour cannot lock everyone out.',
+      checks: ck(['5 failed tries in 15 minutes return 429 with Retry-After', true], ['A successful login resets the counter', true], ['Unit tests for the window maths', true], ['End-to-end test for the 429 path', false], ['p95 login latency unchanged', false]),
+      path: [[4 * D, 'proposed'], [4 * D - 40, 'todo', 'user'], [5 * H, 'in_progress', 'ag_maya']],
+      comments: [[60, 'ag_maya', 'Limiter and 17 unit tests passing. Wiring it into the login handler now.'], [4, 'ag_maya', 'Wired in; 23/23 auth tests pass. Next: the end-to-end 429 test.']],
+      events: [[4 * D - 100, 'user', 'marked urgent'], [5 * H, 'ag_cap', 'assigned to @maya']],
     }),
-    C(6, 'in_progress', 'Download CSV button on the ledger page', {
-      category: 'ui', assignee_id: 'ag_leo', impact: 'high', effort: 'low', estimate_min: 90,
-      context: 'Follows the CSV export ticket. The button is what finance will actually click.',
-      problem: 'Observed: no way to start an export from the page. Expected: a Download CSV button that uses the current date range.',
-      approach: 'Add the button next to the date picker. It calls the export endpoint and shows a spinner while the file downloads.',
-      checks: ck(['Button uses the selected date range', false], ['Spinner while downloading', false]),
-      blocked_on: 'James: export endpoint not merged yet', blocked_at: t(5 * H),
-      path: [[3 * D, 'todo', 'ag_maya'], [6 * H, 'in_progress', 'ag_leo']],
-      events: [[5 * H, 'user', 'blocked on James: export endpoint not merged yet']],
-    }),
-    C(25, 'in_progress', 'Backfill missing currencies on old ledger rows', {
-      category: 'db', assignee_id: 'ag_omar', impact: 'medium', effort: 'medium', estimate_min: 90, tags: ['migration'],
-      problem: 'Observed: 312 rows from 2023 have no currency, so exports show a blank column. Expected: every row has a currency.',
-      approach: 'Infer the currency from the account, write a report of anything ambiguous, and leave ambiguous rows for a human.',
-      checks: ck(['Report of ambiguous rows attached', false], ['No row without a currency except the ambiguous ones', false]),
-      path: [[2 * D, 'todo', 'ag_maya'], [50, 'in_progress', 'ag_omar']],
-    }),
-    C(33, 'in_progress', 'Tidy the ledger table row actions', {
-      category: 'ui', assignee_id: 'ag_leo', impact: 'low', effort: 'low', estimate_min: 45,
-      path: [[2 * D, 'todo'], [20, 'in_progress', 'ag_leo']],
+    C(5, 'in_progress', 'Retry failed webhooks with exponential backoff', {
+      category: 'api', assignee_id: 'ag_sage', created_by: 'ag_orion', impact: 'high', effort: 'high', estimate_min: 480, tags: ['webhooks'],
+      context: 'Customers lose events whenever their endpoint is down for a minute. Three of them asked for retries this month.',
+      problem: 'Observed: a webhook that gets a 5xx or times out is dropped after one try. Expected: it is retried with growing delays until it succeeds or the retry budget runs out.',
+      approach: 'Queue each delivery with an attempt counter. Delay doubles from one minute with jitter. After the last attempt, move it to a dead-letter list the customer can replay.',
+      checks: ck(['A failing endpoint is retried on the backoff schedule', true], ['Jitter keeps retries from arriving together', false], ['Exhausted deliveries land in the dead-letter list', false], ['Retry budget is configurable per customer', false]),
+      path: [[6 * D, 'proposed'], [5 * D, 'todo', 'user'], [3 * H, 'in_progress', 'ag_sage']],
+      comments: [[20, 'ag_sage', 'Need a call on the retry budget before I wire the dead-letter list. Asked in the thread.']],
+      events: [[3 * H, 'ag_orion', 'assigned to @sage']],
     }),
 
     // ---------------------------------------------------------------- to do
-    C(5, 'todo', 'Date-range picker on the ledger page', {
-      category: 'ui', impact: 'high', effort: 'low', estimate_min: 90, tags: ['finance'],
-      context: 'Needed by the Download CSV button, and finance keeps asking for it.',
-      problem: 'Observed: the ledger always shows the current month. Expected: pick any range, with presets for this month, last month and this year.',
-      approach: 'A compact picker with three presets and two date inputs. The range lives in the URL so it can be shared.',
-      checks: ck(['Presets work', false], ['Range is in the URL', false], ['Invalid ranges are rejected inline', false]),
-      path: [[4 * D, 'proposed'], [3 * D, 'todo', 'user']],
+    C(8, 'todo', 'Webhook delivery log page', {
+      category: 'ui', impact: 'medium', effort: 'high', estimate_min: 480, tags: ['webhooks'],
+      context: 'Support cannot tell a customer whether their webhook was delivered without reading server logs.',
+      problem: 'Observed: delivery results are only in the logs. Expected: a page that lists attempts per endpoint with status, latency and a replay button.',
+      approach: 'A paged table fed by the delivery records the retry work already writes. Replay posts to the existing replay endpoint.',
+      checks: ck(['Attempts listed per endpoint', false], ['Failed deliveries can be replayed', false]),
+      path: [[6 * D, 'proposed'], [4 * D, 'todo', 'user']],
     }),
-    C(7, 'todo', 'Rate-limit the export endpoint', {
-      category: 'server', impact: 'medium', effort: 'medium', estimate_min: 120,
-      context: 'A heavy export can slow the whole ledger for everyone.',
-      problem: 'Observed: nothing stops a user from starting ten exports at once. Expected: a sensible limit with a clear message.',
-      approach: 'Allow two exports per user at a time and return a clear message for the third.',
-      checks: ck(['Third concurrent export is refused with a message', false], ['Limit is configurable', false]),
-      path: [[3 * D, 'todo']],
+    C(9, 'todo', 'Provision Redis for rate limit counters in staging', {
+      category: 'infra', impact: 'medium', effort: 'low', estimate_min: 60,
+      context: 'The limiter needs a Redis instance in staging before the end-to-end test can run there.',
+      problem: 'Observed: staging has no Redis. Expected: a small instance reachable from the API, with its URL in the secret store.',
+      checks: ck(['Instance reachable from the staging API', false], ['URL stored as a secret', false]),
+      blocked_on: 'Ops: staging network access', blocked_at: t(2 * D),
+      path: [[3 * D, 'proposed'], [2 * D + 30, 'todo', 'user']],
+      events: [[2 * D, 'user', 'blocked on Ops: staging network access']],
     }),
-    C(10, 'todo', 'Document the export API in the README', {
-      category: 'docs', impact: 'low', effort: 'low', estimate_min: 30, details: 'Parameters, an example curl, and the 12 month cap.',
+    C(10, 'todo', 'Add a dead-letter queue for exhausted webhooks', {
+      category: 'api', impact: 'high', effort: 'medium', estimate_min: 180, tags: ['webhooks'],
+      problem: 'Observed: a delivery that exhausts its retries just disappears. Expected: it is kept for 30 days and can be replayed from the API.',
+      approach: 'Write exhausted deliveries to a table with the payload and the last error. Expose list and replay endpoints.',
+      checks: ck(['Exhausted deliveries are stored with their last error', false], ['Replay endpoint re-queues one delivery', false]),
+      path: [[3 * D, 'proposed'], [2 * D, 'todo', 'user']],
+    }),
+    C(11, 'todo', 'Rewrite the API reference landing page', {
+      category: 'docs', impact: 'low', effort: 'low', estimate_min: 60,
       path: [[2 * D, 'todo']],
     }),
-    C(21, 'todo', 'Rotate the NetSuite API key', {
-      category: 'security', urgent: true, impact: 'high', effort: 'low', estimate_min: 30, tags: ['compliance'],
-      context: 'The key is older than 90 days. Security asked for rotation by Friday.',
-      problem: 'Observed: the sandbox key was last rotated 112 days ago. Expected: rotated within 90 days.',
-      approach: 'Request a new key, update the secret store, restart the sync job, and confirm one sync run succeeds.',
-      checks: ck(['New key in the secret store', false], ['Old key revoked', false], ['One successful sync run', false]),
-      blocked_on: 'IT: NetSuite sandbox access', blocked_at: t(2 * D),
-      path: [[5 * D, 'proposed'], [4 * D, 'todo', 'user']],
-      events: [[2 * D, 'user', 'blocked on IT: NetSuite sandbox access']],
-    }),
-    C(24, 'todo', 'Fix tab order on the new-entry form', {
-      category: 'ui', impact: 'medium', effort: 'low', estimate_min: 30,
-      path: [[2 * D, 'proposed'], [1 * D, 'todo', 'user']],
-    }),
-    C(32, 'todo', 'Spike: streaming parser for 1M-row imports', {
-      category: 'research', impact: 'high', effort: 'high', estimate_min: 480, tags: ['import', 'performance', 'spike'],
-      context: 'Sales wants to promise 1M-row imports to a big customer. We need to know what is realistic.',
-      problem: 'Observed: the importer reads the whole file into memory and fails around 200k rows.',
-      approach: 'Prototype a streaming parser, measure memory and time at 1M rows, and write up what it would take to ship.',
-      checks: ck(['Prototype runs on a 1M-row file', false], ['Memory and time numbers written up', false]),
-      path: [[6 * D, 'proposed'], [5 * D, 'todo', 'user']],
-    }),
-    C(22, 'todo', 'Replace hand-rolled date parsing', {
-      category: 'server', impact: 'low', effort: 'medium', estimate_min: 180, later_at: t(2 * D),
-      path: [[10 * D, 'todo']],
-      events: [[2 * D, 'user', 'shelved under Later']],
-    }),
-    C(23, 'todo', 'Import OFX bank statements', {
-      category: 'billing', impact: 'high', effort: 'high', estimate_min: 960, later_at: t(4 * D), tags: ['import'],
-      context: 'Two customers asked. Not needed until next quarter.',
+    C(12, 'todo', 'Native desktop app wrapper', {
+      category: 'ui', impact: 'low', effort: 'high', estimate_min: 960, later_at: t(2 * D), tags: ['spike'],
+      context: 'A customer asked once. Nothing depends on it, so it waits.',
       path: [[12 * D, 'todo']],
-      events: [[4 * D, 'user', 'shelved under Later']],
+      events: [[2 * D, 'user', 'shelved under Later']],
     }),
 
     // ---------------------------------------------------------------- proposed
-    C(13, 'proposed', 'Fix wrong totals when a ledger has refunds', {
-      category: 'billing', created_by: 'ag_maya', urgent: true, impact: 'high', effort: 'medium', estimate_min: 180, tags: ['bug', 'finance'],
-      context: 'Reported by finance on Tuesday. Two customers saw totals that disagree with their bank.',
-      problem: 'Observed: a refund is added to the total instead of subtracted. Expected: refunds reduce the total.',
-      approach: 'Treat refunds as negative amounts at the point they are read, then add a test with a mixed ledger.',
-      checks: ck(['Refunds reduce the total', false], ['Mixed ledger test added', false], ['Past statements for the two customers are regenerated', false]),
-      path: [[1 * D + 3 * H, 'proposed', 'ag_maya']],
+    C(13, 'proposed', 'Audit log for failed and locked-out logins', {
+      category: 'auth', created_by: 'ag_cap', impact: 'high', effort: 'medium', estimate_min: 240, tags: ['compliance'],
+      context: 'Security asked for it in the same review as the rate limiter: every lockout should leave a trace.',
+      problem: 'Observed: failed logins are logged as plain text lines nobody can query. Expected: a structured record per failure and per lockout.',
+      approach: 'Write an append-only table with account, address, reason and time. Reuse the audit line the limiter already emits.',
+      checks: ck(['Every failure and lockout writes a record', false], ['Records cannot be edited through the API', false]),
+      path: [[1 * D + 3 * H, 'proposed', 'ag_cap']],
     }),
-    C(20, 'proposed', 'Cache the category totals query', {
-      category: 'db', created_by: 'ag_james', impact: 'medium', effort: 'low', estimate_min: 45, tags: ['performance'],
-      context: 'James noticed it while profiling the export.',
-      problem: 'Observed: the dashboard runs the same totals query on every load, 400 ms each time.',
-      approach: 'Cache the result for one minute and clear it when an entry is written.',
-      path: [[20 * H, 'proposed', 'ag_james']],
+    C(14, 'proposed', 'Publish webhook signature verification docs', {
+      category: 'docs', created_by: 'ag_juno', impact: 'medium', effort: 'low', estimate_min: 45, tags: ['webhooks'],
+      context: 'Juno noticed that customers keep asking how to verify the signature header.',
+      problem: 'Observed: the signing scheme is only described in a code comment. Expected: a docs page with an example in three languages.',
+      path: [[20 * H, 'proposed', 'ag_juno']],
     }),
-    C(18, 'proposed', 'Audit log for ledger edits', {
-      category: 'security', created_by: 'ag_cap', impact: 'high', effort: 'medium', estimate_min: 300, tags: ['compliance'],
-      context: 'Needed for the next audit. Asked by security.',
-      problem: 'Observed: edits to ledger entries leave no trace. Expected: who changed what and when.',
-      approach: 'Write an append-only record for every edit with the old and new values and the user.',
-      checks: ck(['Every edit writes a record', false], ['Records cannot be edited', false]),
-      path: [[3 * D, 'proposed']],
+    C(15, 'proposed', 'Move to a managed Postgres', {
+      category: 'infra', created_by: 'ag_cap', impact: 'high', effort: 'high', estimate_min: 960, tags: ['database'],
+      context: 'The self-hosted instance needs a person every time there is a major upgrade.',
+      problem: 'Observed: upgrades and backups are manual. Expected: a managed instance with automatic backups and point-in-time restore.',
+      approach: 'Dry-run a restore on a copy, compare costs of two providers, then plan the cutover with a read-only window.',
+      path: [[5 * D, 'proposed', 'ag_cap']],
     }),
-    C(14, 'proposed', 'Keyboard shortcuts for the ledger table', {
-      category: 'ui', created_by: 'ag_leo', impact: 'low', effort: 'medium', estimate_min: 240, tags: ['ux'],
-      problem: 'Observed: the table is mouse-only. Power users would like to move with j and k.',
-      path: [[5 * D, 'proposed', 'ag_leo']],
+    C(16, 'proposed', 'Per-tenant rate limits on the public API', {
+      category: 'api', created_by: 'ag_orion', impact: 'medium', effort: 'high', estimate_min: 720, tags: ['rate-limit'],
+      context: 'Follows the login limiter. Large customers share infrastructure with small ones.',
+      problem: 'Observed: one tenant can use all API capacity. Expected: a configurable limit per tenant with clear headers.',
+      path: [[3 * D, 'proposed', 'ag_orion']],
     }),
-    C(15, 'proposed', 'Reconcile duplicate bank feed entries', {
-      category: 'billing', created_by: 'ag_omar', impact: 'high', effort: 'high', estimate_min: 480, tags: ['bank-feed'],
-      context: 'Omar found 41 duplicates while backfilling currencies.',
-      problem: 'Observed: the bank feed sometimes delivers an entry twice. Expected: duplicates are detected and merged.',
-      approach: 'Match on amount, date and reference. Show likely duplicates for a person to confirm before merging.',
-      blocked_on: 'IT: bank feed credentials', blocked_at: t(1 * D),
-      path: [[4 * D, 'proposed', 'ag_omar']],
-      events: [[1 * D, 'user', 'blocked on IT: bank feed credentials']],
+    C(17, 'proposed', 'Keyboard shortcuts for the settings page', {
+      category: 'ui', created_by: 'ag_kit', impact: 'low', effort: 'low', estimate_min: 60, tags: ['ux'],
+      problem: 'Observed: the settings page is mouse-only. Power users would like to move between sections with j and k.',
+      path: [[4 * D, 'proposed', 'ag_kit']],
     }),
-    C(19, 'proposed', 'Email a monthly statement to each customer', {
-      category: 'billing', created_by: 'ag_cap', impact: 'medium', effort: 'medium', estimate_min: 360,
-      path: [[6 * D, 'proposed']],
-    }),
-    C(16, 'proposed', 'Dark mode for the dashboard', {
-      category: 'ui', created_by: 'ag_leo', impact: 'low', effort: 'medium', estimate_min: 300, later_at: t(1 * D), tags: ['ux'],
-      path: [[9 * D, 'proposed', 'ag_leo']],
-      events: [[1 * D, 'user', 'shelved under Later']],
-    }),
-    C(17, 'proposed', 'Multi-currency totals', {
-      category: 'billing', created_by: 'ag_maya', impact: 'medium', effort: 'high', estimate_min: 960, later_at: t(3 * D),
-      context: 'Only matters once we have a customer outside the euro area.',
-      path: [[11 * D, 'proposed', 'ag_maya']],
-      events: [[3 * D, 'user', 'shelved under Later']],
-    }),
-    // legacy cards from before v2: only title, details, category, notes
-    C(8, 'proposed', 'Export as XLSX too', { category: 'export', created_by: 'ag_omar', details: 'papaparse can’t, but SheetJS streams. Users asked twice.', path: [[7 * D, 'proposed', 'ag_omar']] }),
-    C(9, 'proposed', 'Progress header for long exports', { category: 'export', created_by: 'ag_james', path: [[8 * D, 'proposed', 'ag_james']] }),
-    C(31, 'proposed', 'Let users push a ledger export straight to Google Sheets through the Drive API instead of downloading a CSV and uploading it by hand every month', {
-      category: 'integration', created_by: 'ag_cap', details: 'Idea from the finance call. Needs an OAuth app; check whether the Workspace admin allows it.', path: [[13 * D, 'proposed']],
+    C(18, 'proposed', 'Animated onboarding tour', {
+      category: 'ui', created_by: 'ag_vega', impact: 'low', effort: 'high', estimate_min: 600,
+      details: 'Idea from a design review: a guided tour on first login. Nobody has asked for it yet.',
+      path: [[8 * D, 'proposed', 'ag_vega']],
     }),
 
     // ---------------------------------------------------------------- dropped
-    C(11, 'dropped', 'PDF statements (out of scope for v1)', { category: 'export', path: [[9 * D, 'proposed'], [8 * D, 'dropped', 'user']] }),
-    C(30, 'dropped', 'Native desktop wrapper', { category: 'infra', path: [[14 * D, 'proposed'], [12 * D, 'dropped', 'user']] }),
+    C(19, 'dropped', 'Support SAML single sign-on in v1', { category: 'auth', path: [[9 * D, 'proposed'], [8 * D, 'dropped', 'user']] }),
   ]
-  // The other project keeps one plain legacy card.
-  const other = C(12, 'todo', 'README quickstart', { assignee_id: 'ag_ada', path: [[2 * D, 'todo']] })
-  cards.push({ ...other, project_id: 'sparrow' })
-  // The ledger legacy cards also have notes like v1 (no kind) on one of them.
-  const nine = cards.find((c) => c.id === 9)!
-  nine.notes.push({ at: t(2 * D), by: 'ag_james', text: 'Header could be X-Export-Progress; needs a decision.' })
+  // The second project keeps one plain card.
+  const other = C(20, 'todo', 'Export the ledger as CSV', { category: 'api', assignee_id: 'ag_noor', impact: 'high', effort: 'low', estimate_min: 90, path: [[2 * D, 'todo']] })
+  cards.push({ ...other, project_id: 'tortuga-ledger' })
+  // One card keeps a v1 note without a kind.
+  const three = cards.find((c) => c.id === 3)!
+  three.notes.push({ at: t(5 * D - 45), by: 'ag_juno', text: 'Example payloads are in docs/errors.md.' })
   return cards.sort((a, b) => a.id - b.id)
 }
 

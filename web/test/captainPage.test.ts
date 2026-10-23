@@ -11,7 +11,7 @@ const msg = (kind: MessageView['kind'], thread: string, extra: Partial<MessageVi
   created_at: 0, from_handle: 'a', thread_label: '', to_handles: [], ...extra,
 })
 const card = (id: number, state: Card['state'], extra: Partial<Card> = {}) => ({ id, state, assignee_id: null, created_by: 'user', updated_at: id, ...extra }) as Card
-const A = (extra: Partial<Agent>) => ({ harness: 'claude', cwd: '/Users/me/plutus feat', session_id: 'abc-123', tmux_session: 's', tmux_window: 'w', tmux_window_id: null, ...extra }) as Agent
+const A = (extra: Partial<Agent>) => ({ harness: 'claude', cwd: '/home/demo/tortuga feat', session_id: 'abc-123', tmux_session: 's', tmux_window: 'w', tmux_window_id: null, ...extra }) as Agent
 
 describe('captainStats', () => {
   const base = { fleet: { total: 6, working: 1, queued: 1, waiting: 1, crashed: 1, idle: 1, retired: 1 }, results: { ok: 2, blocked: 0, failed: 0 }, unread: 0 }
@@ -43,9 +43,9 @@ describe('meta labels', () => {
 
 describe('resume lines', () => {
   test('per harness, cwd quoted, none without a session', () => {
-    expect(agentResumeCommand(A({}))).toBe(`cd '/Users/me/plutus feat' && claude --resume abc-123`)
-    expect(agentResumeCommand(A({ harness: 'codex' }))).toBe(`cd '/Users/me/plutus feat' && codex resume abc-123`)
-    expect(agentResumeCommand(A({ harness: 'opencode' }))).toBe(`cd '/Users/me/plutus feat' && opencode -s abc-123`)
+    expect(agentResumeCommand(A({}))).toBe(`cd '/home/demo/tortuga feat' && claude --resume abc-123`)
+    expect(agentResumeCommand(A({ harness: 'codex' }))).toBe(`cd '/home/demo/tortuga feat' && codex resume abc-123`)
+    expect(agentResumeCommand(A({ harness: 'opencode' }))).toBe(`cd '/home/demo/tortuga feat' && opencode -s abc-123`)
     expect(agentResumeCommand(A({ session_id: null }))).toBeNull()
     expect(agentResumeCommand(A({ harness: 'fake' }))).toBeNull()
   })
@@ -108,7 +108,7 @@ describe('calls, cards, model', () => {
 
 describe('resumeTail', () => {
   test('drops the cd prefix (quoted, escaped quote, or bare path)', () => {
-    expect(resumeTail(`cd '/Users/me/plutus feat' && claude --resume abc-123`)).toBe('claude --resume abc-123')
+    expect(resumeTail(`cd '/home/demo/tortuga feat' && claude --resume abc-123`)).toBe('claude --resume abc-123')
     expect(resumeTail(`cd '/x/it'\\''s' && codex resume abc`)).toBe('codex resume abc')
     expect(resumeTail('cd /x/y && opencode -s ses_1')).toBe('opencode -s ses_1')
     expect(resumeTail('claude --resume abc')).toBe('claude --resume abc')

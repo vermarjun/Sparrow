@@ -44,7 +44,7 @@ describe('summarizeInsights', () => {
       doneCard(5, { doneDaysAgo: 5, buildMin: 30, estimateMin: 60 }), // under estimate, not a miss
     ]
     expect(summarizeInsights(cards, NOW).worstMisses.map(({ id, ratio }) => [id, ratio])).toEqual([[1, 5], [2, 4], [3, 3]])
-    expect(summarizeInsights(cards, NOW).worstMisses[0]).toMatchObject({ key: 'PLU-1', title: 'Card 1', estimateMin: 60, buildMs: 300 * 60_000, reviewMs: 2880 * 60_000, ratio: 5 })
+    expect(summarizeInsights(cards, NOW).worstMisses[0]).toMatchObject({ key: 'TOR-1', title: 'Card 1', estimateMin: 60, buildMs: 300 * 60_000, reviewMs: 2880 * 60_000, ratio: 5 })
   })
 
   test('empty or untimed boards render no medians or misses', () => {

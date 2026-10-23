@@ -28,7 +28,7 @@ const PORT = Number(argv.port ?? process.env.MOCK_PORT ?? 4140)
 const DIST = resolve(argv.dist ?? join(import.meta.dir, '..', 'dist'))
 const LIVE = !argv['no-live'] && !argv['no-projects']
 
-// ---------------------------------------------------------------- seed (mock/seed.ts: multi-captain world)
+// ---------------------------------------------------------------- seed (mock/seed.ts: the tortuga demo world)
 
 // ---------------------------------------------------------------- state + server
 const db = seed()
@@ -174,16 +174,14 @@ async function handle(req: Request): Promise<Response> {
 }
 
 // ---------------------------------------------------------------- live activity
-// Two working fleets keep moving: @james (under @maya, @captain's fleet) and @zoe (under @kai, @cap-orion's fleet).
+// The two working agents keep moving: @maya and @leo (both on @captain's fleet).
 const SCRIPT: [from: string, to: string, kind: MessageKind, text: string][] = [
-  ['ag_james', 'ag_maya', 'update', 'added Content-Disposition + filename with the date range'],
-  ['ag_zoe', 'ag_kai', 'update', 'e2e: 6th POST /login from one IP → 429, Retry-After: 900'],
-  ['ag_james', 'ag_maya', 'update', '50k-row export: 1.9 s, 38 MB peak (was 410 MB)'],
-  ['ag_zoe', 'ag_kai', 'update', 'p95 POST /login 41 ms → 42 ms with the limiter'],
-  ['ag_maya', 'ag_james', 'chat', 'Nice. Push it and I will re-hire @iris on the same session.'],
-  ['ag_james', 'ag_maya', 'update', 'pushed to PR #41; running the full suite once more'],
-  ['ag_zoe', 'ag_kai', 'update', 'docs/auth.md: lockout section + audit line format'],
-  ['ag_james', 'ag_maya', 'update', 'suite green: 61/61'],
+  ['ag_leo', 'ag_cap', 'update', 'e2e: 6th POST /login from one IP → 429, Retry-After: 900'],
+  ['ag_maya', 'ag_cap', 'update', 'p95 POST /login 41 ms → 42 ms with the limiter'],
+  ['ag_leo', 'ag_cap', 'update', 'docs/auth.md: lockout section + audit line format'],
+  ['ag_cap', 'ag_maya', 'chat', 'Nice. Push it and I will have @iris verify the PR again.'],
+  ['ag_maya', 'ag_cap', 'update', 'pushed to PR #62; running the full suite once more'],
+  ['ag_maya', 'ag_cap', 'update', 'suite green: 61/61'],
 ]
 let step = 0
 function liveTick() {

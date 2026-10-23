@@ -78,9 +78,9 @@ describe('lists', () => {
     expect(originLabel({ root: 'agents', kind: 'dir', linkTarget: null })).toContain('npx skills')
     expect(originLabel({ root: 'claude-synced', kind: 'dir', linkTarget: null })).toContain('claude.ai')
     expect(originLabel({ root: 'claude', kind: 'link', linkTarget: '/opt/homebrew/x' })).toBe('Link to /opt/homebrew/x')
-    expect(tilde('/Users/me/Skills/a', '/Users/me')).toBe('~/Skills/a')
-    expect(tilde('/Users/mex/a', '/Users/me')).toBe('/Users/mex/a')
-    expect(tilde('/Users/me', '/Users/me')).toBe('~')
+    expect(tilde('/home/demo/Skills/a', '/home/demo')).toBe('~/Skills/a')
+    expect(tilde('/home/demox/a', '/home/demo')).toBe('/home/demox/a')
+    expect(tilde('/home/demo', '/home/demo')).toBe('~')
   })
 })
 
@@ -119,20 +119,20 @@ describe('import preview execution warning', () => {
 
 describe('parseDiff', () => {
   const text = [
-    'diff --git a/Users/me/Skills/beta/SKILL.md b/Users/me/.codex/skills/beta/SKILL.md',
+    'diff --git a/home/demo/Skills/beta/SKILL.md b/home/demo/.codex/skills/beta/SKILL.md',
     'index 111..222 100644',
-    '--- a/Users/me/Skills/beta/SKILL.md',
-    '+++ b/Users/me/.codex/skills/beta/SKILL.md',
+    '--- a/home/demo/Skills/beta/SKILL.md',
+    '+++ b/home/demo/.codex/skills/beta/SKILL.md',
     '@@ -1,3 +1,3 @@',
     ' ---',
     '-name: beta',
     '+name: beta2',
     ' ---',
-    'diff --git a/Users/me/Skills/beta/extra.md b/Users/me/.codex/skills/beta/extra.md',
+    'diff --git a/home/demo/Skills/beta/extra.md b/home/demo/.codex/skills/beta/extra.md',
     'new file mode 100644',
     'index 000..333',
     '--- /dev/null',
-    '+++ b/Users/me/.codex/skills/beta/extra.md',
+    '+++ b/home/demo/.codex/skills/beta/extra.md',
     '@@ -0,0 +1 @@',
     '+hello',
     '',
