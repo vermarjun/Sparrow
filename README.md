@@ -1,10 +1,3 @@
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/hero-dark.png">
-    <img src="docs/images/hero-light.png" width="100%" alt="Your coding session, the captain, hires a Claude Code builder, a Codex verifier and an OpenCode researcher into their own terminal windows. A result with evidence flows back to the captain's inbox.">
-  </picture>
-</p>
-
 <h1 align="center">Sparrow</h1>
 
 <p align="center"><b>One captain. Three harnesses. No message overboard.</b></p>
@@ -28,6 +21,13 @@ Local, open source, and it runs on the subscriptions you already pay for.
   <a href="https://www.npmjs.com/package/sparrow-agents"><img alt="npm" src="https://img.shields.io/npm/v/sparrow-agents?color=0e1a2b&label=npm"></a>
   <img alt="Runs on macOS and Linux" src="https://img.shields.io/badge/runs%20on-macOS%20%7C%20Linux-0e1a2b">
   <img alt="Crews: Claude Code, Codex, OpenCode" src="https://img.shields.io/badge/crews-Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20OpenCode-d97757">
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/hero-dark.png">
+    <img src="docs/images/hero-light.png" width="100%" alt="Your coding session, the captain, hires a Claude Code builder, a Codex verifier and an OpenCode researcher into their own terminal windows. A result with evidence flows back to the captain's inbox.">
+  </picture>
 </p>
 
 ---
@@ -220,10 +220,7 @@ drawn [here](docs/images/board-light.png).
 ## The UI
 
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/ui-activity-dark.png">
-    <img src="docs/images/ui-activity-light.png" width="49%" alt="A captain's activity feed with a verifier's result, its evidence and an open question.">
-  </picture>
+  <img src="docs/images/ui-activity-light.png" width="49%" alt="A captain's activity feed with a verifier's result, its evidence and an open question.">
   <img src="docs/images/ui-team.png" width="49%" alt="The team tab with an agent sheet and a live peek at its terminal.">
 </p>
 
