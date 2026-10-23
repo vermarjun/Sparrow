@@ -42,3 +42,9 @@ jobs:
           bun install --frozen-lockfile
           bun test
           bun run build
+      - name: Build the host binary and smoke-test it
+        env:
+          SPARROW_NO_OPEN: '1'
+        run: |
+          bun run build:binary
+          bun run smoke:binary

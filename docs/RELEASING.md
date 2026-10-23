@@ -51,11 +51,29 @@ SPARROW_DOWNLOAD_URL="file://$PWD/dist/bin" SPARROW_INSTALL_DIR="$prefix" sh ins
 
 First copy `dist/checksums.txt` into `dist/bin/checksums.txt` for that test. `SPARROW_DOWNLOAD_URL` replaces the entire asset directory URL. The installer verifies checksums before atomically replacing the executable. A failed verification preserves an existing installation. For a specific published version use `SPARROW_VERSION=0.1.0`; without it the installer uses the latest release.
 
+## Smoke test
+
+`bun run smoke:binary` (or `bun scripts/smoke-binary.ts <binary>`) copies a compiled binary outside the checkout and runs it with its own HOME, `SPARROW_HOME`, free port and tmux socket (never `~/.sparrow`, port 4040 or your tmux server). It needs tmux and takes about 30 seconds. CI runs it on the host binary on both ubuntu and macOS, and the release workflow runs it on darwin-arm64 before anything is published. Run `bun run build:binary:all` to compile all four targets (cross-compiling downloads Bun's runtime for each target once).
+
+## Artifact sizes (0.1.0)
+
+Bun's compiled binaries embed the Bun runtime, so they are large; compression helps a lot. `--minify` and `--bytecode` were tried on darwin-arm64: the binary stayed 62 MB (the runtime dominates, not the bundled JS), so the build uses neither.
+
+| Platform | Binary (GitHub Release asset) | npm tarball (`sparrow-agents-<platform>`) |
+| --- | --- | --- |
+| darwin-arm64 | 62 MB | 23 MB |
+| darwin-x64 | 67 MB | 25 MB |
+| linux-arm64 | 102 MB | 39 MB |
+| linux-x64 | 104 MB | 39 MB |
+| `sparrow-agents` (launcher) | | 1.9 kB |
+
+The largest tarball is 39 MB. I could not verify npm's current registry size limit from here (it is not stated in npm's public docs and has been reported in the low hundreds of MB), so the first publish is the real test; the packages are far smaller than the packages that are known to publish fine (e.g. esbuild/biome platform packages are 10–30 MB). GitHub release assets may be up to 2 GB each. A user installs only the one platform package matching their machine.
+
 ## Cut a release
 
-1. Bump root `package.json` version, update release notes, and review changes. Keep the dev package private. Run the CI checks and the local dry run. Smoke-test the native binary outside the checkout with isolated HOME and SPARROW_HOME before publishing.
+1. Bump root `package.json` version, update release notes, and review changes. Keep the dev package private. Run the CI checks and the local dry run. Run `bun run smoke:binary` on the native binary before publishing.
 2. Commit the version change, tag it `vX.Y.Z`, and push the commit and tag to `vermarjun/Sparrow`.
-3. The release workflow rejects tags that differ from `package.json`. It builds on macOS so the binary builder can ad-hoc sign the Darwin executables. It builds the web UI and all four binaries, generates checksums and packages, publishes the four platform packages before the wrapper with `--access public`, and creates a GitHub Release with generated notes.
+3. The release workflow rejects tags that differ from `package.json`. It builds on macOS so the binary builder can ad-hoc sign the Darwin executables. It builds the web UI and all four binaries, generates checksums and packages, runs `scripts/smoke-binary.ts` on the darwin-arm64 binary (first run, UI, fake-agent hire to done, hooks through the binary, sandbox, upgrade path) and stops there if it fails, then creates the GitHub Release with generated notes, and only then publishes the four platform packages followed by the wrapper to npm (`--access public`). The Release comes before npm because npm versions are immutable while `install.sh` and Homebrew read the Release assets.
 4. Review the release assets and copy the generated formula into `vermarjun/homebrew-tap/Formula/sparrow.rb`. Verify `brew install vermarjun/tap/sparrow` and `sparrow --version` on a supported host.
 
 Release assets are named exactly `sparrow-darwin-arm64`, `sparrow-darwin-x64`, `sparrow-linux-x64`, `sparrow-linux-arm64`, and `checksums.txt`; the formula `sparrow.rb` is also attached. Checksums use `<sha256>  <filename>` with no directory prefix. The installer and formula use `https://github.com/vermarjun/Sparrow/releases/download/vX.Y.Z/<asset>`.

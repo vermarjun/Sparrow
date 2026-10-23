@@ -1,16 +1,17 @@
 #!/usr/bin/env bun
 // Isolated smoke test of a compiled binary, copied OUTSIDE the repo:
-//   bun scripts/smoke-binary.ts dist/bin/sparrow-darwin-arm64
+//   bun scripts/smoke-binary.ts [dist/bin/sparrow-darwin-arm64]     (default: this machine's binary in dist/bin)
 // Own HOME, SPARROW_HOME, free port, tmux socket. Checks: --version, first run (setup + server), UI served, status,
 // fake-harness hire -> update -> done -> window closed, hook speed, no repo path in the app dir or launch scripts,
 // then stops the server and kills its tmux socket. Needs tmux. Never touches ~/.sparrow, :4040 or your tmux server.
 import { copyFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
+import { hostTarget, outName } from './build-binary';
 
 const ROOT = resolve(import.meta.dir, '..');
-const bin = resolve(process.argv[2] ?? '');
-if (!process.argv[2] || !existsSync(bin)) { console.error('usage: bun scripts/smoke-binary.ts <path to compiled sparrow binary>'); process.exit(2); }
+const bin = resolve(process.argv[2] ?? join(ROOT, 'dist', 'bin', outName(hostTarget())));
+if (!existsSync(bin)) { console.error(`usage: bun scripts/smoke-binary.ts [path to compiled sparrow binary]; ${bin} not found (bun scripts/build-binary.ts builds it)`); process.exit(2); }
 
 const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'sparrow-smoke-')));
 const exe = join(tmp, 'bin', basename(bin));   // keeps its release name (sparrow-<os>-<arch>): agents then need the app's `sparrow` shim on PATH

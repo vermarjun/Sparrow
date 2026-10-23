@@ -14,6 +14,8 @@
     "web:dev": "cd web && bun run dev",
     "web:build": "cd web && bun run build",
     "build:binary": "bun scripts/build-binary.ts",
+    "build:binary:all": "bun scripts/build-binary.ts --target all",
+    "smoke:binary": "bun scripts/smoke-binary.ts",
     "build:npm": "bun scripts/build-npm.ts",
     "release:local": "sh scripts/release-local.sh",
     "test:packaging": "bun test npm/packaging.test.ts"
