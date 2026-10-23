@@ -7,7 +7,7 @@
 
 <h1 align="center">Sparrow</h1>
 
-<p align="center"><b>One captain. Every harness. No message overboard.</b></p>
+<p align="center"><b>One captain. Three harnesses. No message overboard.</b></p>
 
 <p align="center">
 Turn your coding session into a captain that hires Claude Code, Codex and OpenCode agents into real terminals,
@@ -56,6 +56,10 @@ You need macOS or Linux, [tmux](https://github.com/tmux/tmux/wiki/Installing), a
 [Claude Code](https://code.claude.com), [Codex](https://github.com/openai/codex) or [OpenCode](https://opencode.ai),
 logged in.
 
+> [!WARNING]
+> Workers run with their harness's permission-bypass flag (`--dangerously-skip-permissions`, `--yolo`, `--auto`)
+> as your user. Read [SECURITY.md](SECURITY.md) before you point a crew at anything you love.
+
 <!-- install: finalize after oss/dist merge -->
 ```sh
 curl -fsSL https://raw.githubusercontent.com/vermarjun/Sparrow/main/install.sh | sh
@@ -89,15 +93,14 @@ A Claude Code window opens in tmux as `@maya`, does the work, and reports:
 
 ```text
 ── @maya · builder · done ok · call 6m12s ──
-## Result    Sliding-window limiter on POST /login, keyed by IP (src/auth/limit.ts).
-## Evidence  bun test → 48 pass, 0 fail, including "6th attempt returns 429"
-## Files     src/auth/limit.ts, src/routes/login.ts, test/auth/limit.test.ts
+## Result    Sliding-window limiter on POST /login, keyed by IP (src/api/limit.ts).
+## Evidence  bun test → 41 pass, 0 fail, including "6th attempt returns 429"
+## Files     src/api/limit.ts, src/api/login.ts, test/api/limit.test.ts
 ## Next      Counts live in memory. Move them to Redis before you run two instances.
 ```
 
-The captain hands maya's evidence to a Codex verifier, gets a PASS/FAIL table back, and sends the one failure to
-`@maya`, which wakes up in the same session, remembers everything and fixes it. Everyone gets released once it's
-merged.
+The captain hands maya's evidence to a Codex verifier and gets a PASS/FAIL table back. The one failure goes to
+`@maya`, which reopens the same harness session and fixes it. Once it's merged, everyone is released.
 
 <p align="center">
   <picture>
@@ -124,7 +127,7 @@ merged.
 
 <p align="center">
   <img src="docs/images/terminal-crew.png" width="100%" alt="Real tmux windows: a Claude Code builder editing tests, a Codex verifier re-reviewing, an OpenCode researcher writing docs, and the captain's sparrow inbox showing the verifier's PASS table.">
-  <br><sub>Not a mockup. Three harnesses, three subscriptions, one inbox.</sub>
+  <br><sub>Real tmux windows from a demo run: Claude Code, Codex and OpenCode workers, one captain inbox.</sub>
 </p>
 
 ## Why you'll keep it
@@ -142,14 +145,7 @@ You hire from **resumes**, Markdown role cards that pick the harness, model, eff
 hire. Heavy thinking on Opus, bulk building on Codex, chores on Haiku, research on whatever OpenCode provider you pay
 for. Eight ship by default. Edit them in the UI, or write your own.
 
-### Your context window stays yours
-
-The captain never reads a 3,000-line diff to find out if something worked. Agents do the reading in their own fresh
-context and hand back four sections: Result, Evidence, Files, Next. Evidence means the commands they ran and the real
-output. A one-shot deckhand retires the moment it reports, so its context never grows, and released agents never
-wake, so yesterday's context never leaks into today's job.
-
-### Finished agents remember
+### Your context stays clean, theirs stays warm
 
 <p align="center">
   <picture>
@@ -158,9 +154,13 @@ wake, so yesterday's context never leaks into today's job.
   </picture>
 </p>
 
-When an agent reports, its window closes and you get the RAM back. Message it tomorrow and it reopens the same harness
-session, so a follow-up doesn't start with re-explaining the codebase. Release it when the job is merged. Release is
-permanent on purpose.
+The captain never reads a 3,000-line diff to find out if something worked. Agents do the reading in their own
+context and hand back four sections: Result, Evidence, Files, Next. Evidence means the commands they ran and the real
+output.
+
+When an agent reports, its window closes and you get the RAM back. Message it tomorrow and it reopens the same
+harness session, so a follow-up doesn't start with re-explaining the codebase. Release it once the job is merged.
+Release is permanent on purpose, so yesterday's context never leaks into today's job.
 
 ### No message overboard
 
@@ -188,37 +188,33 @@ whose window closed reopens it.
 
 Sub-captains hire their own builders. Builders call a deckhand (Haiku, one-shot) for chores or an advisor (Opus,
 read-only) for a second opinion. Teammates DM each other to agree on an API without you relaying it. Crews are
-private and depth stops at 3, so nobody hires their way into a pyramid scheme.
+private, and depth stops at 3.
 
 ### A board the crew writes on
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/board-dark.png">
-    <img src="docs/images/board-light.png" width="100%" alt="Ticket flow: agents propose, you triage, hire --card moves a ticket to In progress, an ok report moves it to Review, and only you move it to Done. Payoff words come from impact and effort.">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/ui-board-dark.png">
+    <img src="docs/images/ui-board-light.png" width="100%" alt="The Sparrow board with tickets labelled Quick win, Worth it, Big bet, Heavy lift and Money pit, plus urgent and blocked rails.">
   </picture>
 </p>
 
 Agents propose tickets with impact, effort and an estimate. You triage them from the keyboard.
 `sparrow hire builder --card TOR-12` hands an agent the whole ticket, and its `done` moves the card to Review. Only
-you move things to Done. Every move is timed, so you see the estimate next to what it really took.
+you move things to Done. Every move is timed, so you see the estimate next to what it really took. The flow is
+drawn [here](docs/images/board-light.png).
 
 ### Safety nets, because agents are agents
 
 - Stopped without reporting? Nudged twice through the harness's own hook, then you hear about it.
-- Quiet for 15 minutes? A reminder. Past 90 minutes? You're told. Nobody gets killed for being slow.
+- Quiet too long? A reminder (15 minutes for a builder, each resume sets its own). Past its call limit? You're told.
+  Nobody gets killed for being slow.
 - Crashed? Restarted once on the same session, then you get its last screen.
 - More hires than slots? They queue and start when one frees up.
 - Server restarted? Live windows are adopted back.
 
 ## The UI
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/ui-board-dark.png">
-    <img src="docs/images/ui-board-light.png" width="100%" alt="The Sparrow board with tickets labelled Quick win, Worth it, Big bet, Heavy lift and Money pit.">
-  </picture>
-</p>
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/images/ui-activity-dark.png">
@@ -229,6 +225,14 @@ you move things to Done. Every move is timed, so you see the estimate next to wh
 
 Captains, each crew's activity, a team tree with a live peek at every agent's screen, the board, a resume editor and
 a doctor that tests your harnesses. The UI never hires anything by itself. Your captain does that.
+
+## Built by its own crew
+
+This launch was crewed by Sparrow. One captain session and {CREW_COUNT} agents across Claude Code and Codex wrote this
+README, drew the ten diagrams, shot the screenshots, packaged the binary, and fixed the delivery protocol you just read
+about. Two researchers mapped the competition, a sub-captain ran its own packaging crew, verifiers tried to break every
+branch, and an advisor read this page cold and told us which jokes to cut. Halfway through, Codex hit its usage
+limit. The captain moved the rest of the Codex work to Claude Code and kept going. That's the whole pitch, really.
 
 ## Sparrow vs. what you already have
 
@@ -241,7 +245,7 @@ Native team features got much better in 2026, so here's an honest map as of Octo
 | Workers report back over a protocol, with evidence | ✓ | ✓ inside Claude | ✓ to the parent | You read the terminals |
 | Message a finished worker, same session | ✓ | ✓ | ✓ | While the session lives |
 | Tickets the agents write themselves | ✓ | Shared task list | ✗ | Varies |
-| Git worktrees made for you | ✗ | ✗ | ✗ | ✓ |
+| Git worktrees made for you | ✗ your captain makes one and passes `--cwd` | ✓ subagent worktree isolation | Varies | ✓ |
 
 If you want a bigger machine, look at [Gas Town](https://github.com/gastownhall/gastown),
 [Orchestrator.inc](https://github.com/OrchestratorInc/agent-orchestrator) and [Ruflo](https://github.com/ruvnet/ruflo).
@@ -250,9 +254,9 @@ session is the captain, the protocol is a handful of CLI verbs, and every worker
 
 ## FAQ
 
-**Is it safe?** Agents run with their harness's auto-approve flag (`--dangerously-skip-permissions`, `--yolo`,
-`--auto`) as your user. It's a pirate ship, not a cruise liner. The server listens on 127.0.0.1 only and has no auth.
-Read [SECURITY.md](SECURITY.md) before you point a crew at anything you love.
+**Is it safe?** It's a pirate ship, not a cruise liner. Workers auto-approve their own tool calls as your user, and
+the server listens on 127.0.0.1 only with no auth. [SECURITY.md](SECURITY.md) lists what Sparrow does and doesn't
+protect you from.
 
 **Do I need API keys?** No new ones. Each agent uses the login its harness already has. Your plan's usage limits
 still apply, and five agents use them five times faster.
@@ -265,7 +269,8 @@ which launches a fresh captain in tmux for you, is Claude Code only for now.
 
 **Windows?** Maybe through WSL2, since it needs tmux. Not tested yet.
 
-**Why "Sparrow"?** A captain's job is to ship. And Captain Jack never rowed his own boat.
+**Why "Sparrow"?** Named after the most famous captain to never do his own rowing. A captain's job is to ship, so
+that's what yours does: plan, delegate, review, merge.
 
 ## Docs
 
