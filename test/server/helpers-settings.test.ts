@@ -178,6 +178,9 @@ describe('one-shot helpers are released on their report', () => {
     const first = await ctx.req('POST', '/api/done', { summary: 'partial' }, d.id, agentOf(ctx, d.id).call_id);
     expect(first.body.message).toBeNull();
     expect(agentOf(ctx, d.id).state).toBe('working');
+    expect(ctx.store.countPending(d.id)).toBe(1);
+    const read = await ctx.req('GET', '/api/inbox', undefined, d.id, agentOf(ctx, d.id).call_id);
+    expect(read.body.inbox[0].text).toBe('also count tests');
     const second = await ctx.req('POST', '/api/done', { summary: 'all' }, d.id, agentOf(ctx, d.id).call_id);
     expect(second.body.message.meta.released).toBe(true);
     expect(agentOf(ctx, d.id).state).toBe('retired');

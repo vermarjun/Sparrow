@@ -585,6 +585,10 @@ export class Store {
     const q = this.db.query("UPDATE deliveries SET state = 'delivered', call_id = ?, delivered_at = ? WHERE to_id = ? AND message_id = ? AND state = 'pending'");
     for (const id of messageIds) q.run(callId, now, agentId, id);
   }
+  markPending(agentId: string, messageIds: string[], callId: string) {
+    const q = this.db.query("UPDATE deliveries SET state = 'pending', call_id = NULL, delivered_at = NULL WHERE to_id = ? AND message_id = ? AND call_id = ? AND state = 'delivered'");
+    for (const id of messageIds) q.run(agentId, id, callId);
+  }
   dropPending(agentId: string) {
     this.db.query("UPDATE deliveries SET state = 'dropped' WHERE to_id = ? AND state = 'pending'").run(agentId);
   }

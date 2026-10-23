@@ -1,5 +1,5 @@
 // Hono routes (CONTRACT §4). Identity: x-sparrow-agent; hooks add x-sparrow-call.
-// Every response to an identified caller carries `inbox` (piggyback) — except hooks.
+// Ordinary replies summarize unread mail; only explicit inbox reads and handoffs consume it.
 import { Hono, type Context } from 'hono';
 import { existsSync, statSync } from 'node:fs';
 import { join, normalize, resolve as resolvePath } from 'node:path';
@@ -102,6 +102,10 @@ export function createApi(core: Core, opts: ApiOpts = {}) {
       c.set('caller', core.touch(a));
     } else c.set('caller', null);
     await next();
+    const caller = c.get('caller');
+    if (caller && !c.req.path.startsWith('/api/hooks/')) {
+      c.header('x-sparrow-unread', JSON.stringify(core.unreadFor(caller.id)));
+    }
   });
 
   // Skills writes are browser reachable and unauthenticated. Cross-site / foreign-Origin refusal is guardWrites'
@@ -131,12 +135,12 @@ export function createApi(core: Core, opts: ApiOpts = {}) {
     return core.store.getAgent(a.id)!;
   };
 
-  /** JSON reply + piggyback inbox for identified callers. */
+  /** Non-consuming JSON reply with unread summaries for identified callers. */
   const reply = (c: Context<{ Variables: Vars }>, data: any, status = 200) => {
     const caller = c.get('caller');
-    // Array responses (lists) stay arrays per the types; their caller's deliveries stay pending for the next object response.
+    // Array responses stay arrays; the identity middleware exposes their unread summary in a header.
     if (caller && data && typeof data === 'object' && !Array.isArray(data)) {
-      data = { ...data, inbox: core.takeInbox(caller.id, c.get('callHeader')) };
+      data = { ...data, inbox: [], unread: core.unreadFor(caller.id) };
     }
     return c.json(data, status as any);
   };
@@ -147,8 +151,7 @@ export function createApi(core: Core, opts: ApiOpts = {}) {
   app.post('/api/captains/register', async (c) => {
     const res = core.registerCaptain(await body(c));
     c.set('caller', res.agent);
-    // Recovery inbox reads must not consume pending messages as a side effect of captain registration.
-    if (c.req.query('no_inbox') === '1') return c.json({ ...res, inbox: [] });
+    // Registering never consumes mail; inbox reads are explicit.
     return reply(c, res);
   });
 
@@ -395,7 +398,7 @@ export function createApi(core: Core, opts: ApiOpts = {}) {
       if (result === 'aborted') return new Response(null, { status: 204 });
     }
     // `team`: the caller's children that are still busy, so a timed-out wait shows each one's latest update.
-    return reply(c, { team: core.team(caller.id) });
+    return c.json({ inbox: core.takeInbox(caller.id, c.get('callHeader')), unread: core.unreadFor(caller.id), team: core.team(caller.id) });
   });
 
   app.get('/api/messages', (c) => {
@@ -439,7 +442,7 @@ export function createApi(core: Core, opts: ApiOpts = {}) {
   });
 
   // ---------------------------------------------------------------- hooks (no piggyback: never steal deliveries from a dying window)
-  app.post('/api/hooks/turn-end', async (c) => c.json(await core.turnEnd(need(c), c.get('callHeader'), await body(c))));
+  app.post('/api/hooks/turn-end', async (c) => c.json(await core.turnEnd(need(c), c.get('callHeader'), await body(c), c.req.raw.signal)));
   app.post('/api/hooks/provider-error', async (c) => c.json(core.providerErrorHook(need(c), c.get('callHeader'), await body(c))));
   app.post('/api/hooks/exit', async (c) => {
     const b = await body<{ code: unknown }>(c);

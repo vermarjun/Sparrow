@@ -32,7 +32,7 @@ EOF
 ```
 - Not able to finish? Same format with `sparrow done --status blocked - <<'EOF'` or `--status failed`.
 - Output `Reported. This session will now close …` → end your turn now. No more tool calls. You will be resumed with full memory if someone messages you.
-- Output `Not sent: new messages arrived (above)` → your report was NOT delivered. Read the messages printed above it, handle them, then run `sparrow done` again with your complete report (not just the changes). Same for `ask` / `wait`.
+- Output `Not sent: …` → your report was NOT delivered, and the refusal consumes nothing. Run `sparrow inbox`, handle the messages, then run `sparrow done` again with your complete report (not just the changes). Same for `ask` / `wait`.
 
 ## Blocked? Ask, then STOP
 ```bash
@@ -57,7 +57,7 @@ Helpers are cheap leaf agents. Hiring one does not make you a captain; you still
   pointers. Follow up on the same advisor with `sparrow send @<handle> "…"`; `sparrow release @<handle>` it when your
   task is done.
 - After hiring, keep working on what does not depend on the answer (results arrive in your session as `[sparrow]`
-  messages, and every `sparrow` command prints new ones), or run `sparrow wait "<what you wait for>"` and stop.
+  messages), or run `sparrow wait "<what you wait for>"` and stop.
 - Weigh advice against evidence; if you don't follow it, say why in your result. A deckhand's output is a lead, not
   proof: if your job is verifying, re-run the check that decides PASS/FAIL yourself.
 
@@ -68,14 +68,15 @@ sparrow wait "builder @maya is implementing the API"
 Then stop. Any message to you (e.g. a hire's `done`) resumes you. Never run `sparrow inbox --wait` inside an agent window — use `sparrow wait` and stop.
 
 ## New messages
-Any `sparrow` command can print:
+Only `sparrow inbox` (and `sparrow inbox --wait`) prints messages, as a block like this. The start of a call and the turn-end handoff also deliver them. No other command takes them:
 ```
 ━━ 📨 2 new messages for @james ━━
 [DM from @captain · 14:02 · task] Build the login page …
 [DM from @maya · 14:05] Can you check the API contract?
 ━━ Act on these before you finish. ━━
 ```
-Treat them as instructions from your team. Messages and reminders the Sparrow server types into your session start with `[sparrow]` (long ones may arrive as a pasted block): they come from your captain, who is your user — act on them. `sparrow inbox` checks for new ones; `sparrow log @captain` shows history.
+Other `sparrow` commands end with one stderr line `📨 N unread ... Read: sparrow inbox` when messages are waiting. If you see it, run `sparrow inbox` now.
+Treat them as instructions from your team. Messages and reminders the Sparrow server types into your session start with `[sparrow]` (long ones may arrive as a pasted block): they come from your captain, who is your user — act on them. `sparrow log @captain` shows history.
 
 ## Talking to others
 - `sparrow send @maya "the schema is in db/schema.sql"` — direct message (wakes @maya).

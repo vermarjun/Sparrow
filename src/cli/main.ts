@@ -10,15 +10,12 @@ import { CARD_STATES } from '../shared/types';
 import { CARD_SORTS, cardKey, parseCardRef, sortCardsBy } from '../shared/cards';
 import type {
   Agent, Card, CardState, CaptainDetail, CaptainStartReq, CaptainStartRes, CaptainSummary, DoneStatus, EndCallRes, HireRes,
-  InboxRes, MessageRes, MessageView, Project, RegisterCaptainReq, RegisterCaptainRes, ResumeView,
+  InboxRes, MessageRes, MessageView, UnreadMessage, Project, RegisterCaptainReq, RegisterCaptainRes, ResumeView,
 } from '../shared/types';
 import {
   age, agentSummary, captainHint, captainSelf, captainStartText, captainsTable, cardBoard, cardBriefText, cardDetail, hhmm,
   inboxBlock, logLines, oneLine, resumesDirectory, rosterTable, teamDigest, tmuxAttach,
 } from './format';
-
-/** Messages that wake their recipient. Quiet deliveries (amendment A5) are updates and FYI system notices. */
-const wakes = (m: MessageView) => m.kind !== 'update' && !(m.meta as { fyi?: unknown } | null)?.fyi;
 
 const GROUP_REMOVED = 'group chat was removed; DM a teammate: sparrow send @<handle> "…"';
 const isGroup = (t: string | undefined) => !!t && ['group', '@group'].includes(t.trim().toLowerCase());
@@ -75,6 +72,7 @@ interface Ctx {
   me: Agent | null;
   project: Project | null;
   inbox: MessageView[];
+  unread: UnreadMessage[];
   notices: string[];        // one-time hints (a new captain was created); printed before the output, never with --json
 }
 
@@ -86,12 +84,13 @@ interface Out {
 }
 
 function collect(ctx: Ctx, res: any) {
+  if (Array.isArray(res?.unread)) ctx.unread = res.unread;
   const box = res && Array.isArray(res.inbox) ? (res.inbox as MessageView[]) : [];
   for (const m of box) if (!ctx.inbox.some((x) => x.id === m.id)) ctx.inbox.push(m);
 }
 
 async function call<T = any>(ctx: Ctx, method: string, path: string, body?: unknown, opts: ApiOpts = {}): Promise<T> {
-  const res = await api<T>(method, path, body, { agentId: ctx.agentId, ...opts });
+  const res = await api<T>(method, path, body, { agentId: ctx.agentId, onUnread: (unread) => { ctx.unread = unread; }, ...opts });
   collect(ctx, res);
   return res;
 }
@@ -131,7 +130,7 @@ function registerBody(extra: Partial<RegisterCaptainReq> = {}): RegisterCaptainR
 async function register(ctx: Ctx, extra: Partial<RegisterCaptainReq>, opts: { noInbox?: boolean } = {}): Promise<RegisterCaptainRes> {
   const path = opts.noInbox ? '/api/captains/register?no_inbox=1' : '/api/captains/register';
   const res = await api<RegisterCaptainRes>('POST', path, registerBody(extra), { agentId: null });
-  if (!opts.noInbox) collect(ctx, res);
+  collect(ctx, res);
   ctx.agentId = res.agent.id;
   ctx.me = res.agent;
   ctx.project = res.project;
@@ -565,9 +564,6 @@ const commands: Record<string, Handler> = {
         alreadyDelivered: true,
       };
     }
-    // Captain mode: register already piggybacked (and consumed) pending messages. If one of them wakes, show them now
-    // without long-polling. Quiet ones alone (updates, FYI notices) must not end the wait: they print with what arrives.
-    if (ctx.inbox.some(wakes)) return { raw: { inbox: ctx.inbox } };
     const path = wait ? `/api/inbox?wait=${wait}` : '/api/inbox';
     const res = await call<InboxRes>(ctx, 'GET', path, undefined, { timeoutMs: ((wait ?? 0) + 30) * 1000 });
     if (res.superseded) return {
@@ -841,14 +837,8 @@ const commands: Record<string, Handler> = {
   },
 };
 
-const NOT_SENT: Record<'done' | 'ask' | 'wait', string> = {
-  done: 'Not sent: new messages arrived (above). Handle them, then run sparrow done again with your complete report.',
-  ask: 'Not sent: new messages arrived (above). Handle them; if you still need an answer, run sparrow ask again.',
-  wait: 'Not sent: new messages arrived (above). Handle them, then run sparrow wait again if you are still waiting.',
-};
-
 async function endCall(ctx: Ctx, res: EndCallRes, what: string, kind: 'done' | 'ask' | 'wait'): Promise<Out> {
-  if (!res.ended) return { raw: res, trailer: NOT_SENT[kind] };
+  if (!res.ended) return { raw: res, trailer: `Not sent: unread messages from ${ctx.unread.map((m) => '@' + m.from_handle).join(', ') || 'your team'}; run sparrow inbox, then report again (${kind}).` };
   const text = ctx.captain
     ? `${what}. Recorded. Run \`sparrow inbox --wait 600\` to receive replies.`
     : 'Reported. This session will now close — stop here; you will be resumed with full memory when someone messages you.';
@@ -1002,13 +992,13 @@ export async function main(argv: string[]): Promise<number> {
     return 0;
   }
 
-  const ctx: Ctx = { json, agentId: null, captain: false, me: null, project: null, inbox: [], notices: [] };
+  const ctx: Ctx = { json, agentId: null, captain: false, me: null, project: null, inbox: [], unread: [], notices: [] };
   try {
     const out = await handler(ctx, args);
     if (typeof out === 'number') return out;
     if (json) {
       const raw = out.raw && typeof out.raw === 'object' && !Array.isArray(out.raw)
-        ? { ...(out.raw as object), inbox: ctx.inbox }
+        ? { ...(out.raw as object), inbox: ctx.inbox, unread: ctx.unread }
         : out.raw;
       console.log(JSON.stringify(raw, null, 2));
       return 0;
@@ -1032,8 +1022,13 @@ export async function main(argv: string[]): Promise<number> {
     else console.error(`sparrow ${cmd}: ${msg}`);
     if (!json) for (const n of ctx.notices) console.log(n);
     // Never lose messages that earlier requests of this command already marked delivered.
-    if (json) console.log(JSON.stringify({ error: msg, inbox: ctx.inbox }, null, 2));
+    if (json) console.log(JSON.stringify({ error: msg, inbox: ctx.inbox, unread: ctx.unread }, null, 2));
     else if (ctx.inbox.length) console.log(inboxBlock(ctx.inbox, ctx.me?.handle ?? null));
     return usage ? 2 : 1;
+  } finally {
+    if (ctx.unread.length) {
+      if (!ctx.me) { try { await self(ctx); } catch {} }
+      console.error(`📨 ${ctx.unread.length} unread for @${ctx.me?.handle ?? ctx.agentId ?? 'me'}: ${ctx.unread.map((m) => `@${m.from_handle} ${m.kind}${m.status ? `(${m.status})` : ''}`).join(', ')}. Read: sparrow inbox`);
+    }
   }
 }

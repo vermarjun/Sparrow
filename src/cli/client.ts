@@ -1,5 +1,6 @@
 // Tiny HTTP client used by the CLI and by hooks. Identity comes from the environment:
 // SPARROW_AGENT_ID / SPARROW_CALL_ID are set by the launch script inside agent windows.
+import type { UnreadMessage } from '../shared/types';
 import { SERVER_URL } from '../shared/config';
 
 export class ApiError extends Error {
@@ -9,6 +10,7 @@ export class ApiError extends Error {
 }
 
 export interface ApiOpts {
+  onUnread?: (unread: UnreadMessage[]) => void;
   agentId?: string | null;   // overrides SPARROW_AGENT_ID (captain mode passes its registered id)
   timeoutMs?: number;        // default 30s; inbox long-poll passes more
   retries?: number;          // connection retries when the server is down (default 3, backoff 1s/2s/4s)
@@ -60,6 +62,8 @@ export async function api<T = any>(method: string, path: string, body?: unknown,
       }
       throw new ApiError(0, `Sparrow server unreachable at ${base} (${(err as Error).message}). Start it with: sparrow up`);
     }
+    const unread = res.headers.get('x-sparrow-unread');
+    if (unread) opts.onUnread?.(JSON.parse(unread));
     const text = await res.text();
     const data = text ? JSON.parse(text) : {};
     if (!res.ok) throw new ApiError(res.status, data.error ?? `HTTP ${res.status}`);

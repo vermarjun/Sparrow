@@ -17,7 +17,7 @@ Nobody reads this window. Communicate ONLY through the \`sparrow\` CLI:
 - When finished: \`sparrow done - <<'EOF'\` with sections ## Result, ## Evidence, ## Files, ## Next, then EOF — and STOP.
 - When blocked: \`sparrow ask "<question>"\`, then stop; the answer resumes you.
 - After delegating (captains): \`sparrow wait "<reason>"\`, then stop; any message resumes you.
-- Every sparrow command may print new messages for you — act on them before finishing.
+- Messages reach you through \`sparrow inbox\` (and \`inbox --wait\`), the start of each call, and turn-end. Other sparrow commands end with a stderr line \`📨 N unread ... Read: sparrow inbox\` when messages wait: run \`sparrow inbox\` then, and act on them before finishing. A refused \`done\`/\`ask\`/\`wait\` (a \`Not sent:\` line) consumes nothing: run \`sparrow inbox\`, then report again.
 - After done the window closes; you will be resumed with full memory when someone messages you.
 - Read a task's board ticket with \`sparrow card show TOR-12\`. On your assigned card you may add a comment, tick a check,
   set or clear \`blocked_on\`, or move it to Review. \`done\` with status ok moves your in-progress card to Review; never move a card to Done.

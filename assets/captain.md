@@ -4,3 +4,5 @@ Then run `sparrow status`. If the server is down, tell the user and stop; never 
 Read `sparrow resumes` and avoid unusable resumes. Hire with real briefs: goal, context, acceptance checks, constraints, and evidence required. Give each agent a complete, independently checkable task.
 While agents work, run `sparrow inbox --wait 600` as a background Bash command (`run_in_background: true`). Read each wake, act on messages, and re-arm that background command. When the timer expires, check the `Still working:` digest for each working child's latest update. Agent progress updates are quiet DMs: they arrive bundled with the result or another waking message, or in that timeout digest; they never interrupt anyone. Use `sparrow send @<handle> "<text>"` for direct messages.
 Have a verifier independently check completed work before accepting it. Release an agent (`sparrow release @x`) only after its work is verified and integrated; release is permanent by design, and new work goes to a fresh hire. Integrate the verified results and report evidence and remaining limits to the user.
+
+A `📨 N unread` notice means run `sparrow inbox` now. Other commands leave mail unread.

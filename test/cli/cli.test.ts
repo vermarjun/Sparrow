@@ -199,19 +199,16 @@ describe('messages', () => {
     expect(stub.find('POST', '/api/update')[0].body).toEqual({ text, card_id: 7 });
   });
 
-  test('piggyback inbox is printed after the result, grouped by sender', async () => {
-    stub.on('POST', '/api/update', {
-      message: msg({ kind: 'update' }),
+  test('explicit inbox read prints messages grouped by sender', async () => {
+    stub.on('GET', '/api/inbox', {
       inbox: [
         msg({ seq: 9, id: 'msg_9', thread: 'dm:ag_JAMES:ag_MAYA', thread_label: 'dm @james ↔ @maya', kind: 'chat', from_id: 'ag_MAYA', from_handle: 'maya', text: 'the API is at /api/v2', created_at: Date.UTC(2026, 9, 13, 14, 5, 7) }),
         msg({ seq: 4, id: 'msg_4', text: 'Build the login page\nwith tests', card_id: 3 }),
       ],
     });
-    const r = await run(['update', 'progress'], { url, env: AGENT });
+    const r = await run(['inbox'], { url, env: AGENT });
     ok(r);
     expect(r.stdout).toBe([
-      'Update posted.',
-      '',
       '━━ 📨 2 new messages for @james ━━',
       '── @captain (DM) ──',
       '  14:02:00  task · card #3',
@@ -235,19 +232,13 @@ describe('done / ask / wait', () => {
     expect(r.stdout.trim()).toBe('Reported. This session will now close — stop here; you will be resumed with full memory when someone messages you.');
   });
 
-  test('done ended:false prints the inbox then "Not sent"', async () => {
-    stub.on('POST', '/api/done', { ended: false, message: msg({ kind: 'result' }), inbox: [msg({ kind: 'chat', text: 'also add tests' })] });
+  test('done ended:false names unread senders and asks for an explicit read', async () => {
+    stub.on('POST', '/api/done', { ended: false, message: null, inbox: [], unread: [{ id: 'm1', seq: 1, from_handle: 'captain', kind: 'chat' }] });
     const r = await run(['done', 'all good'], { url, env: AGENT });
     ok(r);
     expect(stub.find('POST', '/api/done')[0].body).toEqual({ summary: 'all good' });
-    expect(r.stdout).toBe([
-      '━━ 📨 1 new message for @james ━━',
-      '── @captain (DM) ──',
-      '  14:02:00  DM  also add tests',
-      '━━ Act on these before you finish. ━━',
-      'Not sent: new messages arrived (above). Handle them, then run sparrow done again with your complete report.',
-      '',
-    ].join('\n'));
+    expect(r.stdout.trim()).toBe('Not sent: unread messages from @captain; run sparrow inbox, then report again (done).');
+    expect(r.stderr).toContain('1 unread for @james: @captain chat. Read: sparrow inbox');
   });
 
   test('done --status must be ok|blocked|failed', async () => {
@@ -692,24 +683,27 @@ describe('V3 fixes', () => {
     expect(r.stderr).toContain('put it after --');
   });
 
-  test('Bug 2: piggybacked inbox survives an API error (text and --json)', async () => {
+  test('Bug 2: unread notice survives an API error (text and --json)', async () => {
     const pending = msg({ from_id: 'ag_JAMES', from_handle: 'james', kind: 'result', meta: { status: 'ok' }, text: 'login done', to_handles: ['captain'] });
-    stub.on('POST', '/api/captains/register', { agent: captain, project, inbox: [pending] });
+    stub.on('POST', '/api/captains/register', { agent: captain, project, inbox: [], unread: [{ id: pending.id, seq: pending.seq, from_handle: pending.from_handle, kind: pending.kind, status: 'ok' }] });
     stub.on('POST', '/api/hire', { error: 'unknown resume "nosuch"; available: builder' }, 404);
     let r = await run(['hire', 'nosuch', 'x'], { url });
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('unknown resume "nosuch"');
-    expect(r.stdout).toContain('── @james · done ok ──\n  14:02:00  result (ok)\n    login done');
+    expect(r.stdout).not.toContain('login done');
+    expect(r.stderr.trim().split('\n').at(-1)).toContain('1 unread for @captain: @james result(ok)');
     r = await run(['hire', 'nosuch', 'x', '--json'], { url });
     expect(r.code).toBe(1);
     const j = JSON.parse(r.stdout);
     expect(j.error).toContain('unknown resume');
-    expect(j.inbox.map((m: any) => m.text)).toEqual(['login done']);
+    expect(j.inbox).toEqual([]);
+    expect(j.unread).toMatchObject([{ from_handle: 'james', kind: 'result', status: 'ok' }]);
     // generic (non-API) error path: the server answers with broken JSON
     stub.on('POST', '/api/hire', () => new Response('<html>oops', { status: 200 }));
     r = await run(['hire', 'builder', 'x'], { url });
     expect(r.code).toBe(1);
-    expect(r.stdout).toContain('login done');
+    expect(r.stdout).not.toContain('login done');
+    expect(r.stderr).toContain('1 unread');
   });
 
   test('Bug 3: text is not trimmed; stdin loses exactly one trailing newline', async () => {
@@ -735,42 +729,42 @@ describe('V3 fixes', () => {
   });
 
   test('A1: ended:false wording for done / ask / wait', async () => {
-    const res = { ended: false, message: null, inbox: [msg({ kind: 'chat', text: 'one more thing' })] };
+    const res = { ended: false, message: null, inbox: [], unread: [{ id: 'm1', seq: 1, from_handle: 'captain', kind: 'chat' }] };
     stub.on('POST', '/api/done', res);
     stub.on('POST', '/api/ask', res);
     stub.on('POST', '/api/wait', res);
     const lines = await Promise.all([['done', 'x'], ['ask', 'q?'], ['wait']].map(async (a) =>
       (await run(a, { url, env: AGENT })).stdout.trim().split('\n').at(-1)));
     expect(lines).toEqual([
-      'Not sent: new messages arrived (above). Handle them, then run sparrow done again with your complete report.',
-      'Not sent: new messages arrived (above). Handle them; if you still need an answer, run sparrow ask again.',
-      'Not sent: new messages arrived (above). Handle them, then run sparrow wait again if you are still waiting.',
+      'Not sent: unread messages from @captain; run sparrow inbox, then report again (done).',
+      'Not sent: unread messages from @captain; run sparrow inbox, then report again (ask).',
+      'Not sent: unread messages from @captain; run sparrow inbox, then report again (wait).',
     ]);
   });
 });
 
-describe('V1 bug 5: captain inbox --wait with messages already piggybacked by register', () => {
+describe('V1 bug 5: captain inbox --wait with unread messages at register', () => {
   test('prints them at once without long-polling; never says "No new messages"', async () => {
     const notice = msg({ from_id: 'system', from_handle: 'system', kind: 'system', text: '@james stopped without reporting', to_handles: ['captain'] });
-    stub.on('POST', '/api/captains/register', { agent: captain, project, inbox: [notice] });
-    stub.on('GET', '/api/inbox', async () => { await Bun.sleep(8000); return { inbox: [] }; });
+    stub.on('POST', '/api/captains/register', { agent: captain, project, inbox: [], unread: [{ id: notice.id, seq: notice.seq, from_handle: notice.from_handle, kind: notice.kind }] });
+    stub.on('GET', '/api/inbox', { inbox: [notice], unread: [], team: [] });
     const t = Date.now();
     const r = await run(['inbox', '--wait', '8'], { url });
     ok(r);
     expect(Date.now() - t).toBeLessThan(3000);
-    expect(stub.find('GET', '/api/inbox').length).toBe(0);
+    expect(stub.find('GET', '/api/inbox').length).toBe(1);
     expect(r.stdout).toContain('── @james ──\n  14:02:00  system  @james stopped without reporting');
     expect(r.stdout).not.toContain('No new messages');
     const j = JSON.parse((await run(['--json', 'inbox', '--wait', '8'], { url })).stdout);
     expect(j.inbox.map((m: any) => m.text)).toEqual(['@james stopped without reporting']);
   }, 20_000);
 
-  test('only quiet messages piggybacked (updates, FYI) → still long-polls; prints them with what arrives', async () => {
+  test('only quiet messages pending (updates, FYI) → still long-polls; prints them with what arrives', async () => {
     const upd = msg({ seq: 3, id: 'm3', from_id: 'ag_JAMES', from_handle: 'james', kind: 'update', text: 'half way', to_handles: [] });
     const fyi = msg({ seq: 4, id: 'm4', from_id: 'system', from_handle: 'system', kind: 'system', meta: { about: 'ag_JAMES', fyi: true }, text: '@james crashed (exit 1); restarting on the same session.', to_handles: [] });
-    stub.on('POST', '/api/captains/register', { agent: captain, project, inbox: [upd, fyi] });
+    stub.on('POST', '/api/captains/register', { agent: captain, project, inbox: [], unread: [upd, fyi].map((m) => ({ id: m.id, seq: m.seq, from_handle: m.from_handle, kind: m.kind })) });
     stub.on('GET', '/api/inbox', {
-      inbox: [msg({ seq: 7, id: 'm7', from_id: 'ag_JAMES', from_handle: 'james', kind: 'result', meta: { status: 'ok' }, text: 'done', to_handles: ['captain'] })],
+      inbox: [upd, fyi, msg({ seq: 7, id: 'm7', from_id: 'ag_JAMES', from_handle: 'james', kind: 'result', meta: { status: 'ok' }, text: 'done', to_handles: ['captain'] })],
       team: [],
     });
     const r = await run(['inbox', '--wait', '8'], { url });
