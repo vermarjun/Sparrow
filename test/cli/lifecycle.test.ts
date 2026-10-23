@@ -32,13 +32,16 @@ function setup(port: number) {
   const home = tempDir(`sparrow-cli-lifecycle-${TEST_TAG}-`);
   HOMES.add(home);
   const bin = join(home, 'bin'); mkdirSync(bin);
-  writeFileSync(join(bin, 'open'), '#!/bin/sh\nprintf "%s\\n" "$@" >> "$SPARROW_HOME/opened"\n');
-  chmodSync(join(bin, 'open'), 0o755);
+  // macOS opens with `open`; Linux tries `xdg-open` only when a display is set (src/cli/platform.ts). Stub both.
+  for (const opener of ['open', 'xdg-open']) {
+    writeFileSync(join(bin, opener), '#!/bin/sh\nprintf "%s\\n" "$@" >> "$SPARROW_HOME/opened"\n');
+    chmodSync(join(bin, opener), 0o755);
+  }
   const web = join(home, 'web'); mkdirSync(web);
   writeFileSync(join(web, 'package.json'), JSON.stringify({ name: 'stub-ui', scripts: { build: 'mkdir -p dist; echo ui > dist/index.html' } }));
   return { home, env: {
     SPARROW_HOME: home, SPARROW_PORT: String(port), SPARROW_TMUX_SOCKET: SOCKET, SPARROW_TMUX_PREFIX: PREFIX,
-    SPARROW_WEB_DIR: web, PATH: `${bin}:${process.env.PATH}`,
+    SPARROW_WEB_DIR: web, PATH: `${bin}:${process.env.PATH}`, DISPLAY: ':99',
   } };
 }
 

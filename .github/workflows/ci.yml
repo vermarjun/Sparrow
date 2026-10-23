@@ -13,33 +13,37 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     env:
-      HOME: ${{ runner.temp }}/sparrow-home
-      SPARROW_HOME: ${{ runner.temp }}/sparrow-test/home
       SPARROW_PORT: '14440'
       SPARROW_TMUX_SOCKET: sparrow-ci
       SPARROW_TMUX_PREFIX: sparrow-ci-
-      SPARROW_SKILLS_HOME: ${{ runner.temp }}/sparrow-test/skills
     steps:
       - uses: actions/checkout@v4.2.2
       - uses: oven-sh/setup-bun@v2.0.2
         with:
           bun-version: '1.3.9'
+      # The runner context is not available in job-level env, so the temp paths are exported here for later steps.
       - name: Prepare isolated home
-        run: mkdir -p "$HOME" "$SPARROW_HOME" "$SPARROW_SKILLS_HOME"
+        run: |
+          mkdir -p "$RUNNER_TEMP/sparrow-home" "$RUNNER_TEMP/sparrow-test/home" "$RUNNER_TEMP/sparrow-test/skills"
+          {
+            echo "HOME=$RUNNER_TEMP/sparrow-home"
+            echo "SPARROW_HOME=$RUNNER_TEMP/sparrow-test/home"
+            echo "SPARROW_SKILLS_HOME=$RUNNER_TEMP/sparrow-test/skills"
+          } >> "$GITHUB_ENV"
       - name: Install tmux (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y tmux
       - name: Install tmux (macOS)
         if: runner.os == 'macOS'
         run: command -v tmux || brew install tmux
-      - run: bun install --frozen-lockfile
+      # `bun test test/` also matches web/test/, so the web dependencies must be installed first.
+      - run: bun install --frozen-lockfile && (cd web && bun install --frozen-lockfile)
       - run: bun run typecheck
       - run: bun test test/
       - run: bun run test:packaging
       - name: Test and build web
         working-directory: web
         run: |
-          bun install --frozen-lockfile
           bun test
           bun run build
       - name: Build the host binary and smoke-test it

@@ -31,8 +31,11 @@ function writeSkill(root: string, folder: string, name: string, body = valid(nam
   return dir;
 }
 
+// Like the importer itself: ignore the system git config (CI images install git-lfs filters there) and never smudge LFS pointers.
+const GIT_ENV = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_LFS_SKIP_SMUDGE: '1' };
+
 function git(cwd: string, ...args: string[]) {
-  const result = Bun.spawnSync(['git', '-C', cwd, ...args], { stdout: 'pipe', stderr: 'pipe' });
+  const result = Bun.spawnSync(['git', '-C', cwd, ...args], { stdout: 'pipe', stderr: 'pipe', env: GIT_ENV });
   if (result.exitCode !== 0) throw new Error(`git ${args.join(' ')} failed: ${result.stderr.toString()}`);
   return result.stdout.toString().trim();
 }
@@ -422,18 +425,16 @@ test('expired cleanup removes only expired import folders inside Sparrow staging
 
 test('Git clone and update-check timeouts finish while the remote socket hangs', async () => {
   const { base, paths } = sandbox();
-  const listener = Bun.spawn(['python3', join(import.meta.dir, '../fixtures/skills/phase3/blackhole.py')], {
-    stdin: 'ignore', stdout: 'ignore', stderr: 'ignore',
-  });
+  // A remote that accepts connections and never answers, on a free port, already listening when the clone starts.
+  const listener = Bun.listen({ hostname: '127.0.0.1', port: 0, socket: { data() {} } });
+  const url = `git://127.0.0.1:${listener.port}/blackhole.git`;
   try {
-    await Bun.sleep(100);
-    expect(listener.exitCode).toBeNull();
     const started = Date.now();
-    await expect(previewSource('git://127.0.0.1:4481/blackhole.git', paths, process.env, 150)).rejects.toThrow(/timed out after 150 ms/);
+    await expect(previewSource(url, paths, process.env, 150)).rejects.toThrow(/timed out after 150 ms/);
     expect(Date.now() - started).toBeLessThan(2_000);
 
     writeManifest({ version: 1, skills: { hanging: { harnesses: [], source: {
-      source: 'blackhole', sourceType: 'git', sourceUrl: 'git://127.0.0.1:4481/blackhole.git',
+      source: 'blackhole', sourceType: 'git', sourceUrl: url,
       skillPath: 'hanging/SKILL.md', skillFolderHash: 'a'.repeat(64),
     } } } }, paths.library, paths);
     const updateStarted = Date.now();
@@ -444,8 +445,7 @@ test('Git clone and update-check timeouts finish while the remote socket hangs',
     expect(updateResponse.status).toBe(200);
     expect(updates).toEqual([expect.objectContaining({ name: 'hanging', available: false, error: expect.stringMatching(/timed out after 150 ms/) })]);
   } finally {
-    listener.kill();
-    await listener.exited;
+    listener.stop(true);
     rmSync(base, { recursive: true, force: true });
   }
 });

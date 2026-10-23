@@ -11,8 +11,6 @@
 - **Uninstall.** `sparrow uninstall` removes the link, skills, plugins and app folder; `--purge` also deletes `$SPARROW_HOME`. It refuses while the server runs.
 - **Docs and community files.** Getting started, concepts, CLI reference, configuration, troubleshooting and releasing guides; SECURITY, CONTRIBUTING, CODE_OF_CONDUCT and LICENSE (MIT); issue and pull request templates; `AGENTS.md` for coding agents.
 
-## Unreleased
-
 - Two helper resumes. `deckhand` (Haiku 5.5, medium effort) does mechanical work cheaply and fast and is **one-shot**: the server retires it the moment it reports, so its context never grows. `advisor` (Opus 5.5, medium effort) is a read-only senior who answers one question per consult and stays available for follow-ups. Builders, the Codex builder, verifiers and sub-captains may hire both; researchers may hire the deckhand.
 - New resume flags `helper: true` and `one_shot: true`. A helper never hires. An agent allowed to hire only helpers is not a captain, so it gets no captain card rights.
 - Default `max_depth` is now 3, so a helper can sit under a sub-captain's builder: you → sub-captain → builder → helper.
