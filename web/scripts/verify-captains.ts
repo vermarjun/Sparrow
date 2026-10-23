@@ -49,9 +49,9 @@ const routes: { name: string; hash: string }[] = [
   { name: 'home', hash: 'captains' },
   { name: 'captain-ag_cap-activity', hash: 'captain/ag_cap' },
   { name: 'captain-ag_orion-team', hash: 'captain/ag_orion?tab=team' },
-  { name: 'captain-ag_orion-sheet', hash: 'captain/ag_orion?tab=team&agent=ag_zoe' },
+  { name: 'captain-ag_orion-sheet', hash: 'captain/ag_orion?tab=team&agent=ag_sage' },
   { name: 'captain-ag_cap-cards', hash: 'captain/ag_cap?tab=cards' },
-  { name: 'captain-ag_altair', hash: 'captain/ag_altair' },
+  { name: 'captain-ag_vega', hash: 'captain/ag_vega' },
   { name: 'board', hash: 'board' },
   { name: 'resumes', hash: 'resumes' },
   { name: 'resumes-builder', hash: 'resumes/builder' },
@@ -65,6 +65,8 @@ const redirects: { name: string; hash: string }[] = [
 ]
 
 const isSkill404 = (t: string) => t.includes('/api/skills') && (t.includes('404') || t.includes('Failed to load resource'))
+// GET /api/resumes/<slug>/test answers 404 until a test has run: the editor expects it.
+const isNoTestRun = (url: string) => /\/api\/resumes\/[^/]+\/test(\?|$)/.test(url)
 
 const browser = await puppeteer.launch({ executablePath: CHROME, args: ['--no-sandbox'], headless: true })
 
@@ -97,9 +99,9 @@ for (const theme of THEMES) {
   for (const size of SIZES) {
     const page = await newPage(theme, size)
     const bag: ErrBag = { console: [], pageerr: [], resp: [] }
-    page.on('console', (m) => { if (m.type() === 'error' && !isSkill404(m.text())) bag.console.push(m.text()) })
+    page.on('console', (m) => { if (m.type() === 'error' && !isSkill404(m.text()) && !isNoTestRun(m.location().url ?? '')) bag.console.push(m.text()) })
     page.on('pageerror', (e) => bag.pageerr.push(String(e)))
-    page.on('response', (r) => { if (r.status() >= 400 && !r.url().includes('/api/skills')) bag.resp.push(`${r.status()} ${r.url()}`) })
+    page.on('response', (r) => { if (r.status() >= 400 && !r.url().includes('/api/skills') && !isNoTestRun(r.url())) bag.resp.push(`${r.status()} ${r.url()}`) })
 
     for (const r of routes) {
       bag.console.length = 0; bag.pageerr.length = 0; bag.resp.length = 0
@@ -123,9 +125,9 @@ for (const theme of THEMES) {
 {
   const page = await newPage('light', { w: 1440, h: 900 })
   const bag: ErrBag = { console: [], pageerr: [], resp: [] }
-  page.on('console', (m) => { if (m.type() === 'error' && !isSkill404(m.text())) bag.console.push(m.text()) })
+  page.on('console', (m) => { if (m.type() === 'error' && !isSkill404(m.text()) && !isNoTestRun(m.location().url ?? '')) bag.console.push(m.text()) })
   page.on('pageerror', (e) => bag.pageerr.push(String(e)))
-  page.on('response', (r) => { if (r.status() >= 400 && !r.url().includes('/api/skills')) bag.resp.push(`${r.status()} ${r.url()}`) })
+  page.on('response', (r) => { if (r.status() >= 400 && !r.url().includes('/api/skills') && !isNoTestRun(r.url())) bag.resp.push(`${r.status()} ${r.url()}`) })
   const active = () => page.evaluate(() => (document.activeElement as HTMLElement | null)?.getAttribute('aria-label') ?? document.activeElement?.tagName ?? '')
   const press = async (key: string, mod?: 'Meta') => { if (mod) await page.keyboard.down(mod); await page.keyboard.press(key as never); if (mod) await page.keyboard.up(mod); await sleep(250) }
   const asideW = () => page.evaluate(() => Math.round(document.querySelector('aside')!.getBoundingClientRect().width))

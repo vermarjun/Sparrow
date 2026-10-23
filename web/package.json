@@ -10,7 +10,8 @@
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b",
     "test": "bun test test/",
-    "shots": "bun scripts/shots.ts",
+    "shots": "bun scripts/readme-shots.ts",
+    "shots:terminal": "bun scripts/terminal-shots.ts",
     "lint": "oxlint",
     "preview": "vite preview"
   },

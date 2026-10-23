@@ -73,7 +73,7 @@ try {
 
   // 1. drag A (todo) -> Review: exactly one PATCH, server agrees
   writes.length = 0
-  const review = await page.$eval('[data-column="review"]', (e) => { const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + 120 } })
+  const review = await page.$eval('[data-column="review"]', (e) => { const r = e.getBoundingClientRect(); return { x: r.x + r.width * 0.85, y: r.y + 120 } })
   await dragTo(`[data-card-id="${a.id}"]`, review)
   const ga = await get(a.id)
   check('drag to Review: one PATCH', writes.length === 1 && writes[0].method === 'PATCH', writes)

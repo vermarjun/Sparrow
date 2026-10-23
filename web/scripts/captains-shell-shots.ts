@@ -210,9 +210,9 @@ if (want('keys')) {
     // project switcher keeps the page type
     await go(page, 'board')
     await page.click('[aria-label="Switch project"]'); await sleep(300)
-    await page.evaluate(() => [...document.querySelectorAll('[cmdk-item]')].find((x) => x.textContent?.includes('sparrow'))?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await page.evaluate(() => [...document.querySelectorAll('[cmdk-item]')].find((x) => x.textContent?.includes('tortuga-ledger'))?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     await sleep(500)
-    check('project switch keeps the Board page', (await hash()).startsWith('#/board') && (await hash()).includes('p=sparrow'), await hash())
+    check('project switch keeps the Board page', (await hash()).startsWith('#/board') && (await hash()).includes('p=tortuga-ledger'), await hash())
     await go(page, 'captains')
 
     // New captain: inline errors, then success

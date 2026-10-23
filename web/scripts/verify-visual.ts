@@ -13,8 +13,8 @@ const CHROME = chromeExecutable()
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const routes = [
-  'captains', 'captain/ag_cap', 'captain/ag_orion?tab=team', 'captain/ag_orion?tab=team&agent=ag_zoe',
-  'captain/ag_cap?tab=cards', 'captain/ag_altair', 'board', 'resumes', 'resumes/builder', 'skills', 'doctor', 'settings',
+  'captains', 'captain/ag_cap', 'captain/ag_orion?tab=team', 'captain/ag_orion?tab=team&agent=ag_sage',
+  'captain/ag_cap?tab=cards', 'captain/ag_vega', 'board', 'resumes', 'resumes/builder', 'skills', 'doctor', 'settings',
 ]
 
 const AUDIT = () => {

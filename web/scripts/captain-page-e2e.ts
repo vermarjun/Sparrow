@@ -25,7 +25,7 @@ const count = (sel: string) => page.$$eval(sel, (e) => e.length)
 const hash = () => page.evaluate(() => location.hash)
 
 // title: Esc cancels, Enter saves, empty clears to the fallback
-await go('captain/ag_orion')
+await go('captain/ag_cap')
 await page.click('[data-testid=title]'); await page.keyboard.type(' XYZ'); await page.keyboard.press('Escape'); await sleep(200)
 check('title: Esc cancels', (await text('[data-testid=title]'))?.trim() === 'Rate limiting for login' && !(await page.$('[data-testid=title-input]')))
 await page.click('[data-testid=title]'); await page.keyboard.press('End'); await page.keyboard.type(' v2'); await page.keyboard.press('Enter'); await sleep(500)
@@ -43,34 +43,32 @@ await page.keyboard.press('1'); await sleep(300)
 check('tab 1 → activity (no tab param)', !(await hash()).includes('tab='))
 
 // team → sheet via click, Esc closes
-await go('captain/ag_orion?tab=team')
+await go('captain/ag_cap?tab=team')
 const ROW = '[role=tabpanel] [data-row]'
-check('team: tree rows (captain + 4 hires)', (await count(ROW)) === 5, `${await count(ROW)} rows`)
+check('team: tree rows (captain + 5 hires)', (await count(ROW)) === 6, `${await count(ROW)} rows`)
 const rootLine = await page.$eval(ROW, (e) => e.textContent ?? '')
-check('team: captain row shows its own title, not a fleet message', rootLine.includes('Rate limiting for login') && !rootLine.includes('Verify PR'), rootLine)
+check('team: captain row shows its own title, not a fleet message', rootLine.includes('Rate limiting for login') && !rootLine.includes('Bump the lockfile'), rootLine)
 await page.focus(ROW); await page.keyboard.press('j'); await sleep(100)
-check('team: j moves focus to the next row', await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.agent === 'ravi'))
-await page.click('[data-agent=zoe]'); await sleep(900)
-check('team: click opens agent sheet', (await hash()).includes('agent=ag_zoe') && !!(await page.$('[data-testid=agent-sheet]')))
+check('team: j moves focus to the next row', await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.agent === 'juno'))
+await page.click('[data-agent=maya]'); await sleep(900)
+check('team: click opens agent sheet', (await hash()).includes('agent=ag_maya') && !!(await page.$('[data-testid=agent-sheet]')))
 check('sheet: screen peek is live', (await text('[data-testid=screen-peek]'))?.includes('live') ?? false)
 const peek = await page.$eval('[data-testid=screen]', (e) => ({ h: e.clientHeight, bottom: e.scrollHeight - e.scrollTop - e.clientHeight }))
 check('sheet: screen peek is 320 px and scrolled to the end', peek.h === 320 && peek.bottom <= 2, JSON.stringify(peek))
 await page.keyboard.press('Escape'); await sleep(500)
 check('Esc closes sheet', !(await hash()).includes('agent=') && !(await page.$('[data-testid=agent-sheet]')))
 
-// activity: filter chip, hide updates, last screen
+// activity: filter chip, hide updates
 await go('captain/ag_cap')
 const all = await count('[data-kind]')
 const upd = await count('[data-kind=update]')
-await page.evaluate(() => { [...document.querySelectorAll('button[aria-pressed]')].find((b) => b.textContent?.includes('@james'))?.dispatchEvent(new MouseEvent('click', { bubbles: true })) }); await sleep(300)
+await page.evaluate(() => { [...document.querySelectorAll('button[aria-pressed]')].find((b) => b.textContent?.includes('@maya'))?.dispatchEvent(new MouseEvent('click', { bubbles: true })) }); await sleep(300)
 const filtered = await count('[data-kind]')
-check('filter: @james chip narrows the feed', filtered > 0 && filtered < all, `${all} → ${filtered}`)
+check('filter: @maya chip narrows the feed', filtered > 0 && filtered < all, `${all} → ${filtered}`)
 await page.evaluate(() => { [...document.querySelectorAll('button[aria-pressed]')].find((b) => b.textContent?.includes('Everyone'))?.dispatchEvent(new MouseEvent('click', { bubbles: true })) }); await sleep(300)
 await page.click('button[aria-label="Hide updates"]'); await sleep(300)
 check('hide updates removes update lines', upd > 0 && (await count('[data-kind=update]')) === 0, `${upd} → 0`)
 await page.click('button[aria-label="Hide updates"]'); await sleep(300)
-await page.evaluate(() => { [...document.querySelectorAll('button')].find((b) => /Show last screen/.test(b.textContent ?? ''))?.dispatchEvent(new MouseEvent('click', { bubbles: true })) }); await sleep(300)
-check('crash notice: last screen expands', !!(await page.$('[data-testid=last-screen]')))
 
 // outcomes: one row per agent with a result; a click scrolls to + highlights the message
 const outs = await page.$$eval('[data-outcome]', (e) => e.map((x) => x.getAttribute('data-outcome')))

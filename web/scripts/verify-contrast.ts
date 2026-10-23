@@ -10,7 +10,7 @@ const URL_ = values.url ?? process.env.SPARROW_WEB_URL ?? 'http://127.0.0.1:4183
 const PROJECT = values.project ?? process.env.SPARROW_DEMO_PROJECT ?? 'tortuga'
 const CHROME = chromeExecutable()
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
-const routes = ['captains', 'captain/ag_cap', 'captain/ag_orion?tab=team', 'captain/ag_orion?tab=team&agent=ag_zoe', 'captain/ag_cap?tab=cards', 'board', 'resumes', 'skills', 'doctor', 'settings']
+const routes = ['captains', 'captain/ag_cap', 'captain/ag_orion?tab=team', 'captain/ag_orion?tab=team&agent=ag_sage', 'captain/ag_cap?tab=cards', 'board', 'resumes', 'skills', 'doctor', 'settings']
 
 const fn = () => {
   const out: any = { total: 0, worst: [] }
