@@ -223,10 +223,10 @@ describe('cards (tracking only)', () => {
     const ctx = await setup();
     const a = await hire(ctx, 'builder', 'x');
     const card = (await ctx.req('POST', '/api/cards', { title: 'Visible' }, ctx.captain.id)).body.card;
-    const got = await ctx.req('GET', `/api/cards/PLU-${card.id}`, undefined, a.id);
+    const got = await ctx.req('GET', `/api/cards/TOR-${card.id}`, undefined, a.id);
     expect(got.status).toBe(200);
     expect(got.body.id).toBe(card.id);
-    const missing = await ctx.req('GET', '/api/cards/PLU-999', undefined, a.id);
+    const missing = await ctx.req('GET', '/api/cards/TOR-999', undefined, a.id);
     expect(missing.status).toBe(404);
     ctx.store.insertProject({ id: 'other', name: 'other', root: `${ctx.root}/other`, created_at: ctx.clock.t });
     const elsewhere = (await ctx.req('POST', '/api/cards', { title: 'Private', project: 'other' })).body.card;

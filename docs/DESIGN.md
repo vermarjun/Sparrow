@@ -25,7 +25,7 @@ Code layout: `src/shared` (types, config), `src/server` (state, API, lifecycle),
 | **Resume** | role card `~/.sparrow/resumes/<slug>.md` (seeded from `assets/resumes/`). |
 | **Agent** | one hire of a resume in a project. Has a permanent id (`ag_…`, the "phone number"), a handle (`@james`), a harness session id (the "SIM"). |
 | **Captain** | one of the user's own sessions (`kind: human`, depth 0, never spawned; one row per harness session, many per project) — or an agent whose `can_hire` names at least one non-helper resume (a sub-captain). |
-| **Fleet** | a human captain plus everyone hired under it, transitively (`fleet_id` = the captain's id). Messages, releases and card assignments never cross fleets; the board stays shared. Design: `docs/plans/multi-captain.md`. |
+| **Fleet** | a human captain plus everyone hired under it, transitively (`fleet_id` = the captain's id). Messages, releases and card assignments never cross fleets; the board stays shared. Design: `docs/DESIGN.md`. |
 | **Helper** | a leaf resume (`helper: true`: `deckhand`, `advisor`) other agents may be allowed to hire. It never hires (its `can_hire` is ignored), and being able to hire only helpers does not make an agent a captain (no captain card rights). |
 | **Call** | one window lifetime: spawn → `done`/`ask`/`wait`/crash/… The agent is "on a call" only while its window is open. |
 | **Delivery** | a message addressed to an agent that has not reached it yet (`pending`) or has (`delivered`). |
@@ -106,7 +106,7 @@ Permanent by design (owner decision, 17 Oct 2026): an agent is hired for one job
 `max_running` counts agents in state `working` across all projects (human captains excluded). `loadSettings()` gives all tunables: defaults, then `<SPARROW_HOME>/config.json`, then `SPARROW_SETTINGS` (env). The web **Settings** page edits them live (`src/server/settings.ts`): `PUT /api/settings` validates every value (whole numbers within each field's range; all-or-nothing), writes `config.json` atomically keeping other keys (`skills_dir`, unknown ones), and mutates the shared settings object, so every reader sees the new value at once. Raising `max_running` dequeues at once; `watchdog_ms` / `snapshot_ms` re-arm their timers. `null` resets a key (removes it from the file). Keys set by `SPARROW_SETTINGS` are read-only (409). A caller identified as an agent (`x-sparrow-agent`) gets 403; like the rest of the local API this is a guard against mistakes, not authentication.
 
 ### 3.12 Board v2: tickets, timeline, timing
-A **card** is a ticket. Display key `PLU-12` = first 3 alphanumerics of the project id + the global card id (cosmetic; ids are global). Every place that takes a card accepts `12`, `#12` or `PLU-12` (`parseCardRef`). Pure helpers (key, levels, estimates, timings, quick-win, sorts, `cardBrief`) live in `src/shared/cards.ts`, shared by server, CLI and web.
+A **card** is a ticket. Display key `TOR-12` = first 3 alphanumerics of the project id + the global card id (cosmetic; ids are global). Every place that takes a card accepts `12`, `#12` or `TOR-12` (`parseCardRef`). Pure helpers (key, levels, estimates, timings, quick-win, sorts, `cardBrief`) live in `src/shared/cards.ts`, shared by server, CLI and web.
 
 **Fields** (`Card` in `src/shared/types.ts`; one validation/normalisation helper serves propose, create and patch; errors are 400 with the field and what is allowed):
 | Field | Meaning |
@@ -144,7 +144,7 @@ Old rows (no migration) read with column defaults: empty sections, `history: []`
 | Any agent | `propose` with every ticket field (always lands in `proposed`; never state or assignee) |
 | Anyone else | read only |
 
-**Reading.** `GET /api/cards/:id` returns one `Card` (`PLU-12` accepted; 404 when missing or in another project for an agent caller). The CLI's `card show` prints `cardBrief` plus a `Timing:` line and the last 8 events; `card pick` (a captain) assigns the caller, moves to `in_progress` and prints the brief with the next step: `card move PLU-12 review` when the build is done, never `done`.
+**Reading.** `GET /api/cards/:id` returns one `Card` (`TOR-12` accepted; 404 when missing or in another project for an agent caller). The CLI's `card show` prints `cardBrief` plus a `Timing:` line and the last 8 events; `card pick` (a captain) assigns the caller, moves to `in_progress` and prints the brief with the next step: `card move TOR-12 review` when the build is done, never `done`.
 
 ## 4. HTTP API (JSON, 127.0.0.1 only, no auth)
 
@@ -178,7 +178,7 @@ Identity header `x-sparrow-agent`; hooks add `x-sparrow-call`. Every response to
 | GET `/api/threads` | `?project=` | `{thread, label, members: string[], last: MessageView, count}[]` |
 | POST `/api/propose` | `ProposeReq` (title + any ticket field) | `{card}` + inbox (state `proposed`) |
 | GET `/api/cards` | `?project=` | `Card[]` |
-| GET `/api/cards/:id` | `:id` is `12`, `#12` or `PLU-12` | `Card` (404 when missing / other project for an agent) |
+| GET `/api/cards/:id` | `:id` is `12`, `#12` or `TOR-12` | `Card` (404 when missing / other project for an agent) |
 | POST `/api/cards` | `CardCreateReq` (+`project` when no caller) | `{card}` — captains only (or UI with no caller) |
 | PATCH `/api/cards/:id` | `CardPatchReq` (any ticket field, `state`, `position`, `assignee` (`'me'` ok), `note`, `check {index, done}`, `later`) | `{card}`. Captains and the UI: all; the assignee: `note`, `review`, `check`, `blocked_on` (§3.12). NEVER spawns or messages. `card.updated` SSE on every change. |
 | POST `/api/release` | `ReleaseReq` | `{agent}` |
@@ -228,7 +228,7 @@ sparrow card block <N> "<who/what>" | unblock <N> | later <N> [--undo] | urgent 
 sparrow release <@handle>
 sparrow hook <kind> [...]                          internal (harness hooks)
 ```
-- Card refs (`<N>`, and `--card` on hire/send/update) accept `12`, `#12` or `PLU-12`. `card list` groups by column, shelved cards under a `· later ·` sub-heading, one line per card: `PLU-12  ‼ ⛔ Title · ui · R high/E low · ~2h · 3d · @maya` (‼ urgent, ⛔ blocked with `blocked on …`, ★ quick win).
+- Card refs (`<N>`, and `--card` on hire/send/update) accept `12`, `#12` or `TOR-12`. `card list` groups by column, shelved cards under a `· later ·` sub-heading, one line per card: `TOR-12  ‼ ⛔ Title · ui · R high/E low · ~2h · 3d · @maya` (‼ urgent, ⛔ blocked with `blocked on …`, ★ quick win).
 - Long text: any text argument may be `-` to read stdin, so agents can use a quoted heredoc: `sparrow done - <<'EOF' … EOF`.
 - `sparrow hire` uses the resume's configured model and effort. Pass `--model` or `--effort` only for an explicit user request; a value that differs from the resume is shown as an `Override:` line in the CLI output, recorded in the task message's `meta.override`, and included in the server hire log.
 - Every command prints its result, then, if `inbox` is non-empty, a block grouped by the agent the messages are about (sender, or `meta.about` for system notices), with messages in seq order and `hh:mm:ss` times. A group containing a result gets `── @handle · resume · done <status> · call <duration> ──` (duration comes from result `meta.call_ms`); a group containing only DMs, tasks, or questions gets `── @handle (DM) ──`; other groups get `── @handle · resume ──`:
@@ -257,7 +257,7 @@ sparrow hook <kind> [...]                          internal (harness hooks)
 
 ## 6. Harness launch
 
-Installed: Claude Code 2.1.296 (`claude`), Codex 0.162.1 (call `/opt/homebrew/bin/codex` — the zsh `codex` function auto-updates), OpenCode 1.18.33 (`/Users/vermarjun/.opencode/bin/opencode`).
+Install the harnesses you intend to use and ensure their command-line executables are on PATH.
 
 `start()` writes `~/.sparrow/agents/<agentId>/system.md`, `calls/<callId>.prompt.md`, `calls/<callId>.sh`, then `tmux new-window -d -P -F '#{window_id}' -t <session>: -n <window> -c <cwd> "bash <script>"` (creating the session with `new-session -d -s <session> -c <cwd>` if missing; honour `TMUX_SOCKET` with `-L`). The script: `cd <cwd>`; export/unset env (3.1); run the harness; then `sparrow hook exit --code $?`. Pass big texts as `"$(cat <file>)"`, never inline.
 
@@ -277,7 +277,7 @@ Per-agent skills: each driver links exactly the agent's granted skills into a pe
 - System prompt = `assets/protocol.md` rendered + `\n\n# Your role\n\n` + resume body.
 - A fresh hire receives its task in this envelope:
   ```
-  [sparrow] 1 new message for @james (project plutus):
+  [sparrow] 1 new message for @james (project tortuga):
 
   ── task from @captain · 14:02 · card #3 ──
   <task text>
@@ -286,7 +286,7 @@ Per-agent skills: each driver links exactly the agent's granted skills into a pe
   ```
 - An existing agent's envelope groups messages by the agent they are about (sender, or `meta.about` for system notices), preserving seq order inside each group. Each run of updates gets one `── updates from @handle ──` header followed by `hh:mm:ss  text` lines. Results, questions, tasks and notices each keep their own per-message header and full text:
   ```
-  [sparrow] 4 new messages for @james (project plutus):
+  [sparrow] 4 new messages for @james (project tortuga):
 
   ── updates from @maya ──
   14:02:10  schema done; next API
@@ -331,7 +331,7 @@ React + Vite + TypeScript + Tailwind + shadcn/ui (+ dnd-kit for the board). Ligh
   - **Card face**: key (mono) + category chip + age; title (2-line clamp); markers: Urgent / Blocked, Return and Effort meters, quick-win bolt, assignee with state dot, comment count. Detailed adds a one-line preview, estimate, checks progress and tags. Urgent cards get a red left accent, blocked an orange one. Hover actions: Accept / Later / Drop on Proposed, Later on To do.
   - **Later line**: Proposed and To do end with a dashed, collapsible `Later · N` divider (collapsed by default) holding the shelved cards.
   - **Drag** between columns is one `PATCH {state}` (optimistic, reverted with a toast on error); reordering within a column only in Manual sort.
-  - **Ticket sheet** (~720px): sticky header (key + copy, state pill dropdown, editable title, "Copy for agent" = `cardBrief` markdown, "Copy pick command" = `Pick up PLU-12 from the Sparrow board: run sparrow card pick PLU-12`); inline-editable properties (Urgent, Blocked, Later, Return, Effort, Estimate, Category, Tags, Assignee) and a proposed-by / age line; an orange blocked banner with Unblock; the brief sections Context, Problem, Approach, Done when (checklist with progress; ticking uses `check`), More details, each Markdown with click-to-edit (Cmd+Enter or blur saves, Esc cancels); a **Timing** panel (milestones, a stacked bar of time per state, `Estimate 2h · Active 2h 35m (1.3x over)`, reopened count); an **Activity** timeline (comments as blocks, events as compact grey lines, "Comments only" toggle, composer); and contextual footer actions (Accept, Start, Send to review, **Approve → Done** and Send back on Review, Reopen on Done).
+  - **Ticket sheet** (~720px): sticky header (key + copy, state pill dropdown, editable title, "Copy for agent" = `cardBrief` markdown, "Copy pick command" = `Pick up TOR-12 from the Sparrow board: run sparrow card pick TOR-12`); inline-editable properties (Urgent, Blocked, Later, Return, Effort, Estimate, Category, Tags, Assignee) and a proposed-by / age line; an orange blocked banner with Unblock; the brief sections Context, Problem, Approach, Done when (checklist with progress; ticking uses `check`), More details, each Markdown with click-to-edit (Cmd+Enter or blur saves, Esc cancels); a **Timing** panel (milestones, a stacked bar of time per state, `Estimate 2h · Active 2h 35m (1.3x over)`, reopened count); an **Activity** timeline (comments as blocks, events as compact grey lines, "Comments only" toggle, composer); and contextual footer actions (Accept, Start, Send to review, **Approve → Done** and Send back on Review, Reopen on Done).
   - **New ticket** dialog with every field; only the title is required. **List view**: a sortable dense table (Key, Title, State, Category, flags, Return, Effort, Est., Age, Assignee, Updated) for planning a big Proposed backlog.
   - The UI never spawns or messages anything; the user, not an agent, moves cards to Done.
 - **Chat**: WhatsApp-like, with direct message threads only (for example, "@captain ↔ @james"), last message + time. Right: bubbles; kind styling — task (blue tag), update (small, muted, no bubble), question (amber), result (green with status), system (grey centered). @mentions highlighted. Read-only.
@@ -351,7 +351,7 @@ A5 Kill an agent's window mid-work → auto-restarted once on the same session; 
 A6 An agent that ends its turn without reporting gets nudged (Claude: Stop hook block; Codex/OpenCode: typed reminder); still silent → parent gets an "unreported" notice with its last message and the window closes.
 A7 Guards: a builder cannot hire; depth 3 is refused; with max_running=1 a second hire is `queued` and starts when the first finishes.
 A8 A sub-captain hires a builder, runs `wait`, gets woken by the builder's `done`, then reports `done` to the human captain.
-A9 Board: `propose` → Proposed; captain `card move` shows live in the UI; a UI drag changes only the card (no spawn, no message). `card pick PLU-12` assigns, moves to In progress and prints the brief; the agent's `done` (ok) moves its card to Review; every move lands in `history` and the sheet's Timing panel.
+A9 Board: `propose` → Proposed; captain `card move` shows live in the UI; a UI drag changes only the card (no spawn, no message). `card pick TOR-12` assigns, moves to In progress and prints the brief; the agent's `done` (ok) moves its card to Review; every move lands in `history` and the sheet's Timing panel.
 A10 `--cwd`, `--tmux-session`, `--tmux-window` are honoured, and the respawn reuses them.
 A11 UI: Board, Chat and Agents render live data; the screen peek shows a working agent's TUI.
 

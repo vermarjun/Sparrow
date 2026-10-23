@@ -89,13 +89,13 @@ export async function run(args: string[], opts: { env?: Record<string, string | 
 
 const T0 = Date.UTC(2026, 9, 13, 14, 2, 0); // children run with TZ=UTC
 
-export const project: Project = { id: 'plutus', name: 'plutus', root: '/x/plutus', created_at: T0 };
+export const project: Project = { id: 'tortuga', name: 'tortuga', root: '/x/tortuga', created_at: T0 };
 
 export function agent(over: Partial<Agent> = {}): Agent {
   return {
-    id: 'ag_JAMES', project_id: 'plutus', handle: 'james', kind: 'agent', resume: 'builder', title: 'Builder',
+    id: 'ag_JAMES', project_id: 'tortuga', handle: 'james', kind: 'agent', resume: 'builder', title: 'Builder',
     harness: 'claude', model: 'opus', effort: 'high', can_hire: [], parent_id: 'ag_CAPTAIN', depth: 1,
-    cwd: '/x/plutus', tmux_session: 'sparrow-plutus', tmux_window: 'james', tmux_window_id: '@3',
+    cwd: '/x/tortuga', tmux_session: 'sparrow-tortuga', tmux_window: 'james', tmux_window_id: '@3',
     session_id: null, state: 'working', call_id: 'call_1', last_end_reason: null, last_update: null,
     last_update_at: null, last_seen_at: null, resume_hash: null, last_run: null, fleet_id: 'ag_CAPTAIN', captain: null, created_at: T0, updated_at: T0, ...over,
   };
@@ -110,7 +110,7 @@ export const captain = agent({
 
 export function msg(over: Partial<MessageView> = {}): MessageView {
   return {
-    seq: 1, id: 'msg_1', project_id: 'plutus', thread: 'dm:ag_CAPTAIN:ag_JAMES', from_id: 'ag_CAPTAIN', kind: 'task',
+    seq: 1, id: 'msg_1', project_id: 'tortuga', thread: 'dm:ag_CAPTAIN:ag_JAMES', from_id: 'ag_CAPTAIN', kind: 'task',
     text: 'Build the login page', mentions: ['ag_JAMES'], card_id: null, meta: {}, created_at: T0,
     from_handle: 'captain', thread_label: 'dm @captain ↔ @james', to_handles: ['james'], ...over,
   };

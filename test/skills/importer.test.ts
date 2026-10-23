@@ -51,13 +51,39 @@ function commitAll(repo: string, message: string) {
   git(repo, 'commit', '-m', message);
 }
 
-// Bare-repo fixtures are committed without their empty ref dirs (git does not track empty dirs), so use a temp copy
-// with refs/heads and refs/tags recreated; a fresh clone of Sparrow then behaves like the tree they were made in.
-function fixtureRepo(name: string) {
-  const copy = join(mkdtempSync(join(tmpdir(), 'skills-fixture-')), name);
-  cpSync(join(import.meta.dir, '../fixtures/skills/phase3/repos', name), copy, { recursive: true });
-  for (const dir of ['refs/heads', 'refs/tags']) mkdirSync(join(copy, dir), { recursive: true });
-  return copy;
+// Generate hostile Git trees locally so fixtures carry no machine paths, hooks or author metadata.
+function fixtureRepo(name: string, parent: string) {
+  const base = join(parent, name + '-source');
+  mkdirSync(base, { recursive: true });
+  const repo = initRepo(base);
+  if (name === 'evil.git') {
+    writeSkill(repo, 'skills/ok-skill', 'ok-skill');
+    writeSkill(repo, 'skills/other-skill', 'other-skill');
+    writeSkill(repo, 'ext/b', 'external-skill');
+    mkdirSync(join(repo, 'skills/ok-skill/scripts'), { recursive: true });
+    writeFileSync(join(repo, 'skills/ok-skill/scripts/run.sh'), '#!/bin/sh\nexit 1\n');
+    chmodSync(join(repo, 'skills/ok-skill/scripts/run.sh'), 0o755);
+    const outside = join(base, 'outside');
+    writeSkill(outside, 'leak-skill', 'leak-skill');
+    symlinkSync(outside, join(repo, 'evil-link'));
+    symlinkSync(join(outside, 'leak-skill'), join(repo, 'skills/leak-skill'));
+    symlinkSync('../../outside/leak-skill', join(repo, 'skills/escape-skill'));
+    symlinkSync('../ext/b', join(repo, 'skills/linked-skill'));
+    writeFileSync(join(repo, '.gitattributes'), '* filter=evil\n*.bin filter=lfs diff=lfs merge=lfs -text\n');
+    writeFileSync(join(repo, 'skills/ok-skill/big.bin'), `version https://git-lfs.github.com/spec/v1\noid sha256:${'0'.repeat(64)}\nsize 5\n`);
+    writeFileSync(join(repo, '.gitmodules'), '[submodule \"skills/sub-module\"]\n\tpath = skills/sub-module\n\turl = file:///nonexistent/fixture-submodule\n');
+    commitAll(repo, 'base fixture');
+    git(repo, 'update-index', '--add', '--cacheinfo', `160000,${git(repo, 'rev-parse', 'HEAD')},skills/sub-module`);
+  } else if (name === 'upd2.git') {
+    symlinkSync('/etc', join(repo, 'skills'));
+  } else {
+    throw new Error(`Unknown fixture repository: ${name}`);
+  }
+  if (name === 'evil.git') git(repo, 'commit', '-m', 'hostile submodule fixture');
+  else commitAll(repo, 'hostile skill fixture');
+  const bare = join(base, name);
+  git(base, 'clone', '--bare', repo, bare);
+  return bare;
 }
 
 async function withGitMirror<T>(repo: string, fn: (url: string) => Promise<T>, repoUrl = 'https://github.com/skills-test/repo.git') {
@@ -132,7 +158,7 @@ test('resolves the longest Git ref in tree URLs and rejects ambiguous paths with
 test('Git discovery contains every path inside the clone and reports symlinks instead of following them', async () => {
   const { base, paths } = sandbox();
   try {
-    const evil = fixtureRepo('evil.git');
+    const evil = fixtureRepo('evil.git', base);
     const evilWorktree = join(base, 'evil-worktree');
     git(base, 'clone', evil, evilWorktree);
     git(evilWorktree, 'config', 'user.email', 'skills-test@example.invalid');
@@ -164,7 +190,7 @@ test('Git discovery contains every path inside the clone and reports symlinks in
       expect(existsSync(executionMarker)).toBe(false);
     }, 'https://github.com/evil/repo.git');
 
-    await withGitMirror(fixtureRepo('upd2.git'), async () => {
+    await withGitMirror(fixtureRepo('upd2.git', base), async () => {
       const containerLink = await previewSource('upd2/repo', paths, process.env, 3_000);
       expect(containerLink.skills).toEqual([]);
       expect(containerLink.problems?.some((problem) => /symlink/.test(problem.code))).toBe(true);

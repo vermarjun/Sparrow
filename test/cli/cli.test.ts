@@ -84,7 +84,7 @@ describe('identity', () => {
     ok(r);
     expect(r.stdout).toContain('@james — Builder (builder) · claude·opus/high · working');
     expect(r.stdout).toContain('parent @captain');
-    expect(r.stdout).toContain('tmux attach -t sparrow-plutus \\; select-window -t james');
+    expect(r.stdout).toContain('tmux attach -t sparrow-tortuga \\; select-window -t james');
   });
 });
 
@@ -166,7 +166,7 @@ describe('hire', () => {
 describe('messages', () => {
   test('send DM normalises the handle; --card', async () => {
     stub.on('POST', '/api/send', { message: msg({ kind: 'chat' }), inbox: [] });
-    const r = await run(['send', 'james', 'use', 'redis', '--card', 'PLU-3'], { url, env: AGENT });
+    const r = await run(['send', 'james', 'use', 'redis', '--card', 'TOR-3'], { url, env: AGENT });
     ok(r);
     expect(stub.find('POST', '/api/send')[0].body).toEqual({ to: '@james', text: 'use redis', card_id: 3 });
     expect(r.stdout).toContain('Sent to @james.');
@@ -416,9 +416,9 @@ describe('roster / resumes / log / status', () => {
     stub.on('GET', '/api/agents', [maya, old, james, captain]);
     let r = await run(['roster'], { url });
     ok(r);
-    expect(stub.find('GET', '/api/agents')[0].path).toBe('/api/agents?project=plutus');
+    expect(stub.find('GET', '/api/agents')[0].path).toBe('/api/agents?project=tortuga');
     const lines = r.stdout.trim().split('\n');
-    expect(lines[0]).toBe('Project plutus — 3 agents (1 retired hidden; --all)');
+    expect(lines[0]).toBe('Project tortuga — 3 agents (1 retired hidden; --all)');
     expect(lines[1]).toMatch(/^HANDLE\s+RESUME\s+HARNESS\s+STATE\s+PARENT\s+LAST UPDATE$/);
     expect(lines[2]).toMatch(/^@captain \(you\)\s+captain\s+human\s+-\s+-\s+-$/);
     expect(lines[3]).toMatch(/^@james\s+builder\s+claude·opus\/high\s+working\s+@captain\s+did X; next Y \(3m ago\)$/);
@@ -481,11 +481,11 @@ describe('roster / resumes / log / status', () => {
     let r = await run(['log', '@james', '-n', '3'], { url, env: AGENT });
     ok(r);
     expect(stub.find('GET', '/api/messages').map((x) => x.path)).toEqual([
-      '/api/messages?project=plutus&after=0&limit=100',
-      '/api/messages?project=plutus&after=100&limit=100',
+      '/api/messages?project=tortuga&after=0&limit=100',
+      '/api/messages?project=tortuga&after=100&limit=100',
     ]);
     const lines = r.stdout.trim().split('\n');
-    expect(lines[0]).toBe('Log @james · project plutus · last 3');
+    expect(lines[0]).toBe('Log @james · project tortuga · last 3');
     expect(lines.slice(1)).toEqual(['14:02 @james → @captain: m145', '14:02 @james → @captain: m147', '14:02 @james → @captain: m149']);
     r = await run(['log', '-n', '2'], { url, env: AGENT });
     expect(r.stdout).toContain('@maya → @leo: m150');
@@ -501,7 +501,7 @@ describe('roster / resumes / log / status', () => {
     expect(r.stdout).toContain('Sparrow server: up');
     expect(r.stdout).toContain('pid 42');
     expect(r.stdout).toContain('Working (1):');
-    expect(r.stdout).toContain('tmux attach -t sparrow-plutus \\; select-window -t james');
+    expect(r.stdout).toContain('tmux attach -t sparrow-tortuga \\; select-window -t james');
     expect(stub.find('POST', '/api/captains/register').length).toBe(0);
   });
 
@@ -515,14 +515,14 @@ describe('roster / resumes / log / status', () => {
 });
 
 describe('board', () => {
-  const card = { id: 4, project_id: 'plutus', title: 'Rate limit', details: '5/15min', category: 'api', state: 'todo', position: 1, assignee_id: 'ag_JAMES', created_by: 'ag_CAPTAIN', notes: [{ at: 1, by: 'x', text: 'n1' }], created_at: 1, updated_at: 1, context: '', problem: '', approach: '', checks: [], tags: [], urgent: false, impact: null, effort: null, estimate_min: null, blocked_on: null, blocked_at: null, later_at: null, history: [] };
+  const card = { id: 4, project_id: 'tortuga', title: 'Rate limit', details: '5/15min', category: 'api', state: 'todo', position: 1, assignee_id: 'ag_JAMES', created_by: 'ag_CAPTAIN', notes: [{ at: 1, by: 'x', text: 'n1' }], created_at: 1, updated_at: 1, context: '', problem: '', approach: '', checks: [], tags: [], urgent: false, impact: null, effort: null, estimate_min: null, blocked_on: null, blocked_at: null, later_at: null, history: [] };
 
   test('propose', async () => {
     stub.on('POST', '/api/propose', { card: { ...card, state: 'proposed' }, inbox: [] });
     const r = await run(['propose', 'Add', 'rate', 'limit', '--details', 'why', '--category', 'api'], { url, env: AGENT });
     ok(r);
     expect(stub.find('POST', '/api/propose')[0].body).toEqual({ title: 'Add rate limit', details: 'why', category: 'api' });
-    expect(r.stdout).toContain('Proposed PLU-4');
+    expect(r.stdout).toContain('Proposed TOR-4');
   });
 
   test('card list / add / move / assign / note', async () => {
@@ -532,11 +532,12 @@ describe('board', () => {
     stub.on('PATCH', '/api/cards/4', { card });
     let r = await run(['card', 'list'], { url });
     ok(r);
-    expect(r.stdout).toContain('To do (1)\n  PLU-4 Rate limit · api · 20745d · @james');
+    const ageDays = Math.floor((Date.now() - card.created_at) / 86_400_000);
+    expect(r.stdout).toContain(`To do (1)\n  TOR-4 Rate limit · api · ${ageDays}d · @james`);
     expect(r.stdout).not.toContain('Old');
     r = await run(['card'], { url });
     ok(r);
-    expect(r.stdout).toContain('PLU-4 Rate limit');
+    expect(r.stdout).toContain('TOR-4 Rate limit');
 
     ok(await run(['card', 'add', 'Rate limit', '--details', 'd', '--state', 'in-progress', '--assignee', 'james'], { url }));
     expect(stub.find('POST', '/api/cards')[0].body).toEqual({ title: 'Rate limit', details: 'd', state: 'in_progress', assignee: '@james' });
@@ -577,17 +578,17 @@ describe('board', () => {
     const shown = await run(['card', 'show', '#4'], { url });
     ok(shown);
     expect(stub.find('GET', '/api/cards/4')).toHaveLength(1);
-    expect(shown.stdout).toContain('# PLU-4 · Rate limit');
+    expect(shown.stdout).toContain('# TOR-4 · Rate limit');
     expect(shown.stdout).toContain('Timing: proposed');
 
-    ok(await run(['card', 'pick', 'PLU-4'], { url }));
+    ok(await run(['card', 'pick', 'TOR-4'], { url }));
     ok(await run(['card', 'edit', '#4', '--title', 'Cap requests', '--context', 'why', '--check', 'One', '--check', 'Two', '--tag', 'UI', '--tag', 'API',
       '--category', 'none', '--impact', 'none', '--effort', 'high', '--estimate', '90m', '--urgent', 'off', '--later', 'on', '--blocked', 'off', '--details', 'more'], { url }));
-    ok(await run(['card', 'block', 'PLU-4', 'IT access'], { url }));
+    ok(await run(['card', 'block', 'TOR-4', 'IT access'], { url }));
     ok(await run(['card', 'unblock', '#4'], { url }));
-    ok(await run(['card', 'later', 'PLU-4'], { url }));
+    ok(await run(['card', 'later', 'TOR-4'], { url }));
     ok(await run(['card', 'urgent', '#4', '--undo'], { url }));
-    ok(await run(['card', 'check', 'PLU-4', '2'], { url }));
+    ok(await run(['card', 'check', 'TOR-4', '2'], { url }));
     expect(stub.find('PATCH', '/api/cards/4').map((x) => x.body)).toEqual([
       { assignee: 'me', state: 'in_progress' },
       { title: 'Cap requests', context: 'why', checks: ['One', 'Two'], tags: ['UI', 'API'], category: null, impact: null, effort: 'high', estimate_min: '90m', blocked_on: null, urgent: false, later: true, details: 'more' },
@@ -612,7 +613,7 @@ describe('board', () => {
       ...card, state: 'in_progress', created_at: tinyBuildStarted, estimate_min: 60,
       history: [{ at: tinyBuildStarted, by: 'captain', from: 'todo', to: 'in_progress' }],
     });
-    const smallRatio = await run(['card', 'show', 'PLU-4'], { url });
+    const smallRatio = await run(['card', 'show', 'TOR-4'], { url });
     ok(smallRatio);
     expect(smallRatio.stdout).toContain('est 1h → <1m build (<0.1×)');
   });
@@ -682,7 +683,7 @@ describe('V3 fixes', () => {
     ok(await run(['hire', 'builder', '- step one', '--name', 'leo'], { url, env: AGENT }));
     expect(stub.find('POST', '/api/hire')[0].body).toMatchObject({ task: '- step one', name: 'leo' });
     // a declared string option takes a value that starts with "-"
-    stub.on('POST', '/api/propose', { card: { id: 1, project_id: 'plutus', title: 't', state: 'proposed' }, inbox: [] });
+    stub.on('POST', '/api/propose', { card: { id: 1, project_id: 'tortuga', title: 't', state: 'proposed' }, inbox: [] });
     ok(await run(['propose', 'T', '--details', '- bullet'], { url, env: AGENT }));
     expect(stub.find('POST', '/api/propose')[0].body).toEqual({ title: 'T', details: '- bullet' });
     // a flag-shaped unknown token is still a usage error, with a hint

@@ -279,7 +279,7 @@ function cardState(cmd: string, v: string): CardState {
 
 function cardIdArg(cmd: string, value: string, what = '<N>'): number {
   const id = parseCardRef(value);
-  if (id == null) throw new UsageError(cmd, `${what} must be 12, #12 or PLU-12 (got "${value}")`);
+  if (id == null) throw new UsageError(cmd, `${what} must be 12, #12 or TOR-12 (got "${value}")`);
   return id;
 }
 

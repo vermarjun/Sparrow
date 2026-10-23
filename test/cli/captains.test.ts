@@ -1,4 +1,4 @@
-// Multi-captain CLI (docs/plans/multi-captain.md §6): captains, title, captain start/resume/adopt, whoami, SPARROW_CAPTAIN_ID,
+// Multi-captain CLI (docs/DESIGN.md): captains, title, captain start/resume/adopt, whoami, SPARROW_CAPTAIN_ID,
 // the created hint, plus two harness sessions end to end against a real sandboxed server.
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
@@ -10,7 +10,7 @@ import { BIN, REPO, StubServer, agent, captain, cleanEnv, freePort, msg, project
 const T0 = Date.UTC(2026, 9, 13, 14, 2, 0);
 const CLAUDE = { CLAUDECODE: '1', CLAUDE_CODE_SESSION_ID: 'sess-A' };
 
-const resume = { cwd: '/x/plutus', harness: 'claude' as const, session_id: 'sess-A', command: "cd '/x/plutus' && claude --resume sess-A", attach: null };
+const resume = { cwd: '/x/tortuga', harness: 'claude' as const, session_id: 'sess-A', command: "cd '/x/tortuga' && claude --resume sess-A", attach: null };
 const counts = { total: 0, working: 0, queued: 0, waiting: 0, crashed: 0, idle: 0, retired: 0 };
 
 function summary(over: Record<string, unknown> = {}, a = captain): CaptainSummary {
@@ -33,8 +33,8 @@ describe('captainsTable (pure)', () => {
       summary({ status: 'working', fleet: { ...counts, total: 3, working: 2, queued: 1 }, last_activity_at: T0 + 60_000 }, orion),
       summary({ status: 'attention', unread: 2, questions: 1, resume: { ...resume, session_id: null, command: null, attach: 'tmux attach -t s' } }),
     ];
-    const lines = captainsTable(list, 'plutus', 'ag_ORION', false, now).split('\n');
-    expect(lines[0]).toBe('Captains in plutus — 2');
+    const lines = captainsTable(list, 'tortuga', 'ag_ORION', false, now).split('\n');
+    expect(lines[0]).toBe('Captains in tortuga — 2');
     expect(lines[1]).toMatch(/^@cap-orion \(you\)\s+Rate limiting for login\s+working\s+2\/3 working \+1 queued\s+1m ago$/);
     expect(lines[2]).toBe(`    resume: ${resume.command}`);
     expect(lines[3]).toMatch(/^@captain\s+\(main\)\s+attention/);
@@ -44,14 +44,14 @@ describe('captainsTable (pure)', () => {
     expect(lines.slice(4)).toEqual(['    resume: (no session id yet)', '    attach: tmux attach -t s']);
   });
   test('header counts what the default view hides', () => {
-    const h = (archived: number, empty: number) => captainsTable([summary()], 'plutus', null, false, now, { archived, empty }).split('\n')[0];
-    expect(h(1, 2)).toBe('Captains in plutus — 1 (3 hidden: 1 archived, 2 empty; --all)');
-    expect(h(0, 1)).toBe('Captains in plutus — 1 (1 hidden: 1 empty; --all)');
-    expect(h(2, 0)).toBe('Captains in plutus — 1 (2 hidden: 2 archived; --all)');
-    expect(h(0, 0)).toBe('Captains in plutus — 1');
+    const h = (archived: number, empty: number) => captainsTable([summary()], 'tortuga', null, false, now, { archived, empty }).split('\n')[0];
+    expect(h(1, 2)).toBe('Captains in tortuga — 1 (3 hidden: 1 archived, 2 empty; --all)');
+    expect(h(0, 1)).toBe('Captains in tortuga — 1 (1 hidden: 1 empty; --all)');
+    expect(h(2, 0)).toBe('Captains in tortuga — 1 (2 hidden: 2 archived; --all)');
+    expect(h(0, 0)).toBe('Captains in tortuga — 1');
   });
   test('empty list points at `sparrow captain`', () => {
-    expect(captainsTable([], 'plutus', null, true, now)).toBe('Captains in plutus — 0 (incl. archived and empty)\nNo captains yet. Start one: sparrow captain --title "…"');
+    expect(captainsTable([], 'tortuga', null, true, now)).toBe('Captains in tortuga — 0 (incl. archived and empty)\nNo captains yet. Start one: sparrow captain --title "…"');
   });
 });
 
@@ -75,20 +75,20 @@ describe('commands against a stub server', () => {
     expect(r.code).toBe(0);
     expect(stub.find('POST', '/api/captains/register')).toHaveLength(0);
     const get = stub.find('GET', '/api/captains')[0];
-    expect(get.path).toBe('/api/captains?project=plutus');
-    expect(r.stdout).toContain('Captains in plutus');
+    expect(get.path).toBe('/api/captains?project=tortuga');
+    expect(r.stdout).toContain('Captains in tortuga');
     expect(r.stdout).toContain('@cap-orion');
     expect(r.stdout).not.toContain('(you)');
   });
 
   test('a bare shell asks the server to resolve cwd (worktrees map to their repo); a failing resolve is an error', async () => {
-    const wt = join(root, '..', 'plutus-feat1');
+    const wt = join(root, '..', 'tortuga-feat1');
     mkdirSync(wt, { recursive: true });
     stub.on('GET', '/api/projects/resolve', (req: any) => (req.path.includes(encodeURIComponent(wt)) ? proj : { error: 'no project' }));
     const r = await run(['captains'], { url: url(), cwd: wt });
     expect(r.code).toBe(0);
     expect(stub.find('GET', '/api/projects/resolve')[0].path).toBe(`/api/projects/resolve?cwd=${encodeURIComponent(wt)}`);
-    expect(stub.find('GET', '/api/captains')[0].path).toBe('/api/captains?project=plutus');
+    expect(stub.find('GET', '/api/captains')[0].path).toBe('/api/captains?project=tortuga');
     expect(stub.find('POST', '/api/captains/register')).toHaveLength(0);
   });
 
@@ -99,18 +99,18 @@ describe('commands against a stub server', () => {
       : [summary({}, orion)]));
     const r = await run(['captains'], { url: url(), cwd: root });
     expect(r.code).toBe(0);
-    expect(r.stdout.split('\n')[0]).toBe('Captains in plutus — 1 (2 hidden: 1 archived, 1 empty; --all)');
-    expect(stub.find('GET', '/api/captains').map((q) => q.path)).toEqual(['/api/captains?project=plutus', '/api/captains?project=plutus&archived=1&all=1']);
+    expect(r.stdout.split('\n')[0]).toBe('Captains in tortuga — 1 (2 hidden: 1 archived, 1 empty; --all)');
+    expect(stub.find('GET', '/api/captains').map((q) => q.path)).toEqual(['/api/captains?project=tortuga', '/api/captains?project=tortuga&archived=1&all=1']);
     stub.requests = [];
     const all = await run(['captains', '--all'], { url: url(), cwd: root });
-    expect(all.stdout.split('\n')[0]).toBe('Captains in plutus — 3 (incl. archived and empty)');
+    expect(all.stdout.split('\n')[0]).toBe('Captains in tortuga — 3 (incl. archived and empty)');
     expect(stub.find('GET', '/api/captains')).toHaveLength(1);
   });
 
   test('captains --all asks for archived ones; --json prints the raw list', async () => {
     const r = await run(['captains', '--all', '--json'], { url: url(), cwd: root });
     expect(r.code).toBe(0);
-    expect(stub.find('GET', '/api/captains')[0].path).toBe('/api/captains?project=plutus&archived=1&all=1');
+    expect(stub.find('GET', '/api/captains')[0].path).toBe('/api/captains?project=tortuga&archived=1&all=1');
     expect(JSON.parse(r.stdout)).toHaveLength(2);
   });
 
@@ -152,7 +152,7 @@ describe('commands against a stub server', () => {
     stub.on('POST', '/api/update', { message: msg({ kind: 'update' }), inbox: [] });
     const r = await run(['update', 'hi'], { url: url(), cwd: root, env: CLAUDE });
     expect(r.code).toBe(0);
-    expect(r.stdout.split('\n')[0]).toBe('You are @cap-orion, a new captain in plutus. Name your work: sparrow title "…"');
+    expect(r.stdout.split('\n')[0]).toBe('You are @cap-orion, a new captain in tortuga. Name your work: sparrow title "…"');
     const j = await run(['update', 'hi', '--json'], { url: url(), cwd: root, env: CLAUDE });
     expect(() => JSON.parse(j.stdout)).not.toThrow();
     expect(j.stdout).not.toContain('a new captain');
@@ -168,21 +168,21 @@ describe('commands against a stub server', () => {
   });
 
   test('captains, captain resume and card list|show never call register, even with a session id; update keeps the 409', async () => {
-    const many = { error: '2 captains in plutus: @captain, @cap-orion. Run from the captain\'s own session, or set SPARROW_CAPTAIN_ID=<id|handle>.' };
+    const many = { error: '2 captains in tortuga: @captain, @cap-orion. Run from the captain\'s own session, or set SPARROW_CAPTAIN_ID=<id|handle>.' };
     stub.on('POST', '/api/captains/register', many, 409);
     stub.on('GET', '/api/agents', [captain, orion]);
     stub.on('GET', '/api/cards', []);
-    stub.on('GET', '/api/cards/7', { id: 7, project_id: 'plutus', title: 'T', details: '', category: null, state: 'todo', position: 1, assignee_id: null, created_by: 'ag_CAPTAIN', notes: [], created_at: 1, updated_at: 1, context: '', problem: '', approach: '', checks: [], tags: [], urgent: false, impact: null, effort: null, estimate_min: null, blocked_on: null, blocked_at: null, later_at: null, history: [] });
+    stub.on('GET', '/api/cards/7', { id: 7, project_id: 'tortuga', title: 'T', details: '', category: null, state: 'todo', position: 1, assignee_id: null, created_by: 'ag_CAPTAIN', notes: [], created_at: 1, updated_at: 1, context: '', problem: '', approach: '', checks: [], tags: [], urgent: false, impact: null, effort: null, estimate_min: null, blocked_on: null, blocked_at: null, later_at: null, history: [] });
     stub.on('POST', '/api/captains/ag_ORION/resume', { session: 's', window: 'w', window_id: '@1', cwd: root, attach: 'tmux attach' });
     stub.on('POST', '/api/update', { message: msg({ kind: 'update' }), inbox: [] });
     const SESSION = { CLAUDECODE: '1', CLAUDE_CODE_SESSION_ID: 'sess-none' };
     const c = await run(['captains'], { url: url(), cwd: root, env: SESSION });
     expect(c.code).toBe(0);
-    expect(stub.find('GET', '/api/captains')[0].path).toBe('/api/captains?project=plutus');
+    expect(stub.find('GET', '/api/captains')[0].path).toBe('/api/captains?project=tortuga');
     expect(c.stdout).not.toContain('(you)');
     const l = await run(['card', 'list'], { url: url(), cwd: root, env: SESSION });
     expect(l.code).toBe(0);
-    expect(l.stdout).toContain('Board · project plutus');
+    expect(l.stdout).toContain('Board · project tortuga');
     expect(stub.find('GET', '/api/cards')[0].agent).toBeNull();
     const sh = await run(['card', 'show', '7'], { url: url(), cwd: root, env: SESSION });
     expect(sh.stderr).toBe('');
@@ -192,7 +192,7 @@ describe('commands against a stub server', () => {
     expect(stub.find('POST', '/api/captains/register')).toHaveLength(0);
     const u = await run(['update', 'x'], { url: url(), cwd: root, env: CLAUDE });
     expect(u.code).toBe(1);
-    expect(u.stderr).toContain('2 captains in plutus');
+    expect(u.stderr).toContain('2 captains in tortuga');
     expect(stub.find('POST', '/api/captains/register')).toHaveLength(1);
   });
 
@@ -271,7 +271,7 @@ describe('commands against a stub server', () => {
     expect(r.stdout).toContain('mode: human captain');
   });
 
-  const started: CaptainStartRes = { session: 'sparrow-plutus-cap-orion', window: 'cap-orion', window_id: '@7', cwd: root, attach: 'tmux attach -t sparrow-plutus-cap-orion \\; select-window -t @7', agent_id: 'ag_ORION' };
+  const started: CaptainStartRes = { session: 'sparrow-tortuga-cap-orion', window: 'cap-orion', window_id: '@7', cwd: root, attach: 'tmux attach -t sparrow-tortuga-cap-orion \\; select-window -t @7', agent_id: 'ag_ORION' };
 
   test('captain launches through POST /api/captain/start and prints handle, attach and resume lines', async () => {
     stub.on('POST', '/api/captain/start', started);
@@ -281,7 +281,7 @@ describe('commands against a stub server', () => {
     const s = stub.find('POST', '/api/captain/start')[0];
     expect(s.body).toEqual({ cwd: root, name: 'cap-orion', title: 'Rate limiting', model: 'opus', effort: 'high' });
     expect(s.agent).toBeNull();
-    expect(r.stdout).toContain(`Captain @cap-orion — Rate limiting for login · ${root} · sparrow-plutus-cap-orion:cap-orion`);
+    expect(r.stdout).toContain(`Captain @cap-orion — Rate limiting for login · ${root} · sparrow-tortuga-cap-orion:cap-orion`);
     expect(r.stdout).toContain(`attach: ${started.attach}`);
     expect(r.stdout).toContain(`resume: ${resume.command}`);
     const bad = await run(['captain', '--cwd', join(root, 'absent')], { url: url() });
@@ -293,7 +293,7 @@ describe('commands against a stub server', () => {
     const a = await run(['captain'], { url: url(), env: { SPARROW_AGENT_ID: 'ag_JAMES' } });
     expect(a.code).toBe(1);
     expect(a.stderr).toContain('only the user starts captains');
-    stub.on('POST', '/api/captain/start', { error: 'handle cap-orion is taken in plutus' }, 409);
+    stub.on('POST', '/api/captain/start', { error: 'handle cap-orion is taken in tortuga' }, 409);
     const r = await run(['captain', '--cwd', root, '--name', 'cap-orion'], { url: url() });
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('handle cap-orion is taken');
@@ -304,7 +304,7 @@ describe('commands against a stub server', () => {
     stub.on('GET', '/api/captains/ag_ORION', detail());
     const r = await run(['captain', 'resume', '@cap-orion'], { url: url(), cwd: root });
     expect(r.code).toBe(0);
-    expect(stub.find('GET', '/api/captains')[0].path).toBe('/api/captains?project=plutus&archived=1&all=1');
+    expect(stub.find('GET', '/api/captains')[0].path).toBe('/api/captains?project=tortuga&archived=1&all=1');
     expect(stub.find('POST', '/api/captains/ag_ORION/resume')).toHaveLength(1);
     expect(r.stdout).toContain('Resumed @cap-orion');
     expect(r.stdout).toContain(`attach: ${started.attach}`);
@@ -323,7 +323,7 @@ describe('commands against a stub server', () => {
 
     const missing = await run(['captain', 'resume', '@nobody'], { url: url(), cwd: root });
     expect(missing.code).toBe(1);
-    expect(missing.stderr).toContain('no captain @nobody in plutus (@cap-orion, @captain); run it from the captain\'s repo or pass its id (`sparrow captains` in that repo shows it)');
+    expect(missing.stderr).toContain('no captain @nobody in tortuga (@cap-orion, @captain); run it from the captain\'s repo or pass its id (`sparrow captains` in that repo shows it)');
   });
 
   test('help lines exist for the new commands', async () => {

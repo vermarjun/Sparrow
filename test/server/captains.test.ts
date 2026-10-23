@@ -1,4 +1,4 @@
-// Multi-captain, server side (docs/plans/multi-captain.md §8 tests 1–13 and the §9 amendments). Sandboxed like every server test.
+// Multi-captain, server side (docs/DESIGN.md). Sandboxed like every server test.
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';

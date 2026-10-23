@@ -82,13 +82,13 @@ Treat them as instructions from your team. Messages and reminders the Sparrow se
 - `sparrow roster` — the team; `sparrow propose …` — suggest a board ticket (next section).
 
 ## Board tickets
-Cards have a key (`PLU-12`); every command takes `12`, `#12` or `PLU-12`. Read one with `sparrow card show PLU-12`
+Cards have a key (`TOR-12`); every command takes `12`, `#12` or `TOR-12`. Read one with `sparrow card show TOR-12`
 (context, problem, approach, "Done when" checks, comments, timing). Your task may reference a ticket: follow its Approach and satisfy every check.
 ```bash
-sparrow card note PLU-12 "found the cause: stale cache"   # comment on a card assigned to you
-sparrow card check PLU-12 2          # tick "Done when" item 2 as you verify it (--undo to untick)
-sparrow card block PLU-12 "IT: NetSuite access"   # you are waiting on a person; sparrow card unblock PLU-12
-sparrow card move PLU-12 review      # build finished; `sparrow done` (ok) does this for you
+sparrow card note TOR-12 "found the cause: stale cache"   # comment on a card assigned to you
+sparrow card check TOR-12 2          # tick "Done when" item 2 as you verify it (--undo to untick)
+sparrow card block TOR-12 "IT: NetSuite access"   # you are waiting on a person; sparrow card unblock TOR-12
+sparrow card move TOR-12 review      # build finished; `sparrow done` (ok) does this for you
 ```
 Only the user moves a card to Done, after reviewing it; you get a 403 if you try. `sparrow done --status blocked|failed` never moves the card.
 

@@ -419,7 +419,7 @@ export function createApi(core: Core, opts: ApiOpts = {}) {
   app.get('/api/cards', (c) => c.json(core.store.listCards(c.req.query('project') || c.get('caller')?.project_id || null)));
   app.get('/api/cards/:id', (c) => {
     const id = parseCardRef(c.req.param('id'));
-    if (id == null) throw new HttpError(400, 'card id must be a number or key such as PLU-12');
+    if (id == null) throw new HttpError(400, 'card id must be a number or key such as TOR-12');
     return c.json(core.readCard(c.get('caller'), id));
   });
   app.post('/api/cards', async (c) => {
@@ -429,7 +429,7 @@ export function createApi(core: Core, opts: ApiOpts = {}) {
   app.patch('/api/cards/:id', async (c) => {
     const caller = c.get('caller') ? need(c) : null;
     const id = parseCardRef(c.req.param('id'));
-    if (id == null) throw new HttpError(400, 'card id must be a number or key such as PLU-12');
+    if (id == null) throw new HttpError(400, 'card id must be a number or key such as TOR-12');
     return reply(c, { card: core.patchCard(caller, id, await body(c)) });
   });
 

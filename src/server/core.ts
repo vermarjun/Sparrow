@@ -82,7 +82,7 @@ export function gitBranch(cwd: string): string | null {
 
 /**
  * The project root of a folder: its git toplevel, except that a LINKED worktree maps to the main checkout (the dirname of
- * the shared .git), so a captain in `../plutus-feat1` belongs to project `plutus` and shares its board.
+ * the shared .git), so a captain in `../tortuga-feat1` belongs to project `tortuga` and shares its board.
  */
 export function gitRoot(cwd: string): string {
   try {
