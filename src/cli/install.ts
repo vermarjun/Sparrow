@@ -174,6 +174,7 @@ async function installLocked(opts: InstallOpts): Promise<InstallResult> {
     }
     if (linkState === 'made' || linkState === 'replaced') linkAtomic(BIN, link);
     if (linkState === 'blocked') warnings.push(`${t(link)} exists and is not our symlink; left alone (sparrow install --force replaces it)`);
+    else if (linkState === 'ok' && !isSymlink(link)) ok.push(`${t(link)} is this binary; nothing to link`);
     else ok.push(`${linkState === 'ok' ? 'link up to date' : linkState === 'replaced' ? 'relinked' : 'linked'} ${t(link)} → ${BIN}`);
     const onPath = (process.env.PATH ?? '').split(delimiter).some((p) => p.replace(/\/$/, '') === binDir);
     if (!onPath) warnings.push(`${t(binDir)} is not on your PATH — add: export PATH="$HOME/.local/bin:$PATH"`);

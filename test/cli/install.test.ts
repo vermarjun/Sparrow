@@ -94,7 +94,7 @@ describe('sparrow install', () => {
     for (const args of [['install'], ['install', '--force']]) {
       const r = await run(args, { env: env(home), cwd: home });
       expect(r.code).toBe(0);
-      expect(r.stdout).toContain('link up to date');
+      expect(r.stdout).toContain('is this binary; nothing to link');
       expect(r.stdout).not.toContain('not our symlink');
       expect(lstatSync(BIN).isSymbolicLink()).toBe(false);
       expect(readFileSync(BIN, 'utf8')).toBe(before);
