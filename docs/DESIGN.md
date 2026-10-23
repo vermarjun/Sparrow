@@ -53,18 +53,18 @@ Code layout: `src/shared` (types, config), `src/server` (state, API, lifecycle),
 - `ask {question}` → DM to parent, kind `question`, delivery to parent. Ends the call (3.6) with reason `ask` → state `waiting`.
 - `done {summary, status}` → DM to parent, kind `result`, `meta.status`, and `meta.call_ms` (the call duration in milliseconds), waking delivery to parent. Ends the call with `done` → state `idle`.
 - `wait {reason}` → DM to parent, kind `update`, text `waiting: <reason>`, quiet delivery. Ends the call with `wait` → state `waiting`. A human captain's `wait` records no message, sets `last_update`, and ends normally.
-- The human captain is never spawned; its deliveries stay pending until it calls any endpoint (piggyback) or `GET /api/inbox`.
+- The human captain is never spawned; its deliveries stay pending until it explicitly reads `GET /api/inbox` (`sparrow inbox`, including `--wait`). Registration never takes messages.
 - FYI system notices (`fyiParent`: restarting, restart queued, quiet nudge) go to the parent as quiet DM deliveries. Terminal notices (`notifyParent`) remain waking deliveries. System messages use a DM thread between parent and agent with `meta.about = agentId`. No quiet delivery is created when its recipient parent is retired.
-- **Piggyback:** every response to an identified caller includes all its pending deliveries, quiet and waking, now marked `delivered` (with the caller's open `call_id`) and ordered by seq. Quiet deliveries are never added to `Message.mentions`.
+- **Unread summaries:** ordinary object responses include an empty `inbox` and optional `unread:[{id,seq,from_handle,kind,status?}]`; array responses stay arrays and expose the summary in `x-sparrow-unread`. These responses consume nothing. Only explicit inbox reads, call-start envelopes and turn-end handoffs mark deliveries delivered. Quiet deliveries are never added to `Message.mentions`.
 
 ### 3.4 Wake (a pending delivery for a non-human agent)
 - A quiet delivery is pending like any other, but never triggers wake/spawn/dequeue, never resolves `inbox --wait` early, and never blocks `done`/`ask`/`wait`.
-- A recipient's response piggyback, `GET /api/inbox`, and new-call envelope include quiet and waking pending messages in seq order. Turn-end hands off all pending messages only when at least one waking delivery is pending; a quiet-only set follows the nudge path (§3.7). Starting a call still requires at least one pending waking delivery.
-- state `working` → the agent gets new messages via piggyback, at `done/ask/wait` (3.6), or via turn-end (3.7); only waking deliveries initiate a call.
+- `GET /api/inbox` and new-call envelopes include quiet and waking pending messages in seq order. Turn-end hands off all pending messages only when at least one waking delivery is pending; a quiet-only set follows the nudge path (§3.7). Starting a call still requires at least one pending waking delivery.
+- state `working` → the agent gets new messages via `sparrow inbox` or turn-end (3.7); only waking deliveries initiate a call.
 - state `idle | waiting | crashed` → if at least one waking delivery is pending and working count `< max_running`: **start a call** (below). Else state `queued` only when a waking delivery is pending.
 - state `queued` → nothing (dequeued FIFO when a slot frees: any call end or release).
 - state `retired` → delivery `dropped`.
-- **Start a call:** new `call_id`; envelope = all pending deliveries for the agent, quiet and waking (mark delivered with this call); `resume = agent.session_id != null`; render system prompt; `spawner.start(...)`; store `tmux_window_id`, `session_id` (if returned), state `working`, `call_id`, insert `calls` row; emit events. If `spawner.start` throws → state `crashed`, system message to parent with the error.
+- **Start a call:** new `call_id`; envelope = all pending deliveries for the agent, quiet and waking (mark delivered with this call); `resume = agent.session_id != null`; render system prompt; `spawner.start(...)`; store `tmux_window_id`, `session_id` (if returned), state `working`, `call_id`, insert `calls` row; emit events. If `spawner.start` throws → restore the envelope deliveries to pending, state `crashed`, system message to parent with the error. A later waking message retries with the original envelope too.
 
 ### 3.5 Calls in progress
 - Any CLI request or hook from the agent sets `last_seen_at`.
@@ -73,13 +73,14 @@ Code layout: `src/shared` (types, config), `src/server` (state, API, lifecycle),
 - Quiet: no `last_seen_at` for the resume's `quiet_minutes` → one nudge (via `spawner.deliver`) "post a progress update with `sparrow update`" (counts toward `nudges`). At `max_call_minutes` → one system message to the parent ("@x has been working N min; last update …"). Never auto-kill a working agent for time.
 
 ### 3.6 Ending a call (`done` / `ask` / `wait`)
-- If the agent has pending waking deliveries → do NOT end and do NOT record the result/question: return `{ended:false, message:null, inbox:[…]}` (all pending deliveries, including quiet ones, are marked delivered). The CLI tells the agent its report was not sent; handle the messages, then send the full report again. Quiet deliveries alone do not block ending, so they can be delivered with the report.
+- If the agent has pending waking deliveries → do NOT end and do NOT record the result/question: return `{ended:false, message:null, inbox:[], unread:[…]}`. The refusal consumes nothing: pending deliveries stay pending for `sparrow inbox`. The CLI tells the agent its report was not sent; it runs `sparrow inbox`, handles the messages, then sends the full report again. Quiet deliveries alone do not block ending, and stay pending for the next explicit read or handoff.
 - Else record the message (result/question/update as above).
 - Else: close the call (`end_reason`), set state, `tmux_window_id` stays until closed, then after `close_grace_ms` call `spawner.stop(agent)` and null `tmux_window_id` — unless a new call started meanwhile. Return `{ended:true}`.
 - Free slot → dequeue the oldest `queued` agent.
 - **One-shot** (resume `one_shot: true`, e.g. `deckhand`): a recorded `done` (any status) ends the call with state `retired` instead of `idle`, drops pending deliveries, and marks the result `meta.released: true` (headers show `released (one-shot)`). The window still closes after `close_grace_ms`. A "Not sent" `done` releases nothing. The flag is read from the live resume when `done` runs. A retired agent's later reports (any `done`/`ask`/`wait`) record nothing.
 
 ### 3.7 Turn ended without reporting (`POST /api/hooks/turn-end`)
+- An aborted hook request leaves pending mail untouched, including when it aborts while provider detection awaits a screen capture. A delayed Codex/OpenCode paste that fails or is invalidated restores its deliveries to pending and requests wake again.
 Harness signals: Claude `Stop` hook, Codex `notify` (agent-turn-complete), OpenCode plugin `session.idle`.
 1. Store `session_id` if given and the agent has none (or it differs and the call is not a resume — then update).
 2. Call already ended (done/ask/wait) → `{action:'allow'}`.
@@ -148,7 +149,7 @@ Old rows (no migration) read with column defaults: empty sections, `history: []`
 
 ## 4. HTTP API (JSON, 127.0.0.1 only, no auth)
 
-Identity header `x-sparrow-agent`; hooks add `x-sparrow-call`. Every response to an identified agent includes `inbox` (piggyback, 3.3). Types are in `src/shared/types.ts`.
+Identity header `x-sparrow-agent`; hooks add `x-sparrow-call`. Object replies to an identified agent include `inbox` (empty except for explicit reads) and optional `unread` summaries (3.3). Array replies stay arrays. Types are in `src/shared/types.ts`.
 
 | Method & path | Body / query | Returns |
 |---|---|---|
@@ -231,7 +232,7 @@ sparrow hook <kind> [...]                          internal (harness hooks)
 - Card refs (`<N>`, and `--card` on hire/send/update) accept `12`, `#12` or `TOR-12`. `card list` groups by column, shelved cards under a `· later ·` sub-heading, one line per card: `TOR-12  ‼ ⛔ Title · ui · R high/E low · ~2h · 3d · @maya` (‼ urgent, ⛔ blocked with `blocked on …`, ★ quick win).
 - Long text: any text argument may be `-` to read stdin, so agents can use a quoted heredoc: `sparrow done - <<'EOF' … EOF`.
 - `sparrow hire` uses the resume's configured model and effort. Pass `--model` or `--effort` only for an explicit user request; a value that differs from the resume is shown as an `Override:` line in the CLI output, recorded in the task message's `meta.override`, and included in the server hire log.
-- Every command prints its result, then, if `inbox` is non-empty, a block grouped by the agent the messages are about (sender, or `meta.about` for system notices), with messages in seq order and `hh:mm:ss` times. A group containing a result gets `── @handle · resume · done <status> · call <duration> ──` (duration comes from result `meta.call_ms`); a group containing only DMs, tasks, or questions gets `── @handle (DM) ──`; other groups get `── @handle · resume ──`:
+- `sparrow inbox` (and `inbox --wait` when it returns messages) prints the messages, as a block grouped by the agent the messages are about (sender, or `meta.about` for system notices), with messages in seq order and `hh:mm:ss` times. A group containing a result gets `── @handle · resume · done <status> · call <duration> ──` (duration comes from result `meta.call_ms`); a group containing only DMs, tasks, or questions gets `── @handle (DM) ──`; other groups get `── @handle · resume ──`:
   ```
   ━━ 📨 4 new messages for @james ━━
   ── @maya · builder · done ok · call 5m02s ──
@@ -251,8 +252,9 @@ sparrow hook <kind> [...]                          internal (harness hooks)
     @iris · verifier · working 3m · no update yet
   ```
   On timeout with no messages, it prints `No new messages (waited 600s).` followed by the digest; with no messages and no working children it prints only that first line. Calling `send` or `log` with the reserved `group` handle produces a usage error stating it was removed.
-- In captain mode, `inbox --wait` uses messages piggybacked during registration. It skips the long-poll only when that inbox contains a waking message; this immediate path prints no `Still working:` digest. Quiet messages alone do not skip the wait. A newer `inbox --wait` stops an older pending wait without taking its messages. `inbox --last [N]` (N 1–50, default 10) prints previously delivered messages for recovery; it does not take pending deliveries.
-- `done/ask/wait` with `ended:false` print (amended): `Not sent: new messages arrived (above). Handle them, then run sparrow done again with your complete report.` With `ended:true`: `Reported. This session will now close — stop here; you will be resumed with full memory when someone messages you.`
+- In captain mode, registration leaves messages pending. `inbox --wait` always calls the inbox endpoint, which returns immediately when waking mail is already pending. Quiet messages alone do not end the wait. A newer `inbox --wait` stops an older pending wait without taking its messages. `inbox --last [N]` (N 1–50, default 10) prints previously delivered messages for recovery; it does not take pending deliveries.
+- Other commands (not `inbox`/`inbox --wait`) take no messages. When any are pending, they print their result, then one final stderr line `📨 N unread ... Read: sparrow inbox`. Agents seeing it run `sparrow inbox` at once.
+- `done/ask/wait` with `ended:false` print (amended): a `Not sent:` line naming the pending senders, then `run sparrow inbox, then report again`. The refusal consumes nothing. With `ended:true`: `Reported. This session will now close — stop here; you will be resumed with full memory when someone messages you.`
 - Exit code 0 on success, 1 on API error (print the server's error text), 2 on bad usage (print usage for that command).
 
 ## 6. Harness launch

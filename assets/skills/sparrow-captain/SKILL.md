@@ -59,7 +59,7 @@ Hiring returns at once. Max concurrent agents is limited; extra hires show `queu
 - Run only one `inbox --wait` at a time; a newer one stops the older. Think you missed a result? `sparrow inbox --last`.
 - **Inside an agent window** (a sub-captain, `SPARROW_AGENT_ID` set): never `inbox --wait`; run `sparrow wait "…"` and stop — results resume you.
 - **Elsewhere:** check `sparrow inbox` between other work, or after each user turn.
-- Every sparrow command you run also prints new messages (`━━ 📨 …`).
+- Only `sparrow inbox` and `sparrow inbox --wait` take messages. Other sparrow commands end with a stderr line `📨 N unread ... Read: sparrow inbox` when messages wait: run `sparrow inbox` then.
 
 Agent progress updates are quiet DMs to that agent's parent. The parent receives them bundled with
 the agent's result or another waking message; they never wake or interrupt the parent on their own.

@@ -61,7 +61,7 @@ sparrow card list | add "<title>" [--details d] [--state s] [--assignee @h] [--c
 sparrow release <@handle>
 ```
 
-Any text argument may be `-` to read stdin (use a quoted heredoc). `--json` prints the raw server response. Exit codes: 0 ok, 1 server error (message printed), 2 bad usage. Every command prints new messages for you in a `━━ 📨 … ━━` block.
+Any text argument may be `-` to read stdin (use a quoted heredoc). `--json` prints the raw server response. Exit codes: 0 ok, 1 server error (message printed), 2 bad usage. Read messages with `sparrow inbox` (or `inbox --wait`). Other commands leave mail unread and print a final stderr notice `📨 N unread … Read: sparrow inbox`.
 
 Identity: inside agent windows `SPARROW_AGENT_ID` is set. Without it the CLI registers you as the human `@captain` of the project (the git root of your cwd).
 

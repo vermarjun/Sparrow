@@ -3,7 +3,7 @@ import { NUDGE_REPORT } from '../../src/server/prompts';
 import { agentOf, flush, hire, setup } from './helpers';
 
 describe('send / update routing', () => {
-  test('DM to a working agent: delivery pending (no new start); piggybacked on its next request', async () => {
+  test('DM to a working agent: delivery pending until explicit inbox read', async () => {
     const ctx = await setup();
     const a = await hire(ctx, 'builder', 'x');
     const r = await ctx.req('POST', '/api/send', { to: `@${a.handle}`, text: 'the API is at /v2' }, ctx.captain.id);
@@ -14,8 +14,11 @@ describe('send / update routing', () => {
     expect(ctx.store.countPending(a.id)).toBe(1);
     const call = agentOf(ctx, a.id).call_id;
     const u = await ctx.req('POST', '/api/update', { text: 'did X; next Y' }, a.id, call);
-    expect(u.body.inbox.length).toBe(1);
-    expect(u.body.inbox[0].text).toBe('the API is at /v2');
+    expect(u.body.inbox).toEqual([]);
+    expect(u.body.unread).toHaveLength(1);
+    expect(ctx.store.countPending(a.id)).toBe(1);
+    const read = await ctx.req('GET', '/api/inbox', undefined, a.id, call);
+    expect(read.body.inbox[0].text).toBe('the API is at /v2');
     expect(ctx.store.deliveriesFor(r.body.message.id)[0]).toMatchObject({ state: 'delivered', call_id: call });
     const u2 = await ctx.req('POST', '/api/update', { text: 'again' }, a.id, call);
     expect(u2.body.inbox).toEqual([]);
@@ -187,7 +190,7 @@ describe('send / update routing', () => {
 });
 
 describe('done / ask / wait', () => {
-  test('done with pending → ended:false + inbox; without → ended:true, idle, window stopped after grace', async () => {
+  test('done with pending → ended:false + unread; without → ended:true, idle, window stopped after grace', async () => {
     const ctx = await setup();
     const a = await hire(ctx, 'builder', 'x');
     const call = agentOf(ctx, a.id).call_id;
@@ -197,7 +200,9 @@ describe('done / ask / wait', () => {
     expect(r1.body.ended).toBe(false);
     expect(r1.body.message).toBeNull(); // A1: nothing recorded
     expect(ctx.store.countMessages()).toBe(msgsBefore);
-    expect(r1.body.inbox.map((m: any) => m.text)).toEqual(['one more thing']);
+    expect(r1.body.inbox).toEqual([]);
+    expect(ctx.store.countPending(a.id)).toBe(1);
+    expect((await ctx.req('GET', '/api/inbox', undefined, a.id, call)).body.inbox.map((m: any) => m.text)).toEqual(['one more thing']);
     expect(agentOf(ctx, a.id).state).toBe('working');
     const r2 = await ctx.req('POST', '/api/done', { summary: '## Result\nall good', status: 'ok' }, a.id, call);
     expect(r2.body.ended).toBe(true);
@@ -244,7 +249,8 @@ describe('done / ask / wait', () => {
     const n0 = ctx.store.countMessages();
     const a1 = await ctx.req('POST', '/api/ask', { question: 'q?' }, sc.id, call);
     expect(a1.body).toMatchObject({ ended: false, message: null });
-    expect(a1.body.inbox.map((m: any) => m.text)).toEqual(['first m']);
+    expect(a1.body.inbox).toEqual([]);
+    expect(ctx.store.countPending(sc.id)).toBe(1);
     await ctx.req('POST', '/api/send', { to: `@${sc.handle}`, text: 'second m' }, ctx.captain.id);
     const n1 = ctx.store.countMessages();
     const w1 = await ctx.req('POST', '/api/wait', { reason: 'r' }, sc.id, call);
@@ -253,6 +259,8 @@ describe('done / ask / wait', () => {
     expect(n1).toBe(n0 + 1);
     expect(agentOf(ctx, sc.id).last_update).toBeNull();
     expect(agentOf(ctx, sc.id).state).toBe('working');
+    const read = await ctx.req('GET', '/api/inbox', undefined, sc.id, call);
+    expect(read.body.inbox.map((m: any) => m.text)).toEqual(['first m', 'second m']);
     const w2 = await ctx.req('POST', '/api/wait', { reason: 'r' }, sc.id, call);
     expect(w2.body.ended).toBe(true);
     expect(w2.body.message.text).toBe('waiting: r');
@@ -305,7 +313,7 @@ describe('done / ask / wait', () => {
     }
   });
 
-  test('human captain: wait with only quiet pending ends and records nothing; piggyback hands the quiet ones over', async () => {
+  test('human captain: wait with only quiet pending ends and records nothing; quiet ones remain pending', async () => {
     const ctx = await setup();
     const a = await hire(ctx, 'builder', 'x');
     await ctx.req('POST', '/api/update', { text: 'quarter way' }, a.id, agentOf(ctx, a.id).call_id);
@@ -314,7 +322,9 @@ describe('done / ask / wait', () => {
     expect(w.body).toMatchObject({ ended: true, message: null });
     expect(ctx.store.countMessages()).toBe(n);
     expect(agentOf(ctx, ctx.captain.id).last_update).toBe('waiting: hires');
-    expect(w.body.inbox.map((m: any) => m.text)).toEqual(['quarter way']);
+    expect(w.body.inbox).toEqual([]);
+    expect(ctx.store.countPending(ctx.captain.id)).toBe(1);
+    expect((await ctx.req('GET', '/api/inbox', undefined, ctx.captain.id)).body.inbox.map((m: any) => m.text)).toEqual(['quarter way']);
   });
 
   test('A8: sub-captain hires a builder, waits, is woken by the result, then reports done to the human', async () => {
@@ -526,14 +536,18 @@ describe('quiet deliveries (A5): long-poll, team digest, piggyback, turn-end', (
     void r;
   });
 
-  test('piggyback on any response hands quiet ones to a working parent', async () => {
+  test('ordinary responses leave quiet messages pending for a working parent', async () => {
     const ctx = await setup({ max_running: 10 });
     const sc = await hire(ctx, 'sub-captain', 'lead');
     const scCall = agentOf(ctx, sc.id).call_id;
     const b = (await ctx.req('POST', '/api/hire', { resume: 'builder', task: 't' }, sc.id, scCall)).body.agent;
     await ctx.req('POST', '/api/update', { text: 'child step' }, b.id, agentOf(ctx, b.id).call_id);
     const r = await ctx.req('GET', '/api/whoami', undefined, sc.id, scCall);
-    expect(r.body.inbox.map((m: any) => [m.from_handle, m.kind, m.text])).toEqual([[b.handle, 'update', 'child step']]);
+    expect(r.body.inbox).toEqual([]);
+    expect(r.body.unread).toMatchObject([{ from_handle: b.handle, kind: 'update' }]);
+    expect(ctx.store.countPending(sc.id)).toBe(1);
+    const read = await ctx.req('GET', '/api/inbox', undefined, sc.id, scCall);
+    expect(read.body.inbox.map((m: any) => [m.from_handle, m.kind, m.text])).toEqual([[b.handle, 'update', 'child step']]);
     expect(ctx.store.countPending(sc.id)).toBe(0);
   });
 

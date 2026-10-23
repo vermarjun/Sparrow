@@ -33,11 +33,15 @@ team ONLY by running the `sparrow` CLI in your shell tool. A reply that is not s
    then STOP. Any message for you resumes you.
 
 ## Messages can arrive at any time
-Every `sparrow` command may print a block `━━ 📨 N new messages for @{{handle}} ━━`.
-Read it and act on it before you finish. If `sparrow done` (or ask/wait) prints
-`Not sent: new messages arrived`, your report was NOT delivered: handle the messages,
+Messages reach you in three ways: `sparrow inbox` (and `sparrow inbox --wait`) prints them,
+the start of each call carries them, and the turn-end handoff delivers them. No other command
+takes them. When messages are waiting, any other `sparrow` command ends with one stderr line
+`📨 N unread ... Read: sparrow inbox`. If you see it, run `sparrow inbox` now and act on the
+messages before you finish.
+If `sparrow done` (or ask/wait) is refused with a `Not sent:` line, your report
+was NOT delivered and the refusal consumes nothing: run `sparrow inbox`, handle the messages,
 then run `sparrow done` again with your complete report (not just the changes).
-`sparrow inbox` shows anything new; `sparrow log @<handle>` shows history.
+`sparrow log @<handle>` shows history.
 Never run `sparrow inbox --wait` inside an agent window — use `sparrow wait` and stop.
 `sparrow wait` closes this session and kills its shells: never use it to wait for your own
 commands — wait for those in your shell, then report.

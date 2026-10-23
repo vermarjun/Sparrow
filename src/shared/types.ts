@@ -407,11 +407,11 @@ export interface CardPatchReq extends CardFields {
 }
 export interface ReleaseReq { agent: string } // '@handle' or agent id
 
-// Every response to an identified agent carries `inbox`: messages newly delivered to it
-// by this response (they are marked delivered). Empty array when none.
-export interface WithInbox { inbox: MessageView[] }
+// Only explicit inbox reads return delivered messages; other replies summarize pending mail.
+export interface UnreadMessage { id: string; seq: number; from_handle: string; kind: MessageKind; status?: string }
+export interface WithInbox { inbox: MessageView[]; unread?: UnreadMessage[] }
 export interface MessageRes extends WithInbox { message: MessageView }
-// done / ask / wait: ended=false means new messages arrived (in `inbox`) and the agent must keep working.
+// done / ask / wait: ended=false means unread messages arrived (run `sparrow inbox`) and the agent must keep working.
 export interface EndCallRes extends WithInbox { ended: boolean; message: MessageView | null }
 
 // GET /api/inbox: the caller's non-retired children whose state is not idle (the "Still working" digest).

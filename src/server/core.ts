@@ -988,7 +988,7 @@ export class Core {
     // e.g. a one-shot helper reporting again from a shell without its call header): accept silently, record nothing.
     if (caller.kind !== 'human' && ((callHeader && callHeader !== caller.call_id) || caller.state === 'retired')) return { ended: true, message: null };
     const onCall = caller.kind !== 'human' && caller.state === 'working' && !!caller.call_id;
-    // Amendment A1: with WAKING pending deliveries record NOTHING; the piggyback hands them over and the agent
+    // With WAKING pending deliveries record NOTHING; the agent explicitly reads its inbox, then
     // reports again. Quiet ones (A5: children's updates, FYI notices) never block; they wait for the next call.
     if ((onCall || caller.kind === 'human') && this.store.countWaking(caller.id) > 0) {
       this.say(`${reason} @${caller.handle} not sent: ${this.store.countWaking(caller.id)} new message(s) first`);
@@ -1082,7 +1082,7 @@ export class Core {
   }
 
   /**
-   * Piggyback: pending deliveries (waking and quiet, seq order) for the caller, now marked delivered. Only for the
+   * Explicit inbox read: pending deliveries (waking and quiet, seq order), now marked delivered. Only for the
    * human captain and agents on the matching open call.
    */
   takeInbox(callerId: string, callHeader: string | null = null): MessageView[] {
@@ -1096,6 +1096,13 @@ export class Core {
     if (!pending.length) return [];
     this.store.markDelivered(a.id, pending.map((m) => m.id), a.kind !== 'human' ? a.call_id : null, this.now());
     return pending.map((m) => this.view(m));
+  }
+
+  unreadFor(agentId: string) {
+    return this.store.pendingFor(agentId).map((m) => ({
+      id: m.id, seq: m.seq, from_handle: this.handleOf(m.from_id), kind: m.kind,
+      ...(typeof m.meta?.status === 'string' ? { status: m.meta.status } : {}),
+    }));
   }
 
   /** Previously delivered messages for recovery; this read never changes delivery state. */
@@ -1244,6 +1251,7 @@ export class Core {
         agent: fresh, call_id: callId, system_prompt: system, prompt: envelope, resume, skills: grantsFor(fresh.id, resumeCard.skills),
       });
     } catch (err) {
+      this.store.markPending(agent.id, pending.map((m) => m.id), callId);
       const msg = (err as Error)?.message ?? String(err);
       this.say(`start FAILED @${agent.handle}: ${msg}`);
       const cur = this.store.getAgent(a0.id)!;
@@ -1383,17 +1391,24 @@ export class Core {
     return { ok: true };
   }
 
-  private deliverLater(agentId: string, callId: string, text: string) {
+  private deliverLater(agentId: string, callId: string, text: string, ids: string[] = []) {
     const h = this.clock.setTimeout(() => {
       this.otherTimers.delete(h);
       const a = this.store.getAgent(agentId);
-      if (!a || a.call_id !== callId || a.state !== 'working') return;
-      this.spawner.deliver(a, text).catch((e) => this.say(`deliver failed @${a.handle}: ${(e as Error).message}`));
+      const retry = () => {
+        this.store.markPending(agentId, ids, callId);
+        this.bg(this.wake(agentId));
+      };
+      if (!a || a.call_id !== callId || a.state !== 'working') { retry(); return; }
+      this.spawner.deliver(a, text).catch((e) => {
+        this.say(`deliver failed @${a.handle}: ${(e as Error).message}`);
+        retry();
+      });
     }, this.deliverDelayMs);
     this.otherTimers.add(h);
   }
 
-  async turnEnd(caller: Agent, callHeader: string | null, req: TurnEndReq): Promise<TurnEndRes> {
+  async turnEnd(caller: Agent, callHeader: string | null, req: TurnEndReq, signal?: AbortSignal): Promise<TurnEndRes> {
     let a = this.noteSession(caller, req?.session_id);
     if (a.kind === 'human' || a.state !== 'working' || !a.call_id || (callHeader && callHeader !== a.call_id)) {
       return { action: 'allow' };
@@ -1410,16 +1425,18 @@ export class Core {
       // D2: a turn that ended on a model-provider error is not "stopped without reporting": count it, tell the parent
       // once, never nudge. Otherwise the turn reached the model, which counts as a success.
       perr = await this.detectProviderError(a, req);
+      if (signal?.aborted) return { action: 'allow' };
       if (perr) this.recordProviderError(a, perr);
       else this.providerOk(a);
     }
+    if (signal?.aborted) return { action: 'allow' };
     if (pending.length) {
       this.providerFlags.delete(a.id);
       this.store.markDelivered(a.id, pending.map((m) => m.id), a.call_id, this.now());
       const env = renderEnvelope(a, pending, this.handleOf, {});
       this.say(`turn-end @${a.handle}: delivering ${pending.length} msg`);
       if (isClaude) return { action: 'block', reason: env };
-      this.deliverLater(a.id, a.call_id, env);
+      this.deliverLater(a.id, a.call_id, env, pending.map((m) => m.id));
       return { action: 'none' };
     }
     if (bg > 0) {
