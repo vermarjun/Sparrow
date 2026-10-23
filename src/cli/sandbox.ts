@@ -7,7 +7,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { BIN } from '../shared/config';
+import { SELF_ARGV } from '../shared/config';
 import { AGENT_ENV_VARS } from './guard';
 
 export interface SandboxInfo { dir: string; home: string; skillsHome: string; port: number; socket: string; prefix: string; url: string }
@@ -104,7 +104,7 @@ function writeWrapper(i: SandboxInfo) {
   const unsets = DROP.filter((k) => !(k in sandboxEnv(i))).map((k) => `-u ${k}`).join(' ');
   const sets = Object.entries(sandboxEnv(i)).map(([k, v]) => `${k}='${v.replace(/'/g, `'\\''`)}'`).join(' ');
   const f = join(i.dir, 'sbx');
-  writeFileSync(f, `#!/bin/sh\n# sparrow sandbox wrapper: runs sparrow against this sandbox only.\nexec env ${unsets} ${sets} '${process.execPath}' '${BIN}' "$@"\n`);
+  writeFileSync(f, `#!/bin/sh\n# sparrow sandbox wrapper: runs sparrow against this sandbox only.\nexec env ${unsets} ${sets} ${SELF_ARGV.map((a) => `'${a}'`).join(' ')} "$@"\n`);
   chmodSync(f, 0o755);
 }
 
@@ -134,7 +134,7 @@ export async function sandboxUp(dirArg?: string): Promise<{ info: SandboxInfo; t
   const log = openSync(join(dir, 'server.log'), 'a');
   let child;
   try {
-    child = spawn(process.execPath, [BIN, 'up', '--home', home, '--port', String(port)], {
+    child = spawn(SELF_ARGV[0], [...SELF_ARGV.slice(1), 'up', '--home', home, '--port', String(port)], {
       detached: true, stdio: ['ignore', log, log], env: cleanEnvFor(info),
     });
     await new Promise<void>((ok, bad) => { child!.once('spawn', ok); child!.once('error', bad); });
@@ -163,7 +163,7 @@ export async function sandboxDown(dirArg?: string): Promise<string> {
   const lines: string[] = [];
   if (live === null) lines.push('Sparrow server: not running (this home has no server.pid).');
   else {
-    const r = spawnSync(process.execPath, [BIN, 'stop'], { env: cleanEnvFor({ ...info, port: live }), encoding: 'utf8' });
+    const r = spawnSync(SELF_ARGV[0], [...SELF_ARGV.slice(1), 'stop'], { env: cleanEnvFor({ ...info, port: live }), encoding: 'utf8' });
     lines.push((r.stdout + r.stderr).trim());
     if (r.status !== 0) throw new Error(lines[0] || 'sparrow stop failed');
   }

@@ -7,14 +7,15 @@ import { homedir, tmpdir } from 'node:os';
 import { dirname, join, parse, resolve } from 'node:path';
 import type { Agent } from '../../shared/types';
 import type { StartSpec } from '../index';
-import { OPENCODE_BIN, agentDir, repoRoot, sparrowHome } from '../env';
+import { ASSETS } from '../../shared/config';
+import { OPENCODE_BIN, agentDir, sparrowHome } from '../env';
 import { writeAtomic, type Arg, type CallFiles } from '../launch';
 import { frontmatterName, launchGrants, materializeLinks, withSparrow } from '../../skills/grant';
 import { validSkillName } from '../../skills/frontmatter';
 import * as tmux from '../tmux';
 import type { Driver, PreparedLaunch } from './types';
 
-export const pluginSource = () => join(repoRoot(), 'assets', 'opencode-plugin', 'sparrow.js');
+export const pluginSource = () => join(ASSETS, 'opencode-plugin', 'sparrow.js');
 export const opencodeConfigDir = () => join(sparrowHome(), 'opencode');
 export const pluginTarget = () => join(opencodeConfigDir(), 'plugins', 'sparrow.js');
 

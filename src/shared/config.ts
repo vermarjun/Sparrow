@@ -1,13 +1,35 @@
 // Paths, ports and tunables. Env vars override for tests.
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 
-export const REPO_ROOT = resolve(import.meta.dir, '../..');
-export const BIN = join(REPO_ROOT, 'bin', 'sparrow');      // the CLI entry (on PATH inside agent windows)
-export const ASSETS = join(REPO_ROOT, 'assets');
+// Compiled mode (`bun build --compile`, scripts/build-binary.ts): the generated entry sets globalThis.__SPARROW_EMBED__
+// (version + the embedded assets/ and web/dist files) before anything else loads. Source mode (bun bin/sparrow) has none.
+export interface Embedded { version: string; build: string; files: Record<string, string> } // files: 'assets/x' | 'web/x' -> embedded path
+export const EMBEDDED: Embedded | null = (globalThis as { __SPARROW_EMBED__?: Embedded }).__SPARROW_EMBED__ ?? null;
+export const COMPILED = EMBEDDED !== null;
+export const APP_VERSION: string = EMBEDDED?.version ?? (() => {
+  try { return JSON.parse(readFileSync(resolve(import.meta.dir, '../../package.json'), 'utf8')).version ?? '0.0.0'; } catch { return '0.0.0'; }
+})();
 
 export const SPARROW_HOME = process.env.SPARROW_HOME ?? join(homedir(), '.sparrow');
+export const APP_DIR = join(SPARROW_HOME, 'app', APP_VERSION);   // compiled: embedded assets/ + web/ materialised here (src/shared/app.ts)
+
+// The path agents and hooks use to run us. Prefer a stable PATH entry (brew/npm/~/.local/bin link) over a versioned
+// path that an upgrade would delete under a running server.
+function selfBin(): string {
+  const exe = process.execPath;
+  try { const w = Bun.which('sparrow'); if (w && realpathSync(w) === realpathSync(exe)) return w; } catch {}
+  return exe;
+}
+
+export const REPO_ROOT = COMPILED ? APP_DIR : resolve(import.meta.dir, '../..');   // compiled: the materialised app dir
+export const BIN = COMPILED ? selfBin() : join(REPO_ROOT, 'bin', 'sparrow');      // the CLI entry (on PATH inside agent windows); compiled: the binary itself
+export const ASSETS = join(REPO_ROOT, 'assets');
+export const WEB_DIST = COMPILED ? join(APP_DIR, 'web') : join(REPO_ROOT, 'web', 'dist');
+/** argv prefix that runs the CLI: the binary, or bun + bin/sparrow in source mode. */
+export const SELF_ARGV: string[] = COMPILED ? [BIN] : [process.execPath, BIN];
+
 export const DB_PATH = join(SPARROW_HOME, 'sparrow.db');
 export const RESUMES_DIR = join(SPARROW_HOME, 'resumes');   // user-editable; seeded from assets/resumes
 export const AGENTS_DIR = join(SPARROW_HOME, 'agents');     // per-agent files: system.md, calls/<call>.sh|.prompt.md, ...

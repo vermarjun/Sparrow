@@ -3,7 +3,6 @@ name: presenter
 title: Presenter
 description: Turns notes, reports or markdown into a polished light-theme single-file HTML explainer or slide deck ({{runtime}}).
 harness: opencode
-model: opencode-go/glm-5.3
 can_hire: []
 limits: { quiet_minutes: 15, max_call_minutes: 60 }
 ---

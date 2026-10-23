@@ -11,3 +11,7 @@ docs/*.html
 .sandbox/
 # skills evidence lives on branch evidence/skills (worktree ../sparrow-skills-evidence)
 docs/skills-evidence/
+
+# release builds (scripts/build-binary.ts, scripts/release-local.sh)
+dist/
+*.bun-build

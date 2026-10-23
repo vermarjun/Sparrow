@@ -23,7 +23,8 @@
 import { parseArgs } from 'node:util';
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { REPO_ROOT } from '../shared/config';
+import { COMPILED, REPO_ROOT } from '../shared/config';
+import { hookArgv } from './env';
 
 const { values } = parseArgs({
   args: process.argv.slice(2),
@@ -40,8 +41,7 @@ const { values } = parseArgs({
 const session = String(values.session ?? `fake-${crypto.randomUUID()}`);
 const agentDir = String(values['agent-dir'] ?? process.cwd());
 const memFile = join(agentDir, 'fake-memory', `${session}.txt`);
-const hookTs = join(REPO_ROOT, 'src', 'cli', 'hook.ts');
-const cliAvailable = existsSync(join(REPO_ROOT, 'src', 'cli', 'main.ts'));
+const cliAvailable = COMPILED || existsSync(join(REPO_ROOT, 'src', 'cli', 'main.ts'));
 let silent = false;
 
 const out = (s: string) => process.stdout.write(s.replace(/\n/g, '\r\n') + '\r\n');
@@ -73,7 +73,7 @@ async function sparrow(cmd: string, text?: string, extra: string[] = []) {
 }
 
 async function turnEnd(last: string): Promise<{ action?: string; reason?: string }> {
-  const r = await run([process.execPath, hookTs, 'turn-end', '--session', session, '--harness', process.env.SPARROW_HARNESS ?? 'fake', '--last-message', last]);
+  const r = await run([...hookArgv(), 'turn-end', '--session', session, '--harness', process.env.SPARROW_HARNESS ?? 'fake', '--last-message', last]);
   try {
     return JSON.parse(r.stdout.trim().split('\n').pop() || '{}');
   } catch {
@@ -139,7 +139,7 @@ async function handlePrompt(text: string, depth = 0): Promise<void> {
       case 'provider_error': {
         const msg = arg || 'Internal Server Error';
         out(`• provider error: ${msg}`);
-        await run([process.execPath, hookTs, 'provider-error', '--session', session, '--message', msg]);
+        await run([...hookArgv(), 'provider-error', '--session', session, '--message', msg]);
         last = '';
         break loop;
       }
