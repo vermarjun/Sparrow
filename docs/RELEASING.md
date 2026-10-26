@@ -49,7 +49,7 @@ prefix=$(mktemp -d)
 SPARROW_DOWNLOAD_URL="file://$PWD/dist/bin" SPARROW_INSTALL_DIR="$prefix" sh install.sh
 ```
 
-First copy `dist/checksums.txt` into `dist/bin/checksums.txt` for that test. `SPARROW_DOWNLOAD_URL` replaces the entire asset directory URL. The installer verifies checksums before atomically replacing the executable. A failed verification preserves an existing installation. For a specific published version use `SPARROW_VERSION=0.1.0`; without it the installer uses the latest release.
+First copy `dist/checksums.txt` into `dist/bin/checksums.txt` for that test. `SPARROW_DOWNLOAD_URL` replaces the entire asset directory URL. The installer verifies checksums before atomically replacing the executable. A failed verification preserves an existing installation. For a specific published version use `SPARROW_VERSION=0.2.0`; without it the installer uses the latest release.
 
 ## Smoke test
 

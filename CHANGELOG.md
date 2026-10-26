@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 (unreleased): first public release
+## 0.2.0 (2026-10-27): first public release
 
 - **Standalone binary and install routes.** Sparrow ships as one self-contained binary for macOS and Linux (arm64 and x64). Install with `curl ... install.sh | sh` (checksum-verified), `npm i -g sparrow-agents` or `brew install vermarjun/tap/sparrow`. No Bun, clone or build step. The first plain `sparrow` sets itself up, unpacks its UI into `~/.sparrow/app/<version>/`, and prints a readiness check (tmux, each harness installed and logged in, which roles are hireable). Releases are built and published by CI.
 - **Explicit-read delivery.** Every message is stored with one delivery row per recipient and is consumed only by an explicit read: `sparrow inbox`, `inbox --wait`, the envelope at the start of a call, or the turn-end handoff. Other commands print an `📨 N unread` notice on stderr, so piping or discarding output can no longer swallow a message. `done`, `ask` and `wait` refuse while waking messages are unread. `--json` objects carry an `unread` list.

@@ -8,6 +8,7 @@ import { canHireSentence, crashResume, NUDGE_REPORT, nudgeQuiet, renderEnvelope,
 import { parseResume, Resumes } from '../../src/server/resumes';
 import { createApp } from '../../src/server/main';
 import { agentOf, FakeSpawner, hire, resume, setup } from './helpers';
+import pkg from '../../package.json';
 
 describe('SSE events', () => {
   test('emits message.created / agent.updated / card.updated / call.started / call.ended', async () => {
@@ -56,7 +57,7 @@ describe('read endpoints', () => {
     const ctx = await setup();
     const a = await hire(ctx, 'builder', 'x');
     const h = await ctx.req('GET', '/api/health');
-    expect(h.body).toMatchObject({ ok: true, version: '0.1.0', pid: process.pid });
+    expect(h.body).toMatchObject({ ok: true, version: pkg.version, pid: process.pid });
     const rs = await ctx.req('GET', '/api/resumes');
     expect(rs.body.find((r: any) => r.slug === 'builder')).toMatchObject({ harness: 'claude', model: 'haiku', body: 'You are the builder.\n' });
     const ps = await ctx.req('GET', '/api/projects');

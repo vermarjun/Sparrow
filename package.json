@@ -1,6 +1,6 @@
 {
   "name": "sparrow",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "One captain, three harnesses. Hire Claude Code, Codex and OpenCode agents into real terminals, talk to them over one protocol, and get results with evidence.",
   "type": "module",
   "private": true,
