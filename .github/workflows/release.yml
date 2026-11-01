@@ -37,16 +37,21 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # Re-runs keep an existing Release instead of failing on it.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then echo "Release exists; skipping"; exit 0; fi
           gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes \
             dist/bin/sparrow-darwin-arm64 dist/bin/sparrow-darwin-x64 \
             dist/bin/sparrow-linux-x64 dist/bin/sparrow-linux-arm64 \
             dist/checksums.txt dist/brew/Formula/sparrow.rb
       # npm comes last: versions are immutable, and the installers (install.sh, brew) read the Release assets.
-      - name: Publish platform packages, then launcher
+      # npm requires 2FA to publish, so CI only stages: a maintainer approves each staged version
+      # with `npm stage list` / `npm stage approve <id>`. Already published or staged versions are skipped.
+      - name: Stage platform packages, then launcher
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          for platform in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do
-            npm publish "./dist/npm/sparrow-agents-$platform" --access public
+          version=$(node -p 'require("./package.json").version')
+          for dir in sparrow-agents-darwin-arm64 sparrow-agents-darwin-x64 sparrow-agents-linux-x64 sparrow-agents-linux-arm64 sparrow-agents; do
+            if npm view "$dir@$version" version >/dev/null 2>&1; then echo "$dir@$version already published"; continue; fi
+            npm stage publish "./dist/npm/$dir" --access public || echo "::warning::could not stage $dir@$version (already staged?)"
           done
-          npm publish ./dist/npm/sparrow-agents --access public
