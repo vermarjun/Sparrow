@@ -37,7 +37,8 @@ trap cleanup EXIT
 trap 'exit 1' HUP INT TERM
 download() {
   if command -v curl >/dev/null 2>&1; then
-    curl -fLsS "$1" -o "$2"
+    # Retry dropped connections; the checksum check below still rejects a bad file.
+    curl -fLsS --retry 5 --retry-delay 2 --retry-all-errors "$1" -o "$2"
   elif command -v wget >/dev/null 2>&1; then
     wget -q -O "$2" "$1"
   else
